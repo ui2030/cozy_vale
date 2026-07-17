@@ -101,6 +101,8 @@ func load_data(d: Dictionary) -> void:
 	for id in state:
 		if d.has(id):
 			var s: Dictionary = d[id]
-			state[id]["affection_points"] = clampi(int(s.get("affection_points", 0)), 0, MAX_AFF)
+			# 방어: 구버전 hearts 필드만 있으면 ×25 변환 (현 세이브엔 affection_points)
+			var pts := int(s.get("affection_points", int(s.get("hearts", 0)) * HEART))
+			state[id]["affection_points"] = clampi(pts, 0, MAX_AFF)
 			state[id]["talked_today"] = bool(s.get("talked_today", false))
 			state[id]["gifted_today"] = bool(s.get("gifted_today", false))

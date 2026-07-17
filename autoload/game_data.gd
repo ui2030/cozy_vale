@@ -8,9 +8,9 @@ var _seed_to_crop := {}    # seed_id → crop_id
 func _ready() -> void:
 	crops = _load_json("res://data/crops.json")
 	npcs = _load_json("res://data/npcs.json")
-	_validate()
 	for cid in crops:
 		_seed_to_crop[crops[cid]["seed_id"]] = cid
+	_validate()  # has_item_id가 seed 포함해야 하므로 매핑 뒤에
 
 func _load_json(path: String) -> Dictionary:
 	var f := FileAccess.open(path, FileAccess.READ)
@@ -36,9 +36,9 @@ func _validate() -> void:
 			for item_id in g.get(tier, []):
 				assert(has_item_id(item_id), "%s 선물 %s: 없는 아이템 %s" % [nid, tier, item_id])
 
-# 통합 아이템 ID 레지스트리 (현재 = 작물. 도구·채집물 추가시 여기 확장)
+# 통합 아이템 ID 레지스트리 (현재 = 작물 + 씨앗. 도구·채집물 추가시 여기 확장)
 func has_item_id(item_id: String) -> bool:
-	return crops.has(item_id)
+	return crops.has(item_id) or _seed_to_crop.has(item_id)
 
 func crop_from_seed(seed_id: String) -> String:
 	return _seed_to_crop.get(seed_id, "")
