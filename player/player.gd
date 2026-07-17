@@ -18,9 +18,24 @@ var _highlight: MeshInstance3D
 
 @onready var _interact_area: Area3D = $InteractArea
 
+const CAT_GLB := "res://assets/cat.glb"
+const ToonChar := preload("res://common/toon_character.gd")  # class_name 대신 preload(헤드리스 안전)
+@export var visual_scale := 2.1
+@export var visual_y := -0.85  # 발바닥을 캡슐 밑면에 맞춤 (스크린샷 보고 튜닝)
+
+func _setup_visual() -> void:
+	var cat: Node3D = ToonChar.load_glb(CAT_GLB, 0.004)
+	if cat == null:
+		return  # 폴백: 기본 캡슐 유지
+	$Mesh.visible = false
+	cat.scale = Vector3(visual_scale, visual_scale, visual_scale)
+	cat.position.y = visual_y
+	add_child(cat)
+
 func _ready() -> void:
 	_farm = get_tree().get_first_node_in_group("farm")
 	_npcsys = get_tree().get_first_node_in_group("npc_system")
+	_setup_visual()
 	_make_highlight()
 	if selected_seed == "":
 		_select_first_seed()
