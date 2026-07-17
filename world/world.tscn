@@ -8,7 +8,9 @@
 [ext_resource type="Script" path="res://npc/npc_system.gd" id="6"]
 
 [sub_resource type="PlaneMesh" id="ground_mesh"]
-size = Vector2(40, 40)
+size = Vector2(60, 60)
+subdivide_width = 60
+subdivide_depth = 60
 
 [sub_resource type="StandardMaterial3D" id="ground_mat"]
 albedo_color = Color(0.62, 0.8, 0.52, 1)

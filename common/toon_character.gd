@@ -43,6 +43,18 @@ static func apply(node: Node, outline_width: float) -> void:
 	for c in node.get_children():
 		apply(c, outline_width)
 
+# 단색 툰 머티리얼 (곡률 포함). 바닥·건물·NPC·작물 공용.
+static func make_solid(color: Color, outline_width := 0.0) -> ShaderMaterial:
+	var m := ShaderMaterial.new()
+	m.shader = TOON
+	m.set_shader_parameter("albedo", color)
+	if outline_width > 0.0:
+		var o := ShaderMaterial.new()
+		o.shader = OUTLINE
+		o.set_shader_parameter("width", outline_width)
+		m.next_pass = o
+	return m
+
 static func aabb_of(node: Node, acc := AABB()) -> AABB:
 	if node is VisualInstance3D:
 		var b: AABB = node.global_transform * node.get_aabb()

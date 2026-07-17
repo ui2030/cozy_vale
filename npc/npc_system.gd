@@ -4,6 +4,7 @@ extends Node3D
 
 const HEART := 25       # 25포인트 = 하트 1칸
 const MAX_AFF := 250    # 10칸
+const ToonChar := preload("res://common/toon_character.gd")
 
 # affection_points 0~250 저장, hearts는 파생 (Codex: F단계 청혼조건 재작업 방지)
 var state := {}         # npc_id → {affection_points, talked_today, gifted_today}
@@ -26,10 +27,8 @@ func _spawn(id: String) -> void:
 	cap.radius = 0.4
 	cap.height = 1.6
 	mesh.mesh = cap
-	var mat := StandardMaterial3D.new()
 	var c: Array = n["color"]
-	mat.albedo_color = Color(c[0], c[1], c[2])
-	mesh.material_override = mat
+	mesh.material_override = ToonChar.make_solid(Color(c[0], c[1], c[2]), 0.008)  # 곡면 툰 + 외곽선
 	mesh.position = Vector3(0, 1.0, 0)
 	root.add_child(mesh)
 	var area := Area3D.new()

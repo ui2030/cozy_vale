@@ -1,13 +1,25 @@
 extends Node3D
 # A단계 월드 루트. 환경/조명 세팅 + 세이브 로드.
 
+const ToonChar := preload("res://common/toon_character.gd")
+
 @onready var _sun: DirectionalLight3D = $Sun
 
 func _ready() -> void:
 	_sun.rotation_degrees = Vector3(-52, -125, 0)
 	_add_env()
+	_convert_statics(self)  # 정적 물체(바닥·건물)를 곡면 툰으로 통일
 	if not SaveManager.load_game():
 		print("새 게임 시작")
+
+# StandardMaterial3D 정적 메시 → 곡면 툰 (투명물=조준칸 제외)
+func _convert_statics(node: Node) -> void:
+	if node is MeshInstance3D:
+		var m = node.material_override
+		if m is StandardMaterial3D and m.transparency == BaseMaterial3D.TRANSPARENCY_DISABLED:
+			node.material_override = ToonChar.make_solid(m.albedo_color, 0.0)
+	for c in node.get_children():
+		_convert_statics(c)
 
 	if "shot" in OS.get_cmdline_user_args():
 		await _shot()

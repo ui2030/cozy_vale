@@ -17,6 +17,14 @@ uniform float terminator_soft : hint_range(0.01, 0.4) = 0.18;
 // 가장자리 물감 몰림
 uniform vec4 edge_pigment : source_color = vec4(0.55, 0.45, 0.52, 1.0);
 uniform float edge_strength : hint_range(0.0, 1.0) = 0.28;
+// 동물의 숲식 월드 곡률 (거리²만큼 지평선을 아래로 휘게)
+uniform float curve_strength = 0.006;
+
+void vertex() {
+	vec4 v = MODELVIEW_MATRIX * vec4(VERTEX, 1.0);
+	v.y -= curve_strength * v.z * v.z;
+	POSITION = PROJECTION_MATRIX * v;
+}
 
 void fragment() {
 	vec3 base = use_tex ? texture(albedo_tex, UV).rgb : albedo.rgb;

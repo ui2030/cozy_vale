@@ -4,6 +4,7 @@ extends Node3D
 
 const REGION := Rect2i(0, 2, 8, 4)  # 밭 구역: cell x[0..7], z[2..5]
 const SEASON_NAMES := ["spring", "summer", "autumn", "winter"]
+const ToonChar := preload("res://common/toon_character.gd")
 
 var tiles := {}          # Vector2i → {tilled, crop_id, planted_abs_day, watered_growth_days, watered}
 var shipping_bin := []   # [{id, qty}] — 인벤에서 즉시 차감돼 여기 저장(중복·증발 방지)
@@ -131,8 +132,8 @@ func _refresh(cell: Vector2i) -> void:
 		_nodes[cell] = _make_nodes(cell)
 	var n: Dictionary = _nodes[cell]
 	# 흙: 물 주면 진하게
-	var soil_mat: StandardMaterial3D = n["soil"].material_override
-	soil_mat.albedo_color = Color(0.30, 0.20, 0.13) if t.get("watered", false) else Color(0.45, 0.31, 0.20)
+	var soil_mat: ShaderMaterial = n["soil"].material_override
+	soil_mat.set_shader_parameter("albedo", Color(0.30, 0.20, 0.13) if t.get("watered", false) else Color(0.45, 0.31, 0.20))
 	# 작물: 성장률로 높이·색
 	var crop: MeshInstance3D = n["crop"]
 	var cid: String = t.get("crop_id", "")
@@ -143,22 +144,22 @@ func _refresh(cell: Vector2i) -> void:
 		var frac := clampf(float(t["watered_growth_days"]) / float(maxi(GameData.grow_days(cid), 1)), 0.05, 1.0)
 		crop.scale = Vector3(1, frac, 1)
 		crop.position = _center(cell) + Vector3(0, 0.11 + 0.35 * frac, 0)  # 밑면 접지
-		var cm: StandardMaterial3D = crop.material_override
-		cm.albedo_color = Color(0.85, 0.75, 0.25) if is_mature_at(cell) else Color(0.35, 0.62, 0.28)
+		var cm: ShaderMaterial = crop.material_override
+		cm.set_shader_parameter("albedo", Color(0.85, 0.75, 0.25) if is_mature_at(cell) else Color(0.35, 0.62, 0.28))
 
 func _make_nodes(cell: Vector2i) -> Dictionary:
 	var soil := MeshInstance3D.new()
 	var sm := BoxMesh.new()
 	sm.size = Vector3(0.92, 0.1, 0.92)
 	soil.mesh = sm
-	soil.material_override = StandardMaterial3D.new()
+	soil.material_override = ToonChar.make_solid(Color(0.45, 0.31, 0.20), 0.0)
 	soil.position = _center(cell) + Vector3(0, 0.06, 0)
 	add_child(soil)
 	var crop := MeshInstance3D.new()
 	var cm := BoxMesh.new()
 	cm.size = Vector3(0.35, 0.7, 0.35)
 	crop.mesh = cm
-	crop.material_override = StandardMaterial3D.new()
+	crop.material_override = ToonChar.make_solid(Color(0.35, 0.62, 0.28), 0.005)
 	# 아래 기준으로 자라게 원점을 밑면에
 	crop.position = _center(cell) + Vector3(0, 0.1, 0)
 	crop.scale = Vector3(1, 0.05, 1)
