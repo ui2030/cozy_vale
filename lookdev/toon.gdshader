@@ -1,30 +1,36 @@
-// 셀 셰이딩 — 2~3단 계단식 (DESIGN.md 11.5)
-// NdotL을 밴드로 양자화해 그림자 경계를 뚜렷하게.
+// 수채+연필 톤 셀 셰이딩 (레퍼런스: 사용자 컨셉 스케치)
+// 딱딱한 계단 대신 부드러운 단조(soft terminator) + 따뜻한 그림자 틴트
+// + 가장자리 물감 몰림(fresnel edge darkening).
 shader_type spatial;
 render_mode cull_back;
 
 uniform vec4 albedo : source_color = vec4(0.9, 0.6, 0.7, 1.0);
-// 밴드 임계값 (밝음/중간/그림자)
-uniform float band_hi : hint_range(0.0, 1.0) = 0.5;
-uniform float band_lo : hint_range(0.0, 1.0) = 0.0;
-uniform float shade_mid : hint_range(0.0, 1.0) = 0.6;
-uniform float shade_dark : hint_range(0.0, 1.0) = 0.32;
+// 모델 텍스처가 있으면 사용 (없으면 위 albedo 단색)
+uniform sampler2D albedo_tex : source_color, hint_default_white;
+uniform bool use_tex = false;
+// 그림자 밝기(0=검정, 1=밝음) — 수채는 순검정 안 씀
+uniform float shadow_level : hint_range(0.0, 1.0) = 0.55;
+// 그림자에 섞을 따뜻한 색조(수채 그림자는 채색됨)
+uniform vec4 shadow_tint : source_color = vec4(0.78, 0.66, 0.72, 1.0);
+// 단조 경계 부드러움(0=하드셀, 0.2=수채)
+uniform float terminator_soft : hint_range(0.01, 0.4) = 0.18;
+// 가장자리 물감 몰림
+uniform vec4 edge_pigment : source_color = vec4(0.55, 0.45, 0.52, 1.0);
+uniform float edge_strength : hint_range(0.0, 1.0) = 0.28;
 
 void fragment() {
-	ALBEDO = albedo.rgb;
+	vec3 base = use_tex ? texture(albedo_tex, UV).rgb : albedo.rgb;
+	float fres = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 3.0);
+	ALBEDO = mix(base, edge_pigment.rgb, fres * edge_strength);
 	ROUGHNESS = 1.0;
 	SPECULAR = 0.0;
 }
 
 void light() {
-	float ndl = dot(normalize(NORMAL), normalize(LIGHT));
-	float band;
-	if (ndl > band_hi) {
-		band = 1.0;
-	} else if (ndl > band_lo) {
-		band = shade_mid;
-	} else {
-		band = shade_dark;
-	}
-	DIFFUSE_LIGHT += ALBEDO * LIGHT_COLOR * ATTENUATION * band;
+	float ndl = dot(normalize(NORMAL), normalize(LIGHT)) * 0.5 + 0.5;
+	// 부드러운 단조: 경계 근처만 완만, 나머진 평평 (수채 느낌)
+	float t = smoothstep(0.5 - terminator_soft, 0.5 + terminator_soft, ndl);
+	float shade = mix(shadow_level, 1.0, t);
+	vec3 tint = mix(shadow_tint.rgb, vec3(1.0), t);  // 그림자쪽에 따뜻한 색
+	DIFFUSE_LIGHT += ALBEDO * LIGHT_COLOR * ATTENUATION * shade * tint;
 }

@@ -6,3 +6,6 @@
 
 # 룩데브 회귀 스크린샷 산출물 (git 추적 안 함)
 /lookdev/shots/
+
+# 테스트용 GLB (사용자 실제 캐릭터는 나중 명시적 추가)
+/lookdev/character/*.glb

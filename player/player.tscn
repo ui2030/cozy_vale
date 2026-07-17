@@ -1,0 +1,28 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://player/player.gd" id="1"]
+
+[sub_resource type="CapsuleShape3D" id="cap_col"]
+radius = 0.4
+height = 1.6
+
+[sub_resource type="CapsuleMesh" id="cap_mesh"]
+radius = 0.4
+height = 1.6
+
+[sub_resource type="SphereShape3D" id="area_shape"]
+radius = 1.3
+
+[node name="Player" type="CharacterBody3D" groups=["player"]]
+script = ExtResource("1")
+
+[node name="Mesh" type="MeshInstance3D" parent="."]
+mesh = SubResource("cap_mesh")
+
+[node name="Collision" type="CollisionShape3D" parent="."]
+shape = SubResource("cap_col")
+
+[node name="InteractArea" type="Area3D" parent="."]
+
+[node name="AreaShape" type="CollisionShape3D" parent="InteractArea"]
+shape = SubResource("area_shape")
