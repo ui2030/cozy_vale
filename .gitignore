@@ -1,0 +1,8 @@
+# Godot 4+
+.godot/
+/android/
+/builds/
+*.tmp
+
+# 룩데브 회귀 스크린샷 산출물 (git 추적 안 함)
+/lookdev/shots/

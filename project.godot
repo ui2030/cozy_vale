@@ -1,0 +1,21 @@
+; Cozy Vale — Godot 4.7.1 stable (Forward+, 셀 셰이딩 룩데브)
+; DESIGN.md 11.5 기준 고정 버전.
+
+config_version=5
+
+[application]
+
+config/name="Cozy Vale"
+run/main_scene="res://lookdev/lookdev.tscn"
+config/features=PackedStringArray("4.7", "Forward Plus")
+
+[display]
+
+window/size/viewport_width=1280
+window/size/viewport_height=720
+
+[rendering]
+
+renderer/rendering_method="forward_plus"
+; auto-exposure off — 밝기 튐 방지 (11.5)
+camera/exposure/multiplier=1.0
