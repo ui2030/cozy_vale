@@ -1,9 +1,10 @@
 extends CanvasLayer
-# 시각/요일/계절 + 소지금 + 선택 씨앗 (GameClock·Player 구독).
+# 시각/요일/계절 + 소지금 + 선택 씨앗 + 대화/선물 토스트.
 
 @onready var _label: Label = $Label
+@onready var _msg: Label = $MsgLabel
+@onready var _msg_timer: Timer = $MsgTimer
 
-# 기본 폰트가 한글 미지원 → 지금은 영문 표기 (한글 폰트 번들은 폴리시 단계)
 const SEASON_EN := ["Spring", "Summer", "Autumn", "Winter"]
 const WD_EN := ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
@@ -15,7 +16,14 @@ func _ready() -> void:
 	_player = get_tree().get_first_node_in_group("player")
 	if _player != null:
 		_player.stats_changed.connect(_refresh)
+		_player.message.connect(_on_message)
+	_msg_timer.timeout.connect(func(): _msg.text = "")
+	_msg.text = ""
 	_refresh()
+
+func _on_message(text: String) -> void:
+	_msg.text = text
+	_msg_timer.start(2.5)
 
 func _refresh() -> void:
 	var c := GameClock

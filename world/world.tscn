@@ -1,10 +1,11 @@
-[gd_scene load_steps=18 format=3]
+[gd_scene load_steps=19 format=3]
 
 [ext_resource type="Script" path="res://world/world.gd" id="1"]
 [ext_resource type="PackedScene" path="res://player/player.tscn" id="2"]
 [ext_resource type="Script" path="res://world/camera.gd" id="3"]
 [ext_resource type="PackedScene" path="res://ui/hud.tscn" id="4"]
 [ext_resource type="Script" path="res://farm/farm_system.gd" id="5"]
+[ext_resource type="Script" path="res://npc/npc_system.gd" id="6"]
 
 [sub_resource type="PlaneMesh" id="ground_mesh"]
 size = Vector2(40, 40)
@@ -60,6 +61,9 @@ shape = SubResource("ground_col")
 
 [node name="FarmSystem" type="Node3D" parent="."]
 script = ExtResource("5")
+
+[node name="NpcSystem" type="Node3D" parent="."]
+script = ExtResource("6")
 
 [node name="Bed" type="Area3D" parent="." groups=["bed"]]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 5, 0.4, 0)

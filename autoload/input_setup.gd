@@ -10,6 +10,7 @@ func _ready() -> void:
 	_add("interact", [KEY_E, KEY_SPACE])  # 침대/상점/판매상자
 	_add("use_tool", [KEY_F])             # 조준 타일에 상황별 동작(괭이·씨앗·물·수확)
 	_add("cycle_seed", [KEY_Q])           # 선택 씨앗 순환
+	_add("give", [KEY_G])                 # 근처 주민에게 선물
 
 func _add(action: String, keys: Array) -> void:
 	if InputMap.has_action(action):

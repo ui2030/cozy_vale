@@ -1,7 +1,8 @@
 extends CharacterBody3D
 # 플레이어 이동 + 농사 상호작용 (DESIGN 11.4). 조준 = 바라보는 앞 1타일.
 
-signal stats_changed  # 소지금/인벤/선택 변경 → HUD 갱신
+signal stats_changed       # 소지금/인벤/선택 변경 → HUD 갱신
+signal message(text: String)  # 대화/선물/상점 피드백 → HUD 토스트
 
 @export var speed := 5.0
 @export var gravity := 24.0
@@ -12,12 +13,14 @@ var selected_seed := ""      # 선택 씨앗 id (구매·심기 대상)
 
 var _last_dir := Vector3(0, 0, 1)  # 조준 방향 (정지시 유지)
 var _farm: Node
+var _npcsys: Node
 var _highlight: MeshInstance3D
 
 @onready var _interact_area: Area3D = $InteractArea
 
 func _ready() -> void:
 	_farm = get_tree().get_first_node_in_group("farm")
+	_npcsys = get_tree().get_first_node_in_group("npc_system")
 	_make_highlight()
 	if selected_seed == "":
 		_select_first_seed()
@@ -48,6 +51,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		_use_tool()
 	elif event.is_action_pressed("cycle_seed"):
 		_cycle_seed()
+	elif event.is_action_pressed("give"):
+		_give()
 
 # ── 조준 ───────────────────────────────────────────────────────
 func _cardinal(d: Vector3) -> Vector3:
@@ -107,6 +112,28 @@ func _try_interact() -> void:
 			_buy_seed(); return
 		if a.is_in_group("bin"):
 			_deposit_all(); return
+		if a.is_in_group("npc"):
+			var r: Dictionary = _npcsys.talk(a.get_meta("npc_id"))
+			message.emit(r["msg"]); return
+
+func _give() -> void:
+	var npc_area := _nearest_npc()
+	if npc_area == null:
+		return
+	for e in inventory:
+		if GameData.crops.has(e["id"]):  # 작물만 선물
+			var r: Dictionary = _npcsys.give(npc_area.get_meta("npc_id"), e["id"])
+			if r["ok"]:
+				_remove_item(e["id"], 1)
+			message.emit(r["msg"])
+			return
+	message.emit("줄 작물 없음")
+
+func _nearest_npc() -> Area3D:
+	for a in _interact_area.get_overlapping_areas():
+		if a.is_in_group("npc"):
+			return a
+	return null
 
 func _sleep() -> void:
 	GameClock.sleep_to_morning()   # clock → day_changed 구독자(농사) 정산
@@ -115,15 +142,21 @@ func _sleep() -> void:
 func _buy_seed() -> void:
 	if selected_seed == "":
 		return
+	if GameClock.weekday() == 6:  # 일요일 휴무
+		message.emit("Shop closed (Sun)")
+		return
 	var cost := GameData.seed_cost(selected_seed)
 	if gold >= cost:
 		gold -= cost
 		_add_item(selected_seed, 1)
+		message.emit("Bought " + GameData.display_name(GameData.crop_from_seed(selected_seed)) + " seed")
+	else:
+		message.emit("골드 부족")
 
 func _deposit_all() -> void:
 	for e in inventory.duplicate():
 		if GameData.crops.has(e["id"]):  # 작물만 판매상자로
-			var accepted := _farm.deposit(e["id"], int(e["qty"]))  # 실제 수락량만 차감(증발 방지)
+			var accepted: int = _farm.deposit(e["id"], int(e["qty"]))  # 실제 수락량만 차감(증발 방지)
 			if accepted > 0:
 				_remove_item(e["id"], accepted)
 

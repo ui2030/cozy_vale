@@ -2,7 +2,7 @@ extends Node
 # 세이브 (DESIGN 11.1). JSON 단일 파일, 원자적 교체, save_version 마이그레이션, bak 폴백.
 # 저장 요청은 큐잉 후 다음 프레임 처리 (신호 연결 순서 문제 회피 — Codex 지적).
 
-const VERSION := 2
+const VERSION := 3
 const F_JSON := "user://save.json"
 const F_BAK := "user://save.bak"
 const F_TMP := "user://save.tmp"
@@ -19,6 +19,11 @@ var _migrations := {
 		pl["inventory"] = pl.get("inventory", [])
 		pl["gold"] = pl.get("gold", 500)
 		d["player"] = pl
+		return d,
+	2: func(d: Dictionary) -> Dictionary:  # v2 → v3 (주민)
+		var sys: Dictionary = d.get("systems", {})
+		sys["npc"] = sys.get("npc", {})
+		d["systems"] = sys
 		return d,
 }
 
@@ -44,6 +49,9 @@ func _gather() -> Dictionary:
 	var farm := _farm()
 	if farm != null and farm.has_method("save_data"):
 		data["systems"]["farming"] = farm.save_data()
+	var npc := _npc()
+	if npc != null and npc.has_method("save_data"):
+		data["systems"]["npc"] = npc.save_data()
 	return data
 
 func load_game() -> bool:
@@ -60,6 +68,9 @@ func load_game() -> bool:
 	var farm := _farm()
 	if farm != null and farm.has_method("load_data"):
 		farm.load_data(data.get("systems", {}).get("farming", {}))
+	var npc := _npc()
+	if npc != null and npc.has_method("load_data"):
+		npc.load_data(data.get("systems", {}).get("npc", {}))
 	return true
 
 func _migrate(data: Dictionary) -> Dictionary:
@@ -107,3 +118,6 @@ func _player() -> Node:
 
 func _farm() -> Node:
 	return get_tree().get_first_node_in_group("farm")
+
+func _npc() -> Node:
+	return get_tree().get_first_node_in_group("npc_system")

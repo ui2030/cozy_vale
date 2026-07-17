@@ -4,6 +4,7 @@ extends Node
 # 일반 런타임으로 실행해야 autoload(GameClock/SaveManager) 전역이 살아있음.
 
 var _farm: Node
+var _npcsys: Node
 var _stub: Node
 
 func _ready() -> void:
@@ -13,6 +14,8 @@ func _ready() -> void:
 	add_child(_stub)
 	_farm = preload("res://farm/farm_system.gd").new()
 	add_child(_farm)  # _ready: group farm 등록 + day_changed 연결
+	_npcsys = preload("res://npc/npc_system.gd").new()
+	add_child(_npcsys)  # _ready: npcs.json 스폰 + day_changed 연결
 
 	_test_clock_math()
 	_test_sleep()
@@ -20,6 +23,8 @@ func _ready() -> void:
 	_test_bak_fallback()
 	_test_migration_v1_v2()
 	_test_farm_loop()
+	_test_npc()
+	_test_save_v2_v3()
 	_test_v1_save_compat()
 	print("ALL CORE TESTS PASS")
 	get_tree().quit()
@@ -67,14 +72,14 @@ func _test_bak_fallback() -> void:
 func _test_migration_v1_v2() -> void:
 	var v1 := {"save_version": 1, "clock": {"abs_day": 3, "game_min": 400}, "player": {"pos": [1, 2, 3]}}
 	var m := SaveManager._migrate(v1)
-	assert(int(m["save_version"]) == 2, "v1 → v2")
-	assert(m["systems"]["farming"].has("tiles"), "farming.tiles 생성")
-	assert(m["systems"]["farming"].has("shipping_bin"), "shipping_bin 생성")
+	assert(int(m["save_version"]) == SaveManager.VERSION, "최신 버전까지 마이그레이션")
+	assert(m["systems"]["farming"].has("tiles"), "farming.tiles 생성(1→2)")
+	assert(m["systems"].has("npc"), "npc 생성(2→3)")
 	assert(m["player"].has("gold"), "gold 기본값 채움")
 	assert(m["player"]["pos"] == [1, 2, 3], "기존 pos 보존(전방호환)")
-	# 무버전(save_version 없음) 세이브 = v1로 간주해 마이그레이션
+	# 무버전(save_version 없음) 세이브 = v1로 간주해 최신까지 마이그레이션
 	var nover := SaveManager._migrate({"clock": {"abs_day": 1}})
-	assert(int(nover["save_version"]) == 2, "무버전 → v2")
+	assert(int(nover["save_version"]) == SaveManager.VERSION, "무버전 → 최신")
 	assert(nover["systems"]["farming"].has("tiles"), "무버전 → farming 생성")
 
 func _test_farm_loop() -> void:
@@ -101,6 +106,39 @@ func _test_farm_loop() -> void:
 	var before := int(_farm.get_tile(c2)["watered_growth_days"])
 	GameClock.sleep_to_morning()  # 물 안 줌
 	assert(int(_farm.get_tile(c2)["watered_growth_days"]) == before, "물 안 주면 성장 정지")
+
+func _test_npc() -> void:
+	GameClock.abs_day = 0  # spring D1, 생일 아님
+	GameClock.game_min = 360
+	var id := "npc.mira"
+	# 대화 +5, 하루 1회
+	var r: Dictionary = _npcsys.talk(id)
+	assert(r["ok"] and int(_npcsys.state[id]["affection_points"]) == 5, "대화 +5")
+	assert(not _npcsys.talk(id)["ok"], "하루 1회 대화")
+	assert(_npcsys.hearts(id) == 0, "5pt = 0하트")
+	# 선물 취향: Mira loved=strawberry(+40)
+	assert(_npcsys.give(id, "crop.strawberry")["ok"], "선물 성공")
+	assert(int(_npcsys.state[id]["affection_points"]) == 45, "loved +40")
+	assert(not _npcsys.give(id, "crop.turnip")["ok"], "하루 1회 선물")
+	# 싫어함 -20, 0 하한 clamp (Tom disliked=strawberry)
+	_npcsys.give("npc.tom", "crop.strawberry")
+	assert(int(_npcsys.state["npc.tom"]["affection_points"]) == 0, "disliked -20 → 0 clamp")
+	# 일변경 플래그 리셋
+	GameClock.sleep_to_morning()
+	assert(not _npcsys.state[id]["talked_today"] and not _npcsys.state[id]["gifted_today"], "일변경 리셋")
+	# 생일 ×8 + 250 상한 clamp (Mira 생일 = spring D12 = abs_day 11)
+	GameClock.abs_day = 11
+	_npcsys.state[id]["gifted_today"] = false
+	_npcsys.state[id]["affection_points"] = 0
+	assert(_npcsys._is_birthday(id), "Mira 생일 판정")
+	_npcsys.give(id, "crop.strawberry")  # 40*8=320 → 250 clamp
+	assert(int(_npcsys.state[id]["affection_points"]) == 250, "생일 loved ×8 → 250 clamp")
+
+func _test_save_v2_v3() -> void:
+	var v2 := {"save_version": 2, "systems": {"farming": {"tiles": {}, "shipping_bin": []}}, "player": {"gold": 100}}
+	var m := SaveManager._migrate(v2)
+	assert(int(m["save_version"]) == 3, "v2 → v3")
+	assert(m["systems"].has("npc"), "systems.npc 생성")
 
 func _test_v1_save_compat() -> void:
 	# A단계(v1) 세이브를 그대로 로드 → 마이그레이션되어 복원 (호환)
