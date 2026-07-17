@@ -2,16 +2,24 @@ extends Node
 # 세이브 (DESIGN 11.1). JSON 단일 파일, 원자적 교체, save_version 마이그레이션, bak 폴백.
 # 저장 요청은 큐잉 후 다음 프레임 처리 (신호 연결 순서 문제 회피 — Codex 지적).
 
-const VERSION := 1
+const VERSION := 2
 const F_JSON := "user://save.json"
 const F_BAK := "user://save.bak"
 const F_TMP := "user://save.tmp"
 
 var _queued_reason := ""
 
-# save_version v → v+1 순수 함수 체인. v1이 최신이라 아직 비어있음(구조만 선점).
+# save_version v → v+1 순수 함수 체인 (키 = from_version).
 var _migrations := {
-	# 0: func(d): d["clock"] = {...}; return d,
+	1: func(d: Dictionary) -> Dictionary:  # v1(clock/player) → v2(농사·인벤·소지금)
+		var sys: Dictionary = d.get("systems", {})
+		sys["farming"] = sys.get("farming", {"tiles": {}, "shipping_bin": []})
+		d["systems"] = sys
+		var pl: Dictionary = d.get("player", {})
+		pl["inventory"] = pl.get("inventory", [])
+		pl["gold"] = pl.get("gold", 500)
+		d["player"] = pl
+		return d,
 }
 
 func request_save(reason := "") -> void:
@@ -33,6 +41,9 @@ func _gather() -> Dictionary:
 	var p := _player()
 	if p != null and p.has_method("save_data"):
 		data["player"] = p.save_data()
+	var farm := _farm()
+	if farm != null and farm.has_method("save_data"):
+		data["systems"]["farming"] = farm.save_data()
 	return data
 
 func load_game() -> bool:
@@ -46,6 +57,9 @@ func load_game() -> bool:
 	var p := _player()
 	if p != null and p.has_method("load_data") and data.has("player"):
 		p.load_data(data["player"])
+	var farm := _farm()
+	if farm != null and farm.has_method("load_data"):
+		farm.load_data(data.get("systems", {}).get("farming", {}))
 	return true
 
 func _migrate(data: Dictionary) -> Dictionary:
@@ -90,3 +104,6 @@ func _read(path: String) -> Dictionary:
 
 func _player() -> Node:
 	return get_tree().get_first_node_in_group("player")
+
+func _farm() -> Node:
+	return get_tree().get_first_node_in_group("farm")

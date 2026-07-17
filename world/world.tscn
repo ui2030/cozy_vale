@@ -1,9 +1,10 @@
-[gd_scene load_steps=11 format=3]
+[gd_scene load_steps=18 format=3]
 
 [ext_resource type="Script" path="res://world/world.gd" id="1"]
 [ext_resource type="PackedScene" path="res://player/player.tscn" id="2"]
 [ext_resource type="Script" path="res://world/camera.gd" id="3"]
 [ext_resource type="PackedScene" path="res://ui/hud.tscn" id="4"]
+[ext_resource type="Script" path="res://farm/farm_system.gd" id="5"]
 
 [sub_resource type="PlaneMesh" id="ground_mesh"]
 size = Vector2(40, 40)
@@ -23,6 +24,24 @@ albedo_color = Color(0.75, 0.55, 0.62, 1)
 [sub_resource type="BoxShape3D" id="bed_col"]
 size = Vector3(1.6, 0.6, 2.6)
 
+[sub_resource type="BoxMesh" id="shop_mesh"]
+size = Vector3(1.5, 1.5, 1.5)
+
+[sub_resource type="StandardMaterial3D" id="shop_mat"]
+albedo_color = Color(0.5, 0.62, 0.8, 1)
+
+[sub_resource type="BoxShape3D" id="shop_col"]
+size = Vector3(1.5, 1.5, 1.5)
+
+[sub_resource type="BoxMesh" id="bin_mesh"]
+size = Vector3(1.2, 0.8, 1.2)
+
+[sub_resource type="StandardMaterial3D" id="bin_mat"]
+albedo_color = Color(0.6, 0.45, 0.3, 1)
+
+[sub_resource type="BoxShape3D" id="bin_col"]
+size = Vector3(1.2, 0.8, 1.2)
+
 [node name="World" type="Node3D"]
 script = ExtResource("1")
 
@@ -39,6 +58,9 @@ material_override = SubResource("ground_mat")
 [node name="GroundCol" type="CollisionShape3D" parent="Ground"]
 shape = SubResource("ground_col")
 
+[node name="FarmSystem" type="Node3D" parent="."]
+script = ExtResource("5")
+
 [node name="Bed" type="Area3D" parent="." groups=["bed"]]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 5, 0.4, 0)
 
@@ -49,11 +71,31 @@ material_override = SubResource("bed_mat")
 [node name="BedCol" type="CollisionShape3D" parent="Bed"]
 shape = SubResource("bed_col")
 
+[node name="Shop" type="Area3D" parent="." groups=["shop"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5, 0.75, 0)
+
+[node name="ShopMesh" type="MeshInstance3D" parent="Shop"]
+mesh = SubResource("shop_mesh")
+material_override = SubResource("shop_mat")
+
+[node name="ShopCol" type="CollisionShape3D" parent="Shop"]
+shape = SubResource("shop_col")
+
+[node name="ShippingBin" type="Area3D" parent="." groups=["bin"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2, 0.4, 4)
+
+[node name="BinMesh" type="MeshInstance3D" parent="ShippingBin"]
+mesh = SubResource("bin_mesh")
+material_override = SubResource("bin_mat")
+
+[node name="BinCol" type="CollisionShape3D" parent="ShippingBin"]
+shape = SubResource("bin_col")
+
 [node name="Camera" type="Camera3D" parent="."]
 fov = 40.0
 script = ExtResource("3")
 
 [node name="Player" parent="." instance=ExtResource("2")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2, 1)
 
 [node name="HUD" parent="." instance=ExtResource("4")]

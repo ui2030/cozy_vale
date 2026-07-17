@@ -1,5 +1,5 @@
 extends CanvasLayer
-# 시각/요일/계절 표시 — GameClock 구독만 (DESIGN 11.2).
+# 시각/요일/계절 + 소지금 + 선택 씨앗 (GameClock·Player 구독).
 
 @onready var _label: Label = $Label
 
@@ -7,20 +7,23 @@ extends CanvasLayer
 const SEASON_EN := ["Spring", "Summer", "Autumn", "Winter"]
 const WD_EN := ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
+var _player: Node
+
 func _ready() -> void:
-	GameClock.tick.connect(_on_tick)
-	GameClock.day_changed.connect(_on_day)
-	_refresh()
-
-func _on_tick(_abs_day: int, _game_min: int) -> void:
-	_refresh()
-
-func _on_day(_prev: int, _abs_day: int) -> void:
+	GameClock.tick.connect(func(_a, _m): _refresh())
+	GameClock.day_changed.connect(func(_p, _a): _refresh())
+	_player = get_tree().get_first_node_in_group("player")
+	if _player != null:
+		_player.stats_changed.connect(_refresh)
 	_refresh()
 
 func _refresh() -> void:
 	var c := GameClock
-	_label.text = "Y%d  %s D%d (%s)   %02d:%02d" % [
+	var line := "Y%d  %s D%d (%s)   %02d:%02d" % [
 		c.year(), SEASON_EN[c.season()], c.day_of_season(),
 		WD_EN[c.weekday()], c.hour(), c.minute(),
 	]
+	if _player != null:
+		var seed_name := GameData.display_name(GameData.crop_from_seed(_player.selected_seed))
+		line += "    Gold: %d    Seed: %s" % [_player.gold, seed_name]
+	_label.text = line

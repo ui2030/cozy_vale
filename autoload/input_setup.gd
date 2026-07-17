@@ -7,8 +7,9 @@ func _ready() -> void:
 	_add("move_down", [KEY_S, KEY_DOWN])
 	_add("move_left", [KEY_A, KEY_LEFT])
 	_add("move_right", [KEY_D, KEY_RIGHT])
-	_add("interact", [KEY_E, KEY_SPACE])
-	_add("use_tool", [KEY_F])  # A단계 미사용, 계약만 선점
+	_add("interact", [KEY_E, KEY_SPACE])  # 침대/상점/판매상자
+	_add("use_tool", [KEY_F])             # 조준 타일에 상황별 동작(괭이·씨앗·물·수확)
+	_add("cycle_seed", [KEY_Q])           # 선택 씨앗 순환
 
 func _add(action: String, keys: Array) -> void:
 	if InputMap.has_action(action):

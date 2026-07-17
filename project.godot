@@ -12,6 +12,7 @@ config/features=PackedStringArray("4.7", "Forward Plus")
 [autoload]
 
 InputSetup="*res://autoload/input_setup.gd"
+GameData="*res://autoload/game_data.gd"
 GameClock="*res://autoload/game_clock.gd"
 SaveManager="*res://autoload/save_manager.gd"
 
