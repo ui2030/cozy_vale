@@ -123,8 +123,9 @@ func _buy_seed() -> void:
 func _deposit_all() -> void:
 	for e in inventory.duplicate():
 		if GameData.crops.has(e["id"]):  # 작물만 판매상자로
-			_farm.deposit(e["id"], int(e["qty"]))
-			_remove_item(e["id"], int(e["qty"]))
+			var accepted := _farm.deposit(e["id"], int(e["qty"]))  # 실제 수락량만 차감(증발 방지)
+			if accepted > 0:
+				_remove_item(e["id"], accepted)
 
 # ── 소지금/인벤 ────────────────────────────────────────────────
 func add_gold(n: int) -> void:

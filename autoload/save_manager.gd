@@ -63,7 +63,7 @@ func load_game() -> bool:
 	return true
 
 func _migrate(data: Dictionary) -> Dictionary:
-	var v := int(data.get("save_version", 0))
+	var v := int(data.get("save_version", 1))  # 무버전 세이브 = 최초 포맷(v1)로 간주
 	while v < VERSION:
 		if not _migrations.has(v):
 			push_error("save_version %d → %d 마이그레이션 함수 없음" % [v, v + 1])

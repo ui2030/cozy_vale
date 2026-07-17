@@ -11,7 +11,8 @@ var _nodes := {}         # Vector2i → {soil: MeshInstance3D, crop: MeshInstanc
 
 func _ready() -> void:
 	add_to_group("farm")
-	GameClock.day_changed.connect(_on_day_changed)
+	if not GameClock.day_changed.is_connected(_on_day_changed):
+		GameClock.day_changed.connect(_on_day_changed)  # 이중구독 방지
 
 func in_region(cell: Vector2i) -> bool:
 	return REGION.has_point(cell)
@@ -183,6 +184,14 @@ func load_data(d: Dictionary) -> void:
 	tiles.clear()
 	for key in d.get("tiles", {}):
 		var parts: PackedStringArray = key.split(",")
-		tiles[Vector2i(int(parts[0]), int(parts[1]))] = d["tiles"][key]
+		var t: Dictionary = d["tiles"][key]
+		# JSON 라운드트립 int→float 정규화 (산술 필드)
+		t["watered_growth_days"] = int(t.get("watered_growth_days", 0))
+		t["planted_abs_day"] = int(t.get("planted_abs_day", -1))
+		t["watered"] = bool(t.get("watered", false))
+		t["tilled"] = bool(t.get("tilled", true))
+		tiles[Vector2i(int(parts[0]), int(parts[1]))] = t
 	shipping_bin = d.get("shipping_bin", []).duplicate(true)
+	for e in shipping_bin:
+		e["qty"] = int(e["qty"])
 	_refresh_all()

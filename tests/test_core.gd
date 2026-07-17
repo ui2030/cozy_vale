@@ -72,6 +72,10 @@ func _test_migration_v1_v2() -> void:
 	assert(m["systems"]["farming"].has("shipping_bin"), "shipping_bin 생성")
 	assert(m["player"].has("gold"), "gold 기본값 채움")
 	assert(m["player"]["pos"] == [1, 2, 3], "기존 pos 보존(전방호환)")
+	# 무버전(save_version 없음) 세이브 = v1로 간주해 마이그레이션
+	var nover := SaveManager._migrate({"clock": {"abs_day": 1}})
+	assert(int(nover["save_version"]) == 2, "무버전 → v2")
+	assert(nover["systems"]["farming"].has("tiles"), "무버전 → farming 생성")
 
 func _test_farm_loop() -> void:
 	GameClock.abs_day = 0
