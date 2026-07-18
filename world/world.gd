@@ -61,6 +61,13 @@ func _shot() -> void:
 	# 플레이어 착지 + 시계 진행 후 촬영
 	GameClock.state = GameClock.State.FAST
 	await get_tree().create_timer(1.5).timeout
+	if "walkshot" in OS.get_cmdline_user_args():  # 검증용: 걷기 스트라이드 프레임 고정
+		var pw := get_tree().get_first_node_in_group("player")
+		if pw != null and pw._anim != null and pw._anim.has_animation("walk"):
+			pw.set_physics_process(false)  # 정지 중 idle 덮어쓰기 차단
+			pw._face_dir(Vector3(1, 0, 0))  # +X 향해 측면 프로필
+			pw._anim.play("walk")
+			pw._anim.seek(0.35, true)  # 스트라이드 중간 프레임
 	await RenderingServer.frame_post_draw
 	var img := get_viewport().get_texture().get_image()
 	DirAccess.make_dir_recursive_absolute("res://lookdev/shots")
