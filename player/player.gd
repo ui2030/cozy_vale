@@ -73,6 +73,7 @@ func _is_fishing() -> bool:
 func _physics_process(delta: float) -> void:
 	if GameClock.state == GameClock.State.PAUSED or _is_fishing():  # 메뉴/낚시 = 조작 정지
 		velocity = Vector3.ZERO
+		_play_anim("idle")  # 걷던 중 정지돼도 제자리걸음 안 남게
 		return
 	if not is_on_floor():
 		velocity.y -= gravity * delta
