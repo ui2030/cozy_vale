@@ -11,6 +11,7 @@ var _title: Label
 var _grid: GridContainer
 
 func _ready() -> void:
+	add_to_group("calendar_panel")  # 일시정지 메뉴가 열릴 때 닫도록
 	visible = false
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	set_anchors_preset(Control.PRESET_FULL_RECT)

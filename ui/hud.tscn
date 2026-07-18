@@ -1,7 +1,8 @@
-[gd_scene load_steps=3 format=3]
+[gd_scene load_steps=4 format=3]
 
 [ext_resource type="Script" path="res://ui/hud.gd" id="1"]
 [ext_resource type="Script" path="res://ui/calendar_panel.gd" id="2"]
+[ext_resource type="Script" path="res://ui/pause_menu.gd" id="3"]
 
 [node name="HUD" type="CanvasLayer"]
 script = ExtResource("1")
@@ -26,3 +27,11 @@ one_shot = true
 
 [node name="CalendarPanel" type="Control" parent="."]
 script = ExtResource("2")
+
+[node name="PauseMenu" type="Control" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("3")

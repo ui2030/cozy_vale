@@ -42,6 +42,9 @@ func _ready() -> void:
 	stats_changed.emit()
 
 func _physics_process(delta: float) -> void:
+	if GameClock.state == GameClock.State.PAUSED:  # 메뉴 열림 = 조작 정지
+		velocity = Vector3.ZERO
+		return
 	if not is_on_floor():
 		velocity.y -= gravity * delta
 	else:
@@ -60,6 +63,8 @@ func _physics_process(delta: float) -> void:
 	_update_highlight()
 
 func _unhandled_input(event: InputEvent) -> void:
+	if GameClock.state == GameClock.State.PAUSED:  # 메뉴 열림 = 상호작용 차단
+		return
 	if event.is_action_pressed("interact"):
 		_try_interact()
 	elif event.is_action_pressed("use_tool"):

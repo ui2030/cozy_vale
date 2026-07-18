@@ -28,6 +28,7 @@ func _ready() -> void:
 	_test_v1_save_compat()
 	_test_calendar()
 	_test_festival()
+	_test_pause_menu()
 	print("ALL CORE TESTS PASS")
 	get_tree().quit()
 
@@ -172,6 +173,16 @@ func _test_festival() -> void:
 	fest.evaluate()
 	assert(not _npcsys._festival_active, "축제 종료")
 	assert(_npcsys.npc_nodes[id].position.distance_to(home_pos) < 0.01, "집 복귀")
+
+func _test_pause_menu() -> void:
+	var menu := preload("res://ui/pause_menu.gd").new()
+	add_child(menu)  # _ready: 뷰 빌드
+	GameClock.state = GameClock.State.NORMAL
+	menu.open_menu()
+	assert(GameClock.state == GameClock.State.PAUSED, "메뉴 열림 → PAUSED")
+	assert(menu.visible, "메뉴 표시")
+	menu.close_menu()
+	assert(GameClock.state == GameClock.State.NORMAL, "메뉴 닫힘 → 이전 상태 복원")
 
 func _test_v1_save_compat() -> void:
 	# A단계(v1) 세이브를 그대로 로드 → 마이그레이션되어 복원 (호환)
