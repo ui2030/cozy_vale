@@ -18,10 +18,15 @@ var _highlight: MeshInstance3D
 
 @onready var _interact_area: Area3D = $InteractArea
 
-const CAT_GLB := "res://assets/cat.glb"
+const CAT_GLB := "res://assets/cat_anim.glb"  # idle/walk 애니 포함 (cat.glb 교체 아님)
 const ToonChar := preload("res://common/toon_character.gd")  # class_name 대신 preload(헤드리스 안전)
 @export var visual_scale := 2.1
 @export var visual_y := -0.85  # 발바닥을 캡슐 밑면에 맞춤 (스크린샷 보고 튜닝)
+# walk 재생속도 배율. 무슬립 이론값은 ~8.9(치비 다리엔 과속) → 가독 우선 절충값, 스크린샷 튜닝.
+@export var walk_speed_scale := 1.6
+
+var _anim: AnimationPlayer
+var _cur_anim := ""
 
 func _setup_visual() -> void:
 	var cat: Node3D = ToonChar.load_glb(CAT_GLB, 0.004)
@@ -30,8 +35,22 @@ func _setup_visual() -> void:
 	$Mesh.visible = false
 	cat.scale = Vector3(visual_scale, visual_scale, visual_scale)
 	cat.position.y = visual_y
-	cat.rotation.y = PI  # cat.glb의 앞=+Z, Godot look_at은 -Z 기준 → 180° 보정 (실측 확정)
+	cat.rotation.y = PI  # 앞=+Z, Godot look_at은 -Z 기준 → 180° 보정 (실측 확정)
 	add_child(cat)
+	_anim = ToonChar.find_anim(cat)
+	if _anim != null:
+		for n in ["idle", "walk"]:
+			if _anim.has_animation(n):
+				_anim.get_animation(n).loop_mode = Animation.LOOP_LINEAR
+		_play_anim("idle")
+
+# walk/idle 전환 (0.2s 블렌드). 같은 클립 재요청은 무시(재시작 방지)
+func _play_anim(clip: String) -> void:
+	if _anim == null or _cur_anim == clip or not _anim.has_animation(clip):
+		return
+	_cur_anim = clip
+	var spd := walk_speed_scale if clip == "walk" else 1.0
+	_anim.play(clip, 0.2, spd)
 
 func _ready() -> void:
 	_farm = get_tree().get_first_node_in_group("farm")
@@ -60,6 +79,8 @@ func _physics_process(delta: float) -> void:
 
 	if dir.length() > 0.1:
 		_face_dir(dir)
+	# 수평 속도로 walk/idle 전환
+	_play_anim("walk" if Vector2(velocity.x, velocity.z).length() > 0.1 else "idle")
 	_update_highlight()
 
 # 이동/조준 방향으로 몸을 돌림 (_last_dir = 조준 기준, 건드리지 않음)
