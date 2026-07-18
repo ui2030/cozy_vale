@@ -30,9 +30,13 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("pause_menu"):
 		if visible:
 			close_menu()
-		else:
+		elif not _sleep_active():  # 취침 확인/페이드 중엔 열지 않음 (PAUSED 소유 충돌 방지)
 			open_menu()
 		get_viewport().set_input_as_handled()
+
+func _sleep_active() -> bool:
+	var ss := get_tree().get_first_node_in_group("sleep_screen")
+	return ss != null and ss.is_active()
 
 func open_menu() -> void:
 	_prev_state = GameClock.state

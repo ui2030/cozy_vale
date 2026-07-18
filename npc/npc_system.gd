@@ -64,7 +64,15 @@ func talk(id: String) -> Dictionary:
 		gain *= FESTIVAL_MULT
 		extra = "  (축제 ×%d)" % FESTIVAL_MULT
 	_add(id, gain)
-	return {"ok": true, "msg": "%s  H%d%s" % [nm, hearts(id), extra]}
+	return {"ok": true, "msg": "%s: %s  H%d%s" % [nm, _dialogue_line(id), hearts(id), extra]}
+
+# 아키타입별 대사 랜덤 1줄 (축제 중이면 축제 풀 우선). 계절·호감도 분기는 H단계 몫.
+func _dialogue_line(id: String) -> String:
+	var arche: String = GameData.npcs[id]["archetype"]
+	var pool: Dictionary = GameData.dialogues.get(arche, {})
+	var fest: Array = pool.get("festival", [])
+	var lines: Array = fest if (_festival_active and not fest.is_empty()) else pool.get("normal", [])
+	return "" if lines.is_empty() else lines[randi() % lines.size()]
 
 # ── 축제 (FestivalSystem이 상태만 설정, 호감도·이동은 여기 소유) ──
 func enter_festival(plaza: Vector2) -> void:

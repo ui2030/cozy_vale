@@ -21,6 +21,10 @@ func _ready() -> void:
 	get_tree().call_group("festival_system", "evaluate")
 	if "pausemenu" in OS.get_cmdline_user_args():  # 스크린샷 검증용 메뉴 열기
 		get_tree().call_group("pause_menu", "open_menu")
+	if "bedshot" in OS.get_cmdline_user_args():  # 스크린샷 검증용: 침대 옆(프롬프트+라벨)
+		var pb := get_tree().get_first_node_in_group("player")
+		if pb != null:
+			pb.global_position = Vector3(3.6, 2, 0)
 
 # StandardMaterial3D 정적 메시 → 곡면 툰 (투명물=조준칸 제외)
 func _convert_statics(node: Node) -> void:

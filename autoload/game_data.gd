@@ -7,12 +7,14 @@ const SEASON_IDS := ["spring", "summer", "autumn", "winter"]
 var crops := {}            # crop_id → 정의
 var npcs := {}             # npc_id → 정의
 var calendar := {}         # festival_id → 정의 (축제 선언)
+var dialogues := {}        # archetype → {normal:[], festival:[]}
 var _seed_to_crop := {}    # seed_id → crop_id
 
 func _ready() -> void:
 	crops = _load_json("res://data/crops.json")
 	npcs = _load_json("res://data/npcs.json")
 	calendar = _load_json("res://data/calendar.json")
+	dialogues = _load_json("res://data/dialogues.json")
 	for cid in crops:
 		_seed_to_crop[crops[cid]["seed_id"]] = cid
 	_validate()  # has_item_id가 seed 포함해야 하므로 매핑 뒤에
@@ -49,6 +51,11 @@ func _validate() -> void:
 		assert(int(f["day"]) >= 1 and int(f["day"]) <= GameClock.DAYS_PER_SEASON, "%s day 범위 밖: %d" % [fid, int(f["day"])])
 		assert(int(f["start_min"]) < int(f["end_min"]), "%s start_min < end_min 위반" % fid)
 		assert(f["plaza"] is Array and f["plaza"].size() == 2, "%s plaza = [x,z] 아님" % fid)
+	# 대사 참조 무결성: 모든 NPC 아키타입에 대사 풀 존재 + normal 비어있지 않음
+	for nid in npcs:
+		var arche: String = npcs[nid].get("archetype", "")
+		assert(dialogues.has(arche), "%s archetype '%s' 대사 풀 없음" % [nid, arche])
+		assert(not dialogues[arche].get("normal", []).is_empty(), "%s normal 대사 비어있음" % arche)
 
 # 통합 아이템 ID 레지스트리 (현재 = 작물 + 씨앗. 도구·채집물 추가시 여기 확장)
 func has_item_id(item_id: String) -> bool:

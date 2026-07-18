@@ -81,6 +81,16 @@ material_override = SubResource("bed_mat")
 [node name="BedCol" type="CollisionShape3D" parent="Bed"]
 shape = SubResource("bed_col")
 
+[node name="Label" type="Label3D" parent="Bed"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.2, 0)
+billboard = 1
+no_depth_test = true
+fixed_size = true
+pixel_size = 0.0007
+font_size = 96
+outline_size = 24
+text = "침대"
+
 [node name="Shop" type="Area3D" parent="." groups=["shop"]]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5, 0.75, 0)
 
@@ -91,6 +101,16 @@ material_override = SubResource("shop_mat")
 [node name="ShopCol" type="CollisionShape3D" parent="Shop"]
 shape = SubResource("shop_col")
 
+[node name="Label" type="Label3D" parent="Shop"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.3, 0)
+billboard = 1
+no_depth_test = true
+fixed_size = true
+pixel_size = 0.0007
+font_size = 96
+outline_size = 24
+text = "상점"
+
 [node name="ShippingBin" type="Area3D" parent="." groups=["bin"]]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2, 0.4, 4)
 
@@ -100,6 +120,16 @@ material_override = SubResource("bin_mat")
 
 [node name="BinCol" type="CollisionShape3D" parent="ShippingBin"]
 shape = SubResource("bin_col")
+
+[node name="Label" type="Label3D" parent="ShippingBin"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.1, 0)
+billboard = 1
+no_depth_test = true
+fixed_size = true
+pixel_size = 0.0007
+font_size = 96
+outline_size = 24
+text = "판매 상자"
 
 [node name="Camera" type="Camera3D" parent="."]
 fov = 40.0

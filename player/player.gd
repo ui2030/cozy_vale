@@ -123,18 +123,51 @@ func _use_tool() -> void:
 		return
 	_farm.till(cell)  # 맨땅 → 괭이질
 
-# ── 상호작용 (침대/상점/판매상자) ──────────────────────────────
-func _try_interact() -> void:
+# ── 상호작용 (침대/상점/판매상자/대화) ─────────────────────────
+# 겹친 대상 중 가장 가까운 것 {kind, area}. 프롬프트·실행 공용 (판정 단일화).
+func interact_target() -> Dictionary:
+	var best: Area3D = null
+	var best_kind := ""
+	var best_d := INF
 	for a in _interact_area.get_overlapping_areas():
-		if a.is_in_group("bed"):
-			_sleep(); return
-		if a.is_in_group("shop"):
-			_buy_seed(); return
-		if a.is_in_group("bin"):
-			_deposit_all(); return
-		if a.is_in_group("npc"):
-			var r: Dictionary = _npcsys.talk(a.get_meta("npc_id"))
-			message.emit(r["msg"]); return
+		var kind := _area_kind(a)
+		if kind == "":
+			continue
+		var d := global_position.distance_squared_to(a.global_position)
+		if d < best_d:
+			best_d = d; best = a; best_kind = kind
+	return {} if best == null else {"kind": best_kind, "area": best}
+
+func _area_kind(a: Area3D) -> String:
+	for k in ["bed", "shop", "bin", "npc"]:
+		if a.is_in_group(k):
+			return k
+	return ""
+
+# HUD 프롬프트 문구 (대상 없으면 "")
+func interact_prompt() -> String:
+	var t := interact_target()
+	if t.is_empty():
+		return ""
+	match t["kind"]:
+		"bed": return "E: 취침"
+		"shop": return "E: 상점"
+		"bin": return "E: 판매 상자"
+		"npc": return "E: 대화 — " + GameData.npcs[t["area"].get_meta("npc_id")]["name"]
+	return ""
+
+func _try_interact() -> void:
+	var t := interact_target()
+	if t.is_empty():
+		message.emit("주변에 상호작용할 것이 없어요")
+		return
+	match t["kind"]:
+		"bed": _sleep()
+		"shop": _buy_seed()
+		"bin": _deposit_all()
+		"npc":
+			var r: Dictionary = _npcsys.talk(t["area"].get_meta("npc_id"))
+			message.emit(r["msg"])
 
 func _give() -> void:
 	var npc_area := _nearest_npc()
@@ -156,8 +189,12 @@ func _nearest_npc() -> Area3D:
 	return null
 
 func _sleep() -> void:
-	GameClock.sleep_to_morning()   # clock → day_changed 구독자(농사) 정산
-	SaveManager.request_save("sleep")  # 그 다음 저장 (큐잉)
+	var ss := get_tree().get_first_node_in_group("sleep_screen")
+	if ss != null:
+		ss.request_sleep()  # 확인 다이얼로그 → 페이드 → sleep+저장
+	else:  # 폴백: 화면 없으면 즉시 (안전)
+		GameClock.sleep_to_morning()
+		SaveManager.request_save("sleep")
 
 func _buy_seed() -> void:
 	if selected_seed == "":

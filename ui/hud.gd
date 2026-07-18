@@ -4,6 +4,7 @@ extends CanvasLayer
 @onready var _label: Label = $Label
 @onready var _msg: Label = $MsgLabel
 @onready var _msg_timer: Timer = $MsgTimer
+@onready var _prompt: Label = $PromptLabel
 
 const SEASON_EN := ["Spring", "Summer", "Autumn", "Winter"]
 const WD_EN := ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
@@ -11,6 +12,7 @@ const WD_EN := ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 var _player: Node
 
 func _ready() -> void:
+	add_to_group("hud")  # sleep_screen 등이 토스트 호출
 	GameClock.tick.connect(func(_a, _m): _refresh())
 	GameClock.day_changed.connect(func(_p, _a): _refresh(); _event_toast())
 	_player = get_tree().get_first_node_in_group("player")
@@ -19,7 +21,15 @@ func _ready() -> void:
 		_player.message.connect(_on_message)
 	_msg_timer.timeout.connect(func(): _msg.text = "")
 	_msg.text = ""
+	_prompt.text = ""
 	_refresh()
+
+func _process(_delta: float) -> void:
+	if _player != null:
+		_prompt.text = _player.interact_prompt()
+
+func toast(text: String) -> void:  # 공용 토스트 진입점
+	_on_message(text)
 
 func _on_message(text: String) -> void:
 	_msg.text = text

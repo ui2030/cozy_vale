@@ -1,8 +1,9 @@
-[gd_scene load_steps=4 format=3]
+[gd_scene load_steps=5 format=3]
 
 [ext_resource type="Script" path="res://ui/hud.gd" id="1"]
 [ext_resource type="Script" path="res://ui/calendar_panel.gd" id="2"]
 [ext_resource type="Script" path="res://ui/pause_menu.gd" id="3"]
+[ext_resource type="Script" path="res://ui/sleep_screen.gd" id="4"]
 
 [node name="HUD" type="CanvasLayer"]
 script = ExtResource("1")
@@ -25,6 +26,21 @@ theme_override_font_sizes/font_size = 22
 [node name="MsgTimer" type="Timer" parent="."]
 one_shot = true
 
+[node name="PromptLabel" type="Label" parent="."]
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -160.0
+offset_top = -56.0
+offset_right = 160.0
+offset_bottom = -20.0
+grow_horizontal = 2
+grow_vertical = 0
+theme_override_font_sizes/font_size = 24
+horizontal_alignment = 1
+
 [node name="CalendarPanel" type="Control" parent="."]
 script = ExtResource("2")
 
@@ -35,3 +51,11 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("3")
+
+[node name="SleepScreen" type="Control" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("4")
