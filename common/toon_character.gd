@@ -5,15 +5,15 @@ extends RefCounted
 const TOON := preload("res://lookdev/toon.gdshader")
 const OUTLINE := preload("res://lookdev/outline.gdshader")
 
-# GLB 로드해 툰 적용된 씬 반환 (실패시 null)
-static func load_glb(path: String, outline_width: float) -> Node3D:
+# GLB 로드해 툰 적용된 씬 반환 (실패시 null). tint = 개체 색조 곱(기본 흰=무변경)
+static func load_glb(path: String, outline_width: float, tint := Color.WHITE) -> Node3D:
 	var doc := GLTFDocument.new()
 	var state := GLTFState.new()
 	if doc.append_from_file(path, state) != OK:
 		push_error("GLB 로드 실패: " + path)
 		return null
 	var model := doc.generate_scene(state)
-	apply(model, outline_width)
+	apply(model, outline_width, tint)
 	return model
 
 # GLB에 딸려온 AnimationPlayer 찾기 (generate_scene이 루트 밑에 둠). 없으면 null
@@ -26,7 +26,7 @@ static func find_anim(node: Node) -> AnimationPlayer:
 			return a
 	return null
 
-static func apply(node: Node, outline_width: float) -> void:
+static func apply(node: Node, outline_width: float, tint := Color.WHITE) -> void:
 	if node is MeshInstance3D and node.mesh != null:
 		var mesh: Mesh = node.mesh
 		for i in mesh.get_surface_count():
@@ -40,6 +40,7 @@ static func apply(node: Node, outline_width: float) -> void:
 				col = orig.albedo_color
 			var mat := ShaderMaterial.new()
 			mat.shader = TOON
+			mat.set_shader_parameter("char_tint", tint)
 			if tex != null:
 				mat.set_shader_parameter("use_tex", true)
 				mat.set_shader_parameter("albedo_tex", tex)
@@ -51,7 +52,7 @@ static func apply(node: Node, outline_width: float) -> void:
 			mat.next_pass = o
 			node.set_surface_override_material(i, mat)
 	for c in node.get_children():
-		apply(c, outline_width)
+		apply(c, outline_width, tint)
 
 # 단색 툰 머티리얼 (곡률 포함). 바닥·건물·NPC·작물 공용.
 static func make_solid(color: Color, outline_width := 0.0) -> ShaderMaterial:

@@ -24,6 +24,8 @@ func _ready() -> void:
 	_test_migration_v1_v2()
 	_test_farm_loop()
 	_test_npc()
+	_test_npc_roster()
+	_test_wander()
 	_test_save_v2_v3()
 	_test_save_v3_v4()
 	_test_v1_save_compat()
@@ -139,6 +141,57 @@ func _test_npc() -> void:
 	assert(_npcsys._is_birthday(id), "Mira 생일 판정")
 	_npcsys.give(id, "crop.strawberry")  # 40*8=320 → 250 clamp
 	assert(int(_npcsys.state[id]["affection_points"]) == 250, "생일 loved ×8 → 250 clamp")
+
+func _test_npc_roster() -> void:
+	# 주민 8명 데이터 + 스폰
+	assert(GameData.npcs.size() == 8, "주민 8명")
+	for id in ["npc.rosa", "npc.milo", "npc.momo", "npc.pip"]:
+		assert(GameData.npcs.has(id), "신규 주민 %s" % id)
+		assert(_npcsys.npc_nodes.has(id), "%s 스폰됨" % id)
+		assert(_npcsys.state.has(id), "%s 상태 초기화" % id)
+	# 신규 아키타입 대사 풀 (GameData 참조 무결성이 커버하지만 개수 명시)
+	for arche in ["easygoing", "tsundere", "playful", "curious"]:
+		assert(GameData.dialogues.has(arche), "%s 대사 풀" % arche)
+		assert(GameData.dialogues[arche]["normal"].size() == 3, "%s normal 3줄" % arche)
+		assert(GameData.dialogues[arche]["festival"].size() == 2, "%s festival 2줄" % arche)
+	assert(_npcsys._dialogue_line("npc.rosa") != "", "신규 아키타입 대사 반환")
+	# candidate 필드 = mira/luna/finn/milo만 (F단계 소비, 지금은 검증만)
+	for id in ["npc.mira", "npc.luna", "npc.finn", "npc.milo"]:
+		assert(GameData.npcs[id].get("candidate", false), "%s 결혼후보" % id)
+	for id in ["npc.tom", "npc.rosa", "npc.momo", "npc.pip"]:
+		assert(not GameData.npcs[id].get("candidate", false), "%s 후보 아님" % id)
+
+func _test_wander() -> void:
+	# 낮엔 배회(위치 변화), 축제·밤엔 정지. 순수 보간 이동.
+	GameClock.state = GameClock.State.NORMAL
+	GameClock.game_min = 720  # 정오 = 배회 시간창
+	var id := "npc.mira"
+	var node: Node3D = _npcsys.npc_nodes[id]
+	node.position = Vector3(-9, 0, -3)  # 집으로 리셋
+	var start: Vector3 = node.position
+	_npcsys._wander[id]["wait"] = 0.0
+	_npcsys._wander[id]["target"] = start + Vector3(5, 0, 0)  # 밭·연못 밖
+	for _i in 20:
+		_npcsys._process(0.5)
+	assert(node.position.distance_to(start) > 0.5, "낮에 배회 이동")
+	# 축제 중 배회 정지
+	var held: Vector3 = node.position
+	_npcsys._festival_active = true
+	_npcsys._wander[id]["wait"] = 0.0
+	_npcsys._wander[id]["target"] = held + Vector3(5, 0, 0)
+	for _j in 10:
+		_npcsys._process(0.5)
+	assert(node.position.distance_to(held) < 0.01, "축제 중 배회 정지")
+	_npcsys._festival_active = false
+	# 밤엔 배회 정지 (시간창 밖)
+	GameClock.game_min = 1320  # 22:00
+	var night: Vector3 = node.position
+	_npcsys._wander[id]["wait"] = 0.0
+	_npcsys._wander[id]["target"] = night + Vector3(5, 0, 0)
+	for _k in 10:
+		_npcsys._process(0.5)
+	assert(node.position.distance_to(night) < 0.01, "밤엔 배회 정지")
+	GameClock.state = GameClock.State.PAUSED  # 결정성 복원
 
 func _test_save_v2_v3() -> void:
 	var v2 := {"save_version": 2, "systems": {"farming": {"tiles": {}, "shipping_bin": []}}, "player": {"gold": 100}}

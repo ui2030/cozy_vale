@@ -8,6 +8,8 @@ uniform vec4 albedo : source_color = vec4(0.9, 0.6, 0.7, 1.0);
 // 모델 텍스처가 있으면 사용 (없으면 위 albedo 단색)
 uniform sampler2D albedo_tex : source_color, hint_default_white;
 uniform bool use_tex = false;
+// 개체 색조 곱 (기본 흰=무변경, NPC 색상 구분용)
+uniform vec4 char_tint : source_color = vec4(1.0, 1.0, 1.0, 1.0);
 // 그림자 밝기(0=검정, 1=밝음) — 수채는 순검정 안 씀
 uniform float shadow_level : hint_range(0.0, 1.0) = 0.55;
 // 그림자에 섞을 따뜻한 색조(수채 그림자는 채색됨)
@@ -27,7 +29,7 @@ void vertex() {
 }
 
 void fragment() {
-	vec3 base = use_tex ? texture(albedo_tex, UV).rgb : albedo.rgb;
+	vec3 base = (use_tex ? texture(albedo_tex, UV).rgb : albedo.rgb) * char_tint.rgb;
 	float fres = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 3.0);
 	ALBEDO = mix(base, edge_pigment.rgb, fres * edge_strength);
 	ROUGHNESS = 1.0;

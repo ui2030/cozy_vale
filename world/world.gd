@@ -36,6 +36,14 @@ func _ready() -> void:
 		var fg := get_tree().get_first_node_in_group("fishing")
 		if fg != null:
 			fg.start("fish.bluegill", 0.4)
+	if "npcs" in OS.get_cmdline_user_args():  # 검증용: 주민 8명 색조 구분 (shot npcs)
+		GameClock.game_min = 720  # 정오
+		var pnp := get_tree().get_first_node_in_group("player")
+		if pnp != null:
+			pnp.global_position = Vector3(0, 2, 6)
+		var nsys := get_tree().get_first_node_in_group("npc_system")
+		if nsys != null and nsys.has_method("pose_for_shot"):
+			nsys.pose_for_shot()
 	if "collection" in OS.get_cmdline_user_args():  # 검증용: 도감 패널(일부 발견)
 		var pc := get_tree().get_first_node_in_group("player")
 		if pc != null:
