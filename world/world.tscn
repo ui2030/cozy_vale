@@ -6,6 +6,7 @@
 [ext_resource type="PackedScene" path="res://ui/hud.tscn" id="4"]
 [ext_resource type="Script" path="res://farm/farm_system.gd" id="5"]
 [ext_resource type="Script" path="res://npc/npc_system.gd" id="6"]
+[ext_resource type="Script" path="res://festival/festival_system.gd" id="7"]
 
 [sub_resource type="PlaneMesh" id="ground_mesh"]
 size = Vector2(60, 60)
@@ -66,6 +67,9 @@ script = ExtResource("5")
 
 [node name="NpcSystem" type="Node3D" parent="."]
 script = ExtResource("6")
+
+[node name="FestivalSystem" type="Node3D" parent="."]
+script = ExtResource("7")
 
 [node name="Bed" type="Area3D" parent="." groups=["bed"]]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 5, 0.4, 0)

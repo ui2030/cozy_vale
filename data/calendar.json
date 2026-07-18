@@ -1,0 +1,6 @@
+{
+	"festival.flower": {
+		"name": "Flower Festival", "season": "spring", "day": 15,
+		"start_min": 540, "end_min": 1320, "plaza": [0, -6]
+	}
+}

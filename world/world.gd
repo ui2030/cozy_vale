@@ -11,6 +11,14 @@ func _ready() -> void:
 	_convert_statics(self)  # 정적 물체(바닥·건물)를 곡면 툰으로 통일
 	if not SaveManager.load_game():
 		print("새 게임 시작")
+	# from_dict는 신호를 안 쏘므로 로드된 시각으로 축제 배치를 즉시 재평가 (축제날 아침 로드 누락 방지)
+	if "festival" in OS.get_cmdline_user_args():  # 스크린샷 검증용 강제 축제
+		GameClock.abs_day = 14   # spring D15
+		GameClock.game_min = 720  # 12:00
+		var pl := get_tree().get_first_node_in_group("player")
+		if pl != null:  # 광장이 카메라에 잡히도록 플레이어를 광장 근처로
+			pl.global_position = Vector3(0, 2, 0)
+	get_tree().call_group("festival_system", "evaluate")
 
 # StandardMaterial3D 정적 메시 → 곡면 툰 (투명물=조준칸 제외)
 func _convert_statics(node: Node) -> void:

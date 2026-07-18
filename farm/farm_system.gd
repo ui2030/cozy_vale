@@ -3,7 +3,6 @@ extends Node3D
 # day_changed 처리 순서 고정(Codex): 정산 → 성장 → 계절고사 → 물리셋 → (저장은 호출측).
 
 const REGION := Rect2i(0, 2, 8, 4)  # 밭 구역: cell x[0..7], z[2..5]
-const SEASON_NAMES := ["spring", "summer", "autumn", "winter"]
 const ToonChar := preload("res://common/toon_character.gd")
 
 var tiles := {}          # Vector2i → {tilled, crop_id, planted_abs_day, watered_growth_days, watered}
@@ -109,7 +108,7 @@ func _settle_shipping() -> void:
 	shipping_bin.clear()
 
 func _season_deaths() -> void:
-	var sn: String = SEASON_NAMES[GameClock.season()]
+	var sn: String = GameData.season_id(GameClock.season())
 	for cell in tiles:
 		var t: Dictionary = tiles[cell]
 		if t.get("crop_id", "") != "":

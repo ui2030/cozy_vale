@@ -4,10 +4,14 @@ extends Node3D
 
 const HEART := 25       # 25포인트 = 하트 1칸
 const MAX_AFF := 250    # 10칸
+const FESTIVAL_MULT := 2  # 축제 중 대화 호감도 배율
+const FEST_RING := 2.3    # 광장 링 배치 반경
 const ToonChar := preload("res://common/toon_character.gd")
 
 # affection_points 0~250 저장, hearts는 파생 (Codex: F단계 청혼조건 재작업 방지)
 var state := {}         # npc_id → {affection_points, talked_today, gifted_today}
+var npc_nodes := {}     # npc_id → 스폰 노드 (축제 이동용, FestivalSystem이 호출)
+var _festival_active := false
 
 func _ready() -> void:
 	add_to_group("npc_system")
@@ -42,19 +46,41 @@ func _spawn(id: String) -> void:
 	area.position = Vector3(0, 1.0, 0)
 	root.add_child(area)
 	add_child(root)
+	npc_nodes[id] = root
 
 func hearts(id: String) -> int:
 	return int(state[id]["affection_points"]) / HEART
 
-# 대화: 하루 1회 +5
+# 대화: 하루 1회 +5 (축제 중 ×2)
 func talk(id: String) -> Dictionary:
 	var s: Dictionary = state[id]
 	var nm: String = GameData.npcs[id]["name"]
 	if s["talked_today"]:
 		return {"ok": false, "msg": nm + ": (오늘 대화함)"}
 	s["talked_today"] = true
-	_add(id, 5)
-	return {"ok": true, "msg": "%s  H%d" % [nm, hearts(id)]}
+	var gain := 5
+	var extra := ""
+	if _festival_active:
+		gain *= FESTIVAL_MULT
+		extra = "  (축제 ×%d)" % FESTIVAL_MULT
+	_add(id, gain)
+	return {"ok": true, "msg": "%s  H%d%s" % [nm, hearts(id), extra]}
+
+# ── 축제 (FestivalSystem이 상태만 설정, 호감도·이동은 여기 소유) ──
+func enter_festival(plaza: Vector2) -> void:
+	_festival_active = true
+	var ids := npc_nodes.keys()
+	var n := ids.size()
+	for i in n:
+		var ang := TAU * i / float(maxi(n, 1))
+		var pos := plaza + Vector2(cos(ang), sin(ang)) * FEST_RING
+		npc_nodes[ids[i]].position = Vector3(pos.x, 0, pos.y)
+
+func exit_festival() -> void:
+	_festival_active = false
+	for id in npc_nodes:  # 집 위치로 복귀 (데이터가 단일 출처)
+		var home: Array = GameData.npcs[id]["home"]
+		npc_nodes[id].position = Vector3(home[0], 0, home[1])
 
 # 선물: 하루 1회, 취향별 ±, 생일 ×8, 0~250 clamp
 func give(id: String, item_id: String) -> Dictionary:
@@ -80,8 +106,7 @@ func _preference(id: String, item_id: String) -> String:
 
 func _is_birthday(id: String) -> bool:
 	var b: Dictionary = GameData.npcs[id]["birthday"]
-	var season_name: String = ["spring", "summer", "autumn", "winter"][GameClock.season()]
-	return season_name == b["season"] and GameClock.day_of_season() == int(b["day"])
+	return GameData.season_id(GameClock.season()) == b["season"] and GameClock.day_of_season() == int(b["day"])
 
 func _add(id: String, d: int) -> void:
 	state[id]["affection_points"] = clampi(int(state[id]["affection_points"]) + d, 0, MAX_AFF)

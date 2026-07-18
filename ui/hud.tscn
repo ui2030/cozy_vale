@@ -1,6 +1,7 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=3 format=3]
 
 [ext_resource type="Script" path="res://ui/hud.gd" id="1"]
+[ext_resource type="Script" path="res://ui/calendar_panel.gd" id="2"]
 
 [node name="HUD" type="CanvasLayer"]
 script = ExtResource("1")
@@ -22,3 +23,6 @@ theme_override_font_sizes/font_size = 22
 
 [node name="MsgTimer" type="Timer" parent="."]
 one_shot = true
+
+[node name="CalendarPanel" type="Control" parent="."]
+script = ExtResource("2")

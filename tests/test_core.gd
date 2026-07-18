@@ -26,6 +26,8 @@ func _ready() -> void:
 	_test_npc()
 	_test_save_v2_v3()
 	_test_v1_save_compat()
+	_test_calendar()
+	_test_festival()
 	print("ALL CORE TESTS PASS")
 	get_tree().quit()
 
@@ -139,6 +141,37 @@ func _test_save_v2_v3() -> void:
 	var m := SaveManager._migrate(v2)
 	assert(int(m["save_version"]) == 3, "v2 → v3")
 	assert(m["systems"].has("npc"), "systems.npc 생성")
+
+func _test_calendar() -> void:
+	# 달력 데이터 로드 + 조회 (생일=npcs, 축제=calendar 단일 출처)
+	assert(GameData.calendar.has("festival.flower"), "축제 로드")
+	assert(not GameData.festival_on("spring", 15).is_empty(), "spring D15 = 축제")
+	assert(GameData.festival_on("spring", 14).is_empty(), "축제 없는 날")
+	assert("Mira" in GameData.birthdays_on("spring", 12), "Mira 생일 조회")
+	assert(GameData.season_id(GameClock.season()) is String, "season_id 반환")
+
+func _test_festival() -> void:
+	var fest := preload("res://festival/festival_system.gd").new()
+	add_child(fest)  # _ready: 축제 아님 상태로 evaluate
+	var id := "npc.mira"
+	var home: Array = GameData.npcs[id]["home"]
+	var home_pos := Vector3(home[0], 0, home[1])
+	# 축제 시간창 진입: spring D15(abs_day 14), 12:00
+	GameClock.abs_day = 14
+	GameClock.game_min = 720
+	fest.evaluate()
+	assert(_npcsys._festival_active, "축제 활성")
+	assert(_npcsys.npc_nodes[id].position.distance_to(home_pos) > 1.0, "광장으로 이동")
+	# 축제 중 대화 ×2 (5→10)
+	_npcsys.state[id]["talked_today"] = false
+	_npcsys.state[id]["affection_points"] = 0
+	_npcsys.talk(id)
+	assert(int(_npcsys.state[id]["affection_points"]) == 10, "축제 대화 5×2=10")
+	# 시간창 종료 → 상태 해제 + 집 복귀
+	GameClock.game_min = 1320  # end_min = 창 밖
+	fest.evaluate()
+	assert(not _npcsys._festival_active, "축제 종료")
+	assert(_npcsys.npc_nodes[id].position.distance_to(home_pos) < 0.01, "집 복귀")
 
 func _test_v1_save_compat() -> void:
 	# A단계(v1) 세이브를 그대로 로드 → 마이그레이션되어 복원 (호환)
