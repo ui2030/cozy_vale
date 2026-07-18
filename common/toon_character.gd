@@ -16,6 +16,16 @@ static func load_glb(path: String, outline_width: float) -> Node3D:
 	apply(model, outline_width)
 	return model
 
+# GLB에 딸려온 AnimationPlayer 찾기 (generate_scene이 루트 밑에 둠). 없으면 null
+static func find_anim(node: Node) -> AnimationPlayer:
+	if node is AnimationPlayer:
+		return node
+	for c in node.get_children():
+		var a := find_anim(c)
+		if a != null:
+			return a
+	return null
+
 static func apply(node: Node, outline_width: float) -> void:
 	if node is MeshInstance3D and node.mesh != null:
 		var mesh: Mesh = node.mesh
