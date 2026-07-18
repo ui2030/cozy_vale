@@ -30,12 +30,14 @@ func _setup_visual() -> void:
 	$Mesh.visible = false
 	cat.scale = Vector3(visual_scale, visual_scale, visual_scale)
 	cat.position.y = visual_y
+	cat.rotation.y = PI  # cat.glb의 앞=+Z, Godot look_at은 -Z 기준 → 180° 보정 (실측 확정)
 	add_child(cat)
 
 func _ready() -> void:
 	_farm = get_tree().get_first_node_in_group("farm")
 	_npcsys = get_tree().get_first_node_in_group("npc_system")
 	_setup_visual()
+	_face_dir(_last_dir)  # 정지 스폰도 조준(_last_dir=아래)과 일치하게
 	_make_highlight()
 	if selected_seed == "":
 		_select_first_seed()
@@ -57,10 +59,14 @@ func _physics_process(delta: float) -> void:
 	move_and_slide()
 
 	if dir.length() > 0.1:
-		_last_dir = dir.normalized()
-		var t := global_position + _last_dir
-		look_at(Vector3(t.x, global_position.y, t.z), Vector3.UP)
+		_face_dir(dir)
 	_update_highlight()
+
+# 이동/조준 방향으로 몸을 돌림 (_last_dir = 조준 기준, 건드리지 않음)
+func _face_dir(dir: Vector3) -> void:
+	_last_dir = dir.normalized()
+	var t := global_position + _last_dir
+	look_at(Vector3(t.x, global_position.y, t.z), Vector3.UP)
 
 func _unhandled_input(event: InputEvent) -> void:
 	if GameClock.state == GameClock.State.PAUSED:  # 메뉴 열림 = 상호작용 차단
