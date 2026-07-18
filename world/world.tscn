@@ -1,4 +1,4 @@
-[gd_scene load_steps=19 format=3]
+[gd_scene load_steps=23 format=3]
 
 [ext_resource type="Script" path="res://world/world.gd" id="1"]
 [ext_resource type="PackedScene" path="res://player/player.tscn" id="2"]
@@ -7,6 +7,7 @@
 [ext_resource type="Script" path="res://farm/farm_system.gd" id="5"]
 [ext_resource type="Script" path="res://npc/npc_system.gd" id="6"]
 [ext_resource type="Script" path="res://festival/festival_system.gd" id="7"]
+[ext_resource type="Script" path="res://forage/forage_system.gd" id="8"]
 
 [sub_resource type="PlaneMesh" id="ground_mesh"]
 size = Vector2(60, 60)
@@ -46,6 +47,17 @@ albedo_color = Color(0.6, 0.45, 0.3, 1)
 [sub_resource type="BoxShape3D" id="bin_col"]
 size = Vector3(1.2, 0.8, 1.2)
 
+[sub_resource type="CylinderMesh" id="pond_mesh"]
+top_radius = 2.5
+bottom_radius = 2.5
+height = 0.16
+
+[sub_resource type="StandardMaterial3D" id="pond_mat"]
+albedo_color = Color(0.35, 0.6, 0.85, 1)
+
+[sub_resource type="SphereShape3D" id="pond_col"]
+radius = 3.0
+
 [node name="World" type="Node3D"]
 script = ExtResource("1")
 
@@ -70,6 +82,9 @@ script = ExtResource("6")
 
 [node name="FestivalSystem" type="Node3D" parent="."]
 script = ExtResource("7")
+
+[node name="ForageSystem" type="Node3D" parent="."]
+script = ExtResource("8")
 
 [node name="Bed" type="Area3D" parent="." groups=["bed"]]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 5, 0.4, 0)
@@ -130,6 +145,26 @@ pixel_size = 0.0007
 font_size = 96
 outline_size = 24
 text = "판매 상자"
+
+[node name="Pond" type="Area3D" parent="." groups=["water"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 10, 0.1, 0)
+
+[node name="PondMesh" type="MeshInstance3D" parent="Pond"]
+mesh = SubResource("pond_mesh")
+material_override = SubResource("pond_mat")
+
+[node name="PondCol" type="CollisionShape3D" parent="Pond"]
+shape = SubResource("pond_col")
+
+[node name="Label" type="Label3D" parent="Pond"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.3, 0)
+billboard = 1
+no_depth_test = true
+fixed_size = true
+pixel_size = 0.0007
+font_size = 96
+outline_size = 24
+text = "연못"
 
 [node name="Camera" type="Camera3D" parent="."]
 fov = 40.0

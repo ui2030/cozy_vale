@@ -1,0 +1,11 @@
+{
+	"forage.dandelion": {
+		"name": "Dandelion", "seasons": ["spring"], "sell_price": 20
+	},
+	"forage.leek": {
+		"name": "Leek", "seasons": ["spring"], "sell_price": 35
+	},
+	"forage.horseradish": {
+		"name": "Horseradish", "seasons": ["spring"], "sell_price": 30
+	}
+}

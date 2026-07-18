@@ -11,6 +11,7 @@ const ACTION_LABELS := {
 	"cycle_seed": "씨앗 변경",
 	"give": "선물 주기",
 	"calendar": "달력 열기",
+	"collection": "도감 열기",
 	"pause_menu": "일시정지 메뉴",
 }
 
@@ -24,6 +25,7 @@ func _ready() -> void:
 	_add("cycle_seed", [KEY_Q])           # 선택 씨앗 순환
 	_add("give", [KEY_G])                 # 근처 주민에게 선물
 	_add("calendar", [KEY_C])             # 달력 패널 토글
+	_add("collection", [KEY_B])           # 도감 패널 토글
 	_add("pause_menu", [KEY_ESCAPE])      # 일시정지 메뉴 토글
 
 func _add(action: String, keys: Array) -> void:

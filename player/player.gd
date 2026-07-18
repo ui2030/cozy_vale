@@ -10,11 +10,13 @@ signal message(text: String)  # 대화/선물/상점 피드백 → HUD 토스트
 var gold := 500
 var inventory := []          # [{id, qty}]
 var selected_seed := ""      # 선택 씨앗 id (구매·심기 대상)
+var collection := []         # 발견한 산출물 id (도감)
 
 var _last_dir := Vector3(0, 0, 1)  # 조준 방향 (정지시 유지)
 var _farm: Node
 var _npcsys: Node
 var _highlight: MeshInstance3D
+var _fishing: Node           # 낚시 미니게임 (지연 조회 — HUD 초기화 순서 안전)
 
 @onready var _interact_area: Area3D = $InteractArea
 
@@ -43,8 +45,14 @@ func _ready() -> void:
 		_select_first_seed()
 	stats_changed.emit()
 
+# 낚시 중 = 이동/상호작용 정지. 지연 조회(HUD 늦게 준비돼도 안전), 시계는 계속 흐름.
+func _is_fishing() -> bool:
+	if _fishing == null:
+		_fishing = get_tree().get_first_node_in_group("fishing")
+	return _fishing != null and _fishing.is_active()
+
 func _physics_process(delta: float) -> void:
-	if GameClock.state == GameClock.State.PAUSED:  # 메뉴 열림 = 조작 정지
+	if GameClock.state == GameClock.State.PAUSED or _is_fishing():  # 메뉴/낚시 = 조작 정지
 		velocity = Vector3.ZERO
 		return
 	if not is_on_floor():
@@ -69,7 +77,7 @@ func _face_dir(dir: Vector3) -> void:
 	look_at(Vector3(t.x, global_position.y, t.z), Vector3.UP)
 
 func _unhandled_input(event: InputEvent) -> void:
-	if GameClock.state == GameClock.State.PAUSED:  # 메뉴 열림 = 상호작용 차단
+	if GameClock.state == GameClock.State.PAUSED or _is_fishing():  # 메뉴/낚시 = 상호작용 차단
 		return
 	if event.is_action_pressed("interact"):
 		_try_interact()
@@ -145,7 +153,7 @@ func interact_target() -> Dictionary:
 	return {} if best == null else {"kind": best_kind, "area": best}
 
 func _area_kind(a: Area3D) -> String:
-	for k in ["bed", "shop", "bin", "npc"]:
+	for k in ["bed", "shop", "bin", "npc", "water", "forage"]:
 		if a.is_in_group(k):
 			return k
 	return ""
@@ -160,6 +168,8 @@ func interact_prompt() -> String:
 		"shop": return "E: 상점"
 		"bin": return "E: 판매 상자"
 		"npc": return "E: 대화 — " + GameData.npcs[t["area"].get_meta("npc_id")]["name"]
+		"water": return "E: 낚시"
+		"forage": return "E: 줍기"
 	return ""
 
 func _try_interact() -> void:
@@ -174,19 +184,41 @@ func _try_interact() -> void:
 		"npc":
 			var r: Dictionary = _npcsys.talk(t["area"].get_meta("npc_id"))
 			message.emit(r["msg"])
+		"water": _start_fishing()
+		"forage": _pick_forage(t["area"])
+
+func _start_fishing() -> void:
+	if _fishing == null:
+		_fishing = get_tree().get_first_node_in_group("fishing")
+	var pool := GameData.season_filter(GameData.fish, GameData.season_id(GameClock.season()))
+	if _fishing == null or pool.is_empty():
+		message.emit("여긴 잡을 게 없네요")
+		return
+	var fid: String = pool[randi() % pool.size()]
+	_fishing.start(fid, float(GameData.fish[fid].get("difficulty", 0.5)))
+	get_viewport().set_input_as_handled()  # 시작 E가 즉시 판정되는 것 방지
+
+func _pick_forage(area: Area3D) -> void:
+	var fid: String = area.get_meta("forage_id", "")
+	if fid == "":
+		return
+	var fs := get_tree().get_first_node_in_group("forage_system")
+	if fs != null:
+		fs.remove(area)
+	_add_item(fid, 1)
 
 func _give() -> void:
 	var npc_area := _nearest_npc()
 	if npc_area == null:
 		return
 	for e in inventory:
-		if GameData.crops.has(e["id"]):  # 작물만 선물
+		if GameData.is_produce(e["id"]):  # 산출물(작물·물고기·채집물) 선물
 			var r: Dictionary = _npcsys.give(npc_area.get_meta("npc_id"), e["id"])
 			if r["ok"]:
 				_remove_item(e["id"], 1)
 			message.emit(r["msg"])
 			return
-	message.emit("줄 작물 없음")
+	message.emit("줄 것이 없어요")
 
 func _nearest_npc() -> Area3D:
 	for a in _interact_area.get_overlapping_areas():
@@ -218,7 +250,7 @@ func _buy_seed() -> void:
 
 func _deposit_all() -> void:
 	for e in inventory.duplicate():
-		if GameData.crops.has(e["id"]):  # 작물만 판매상자로
+		if GameData.is_produce(e["id"]):  # 산출물(작물·물고기·채집물) 판매상자로
 			var accepted: int = _farm.deposit(e["id"], int(e["qty"]))  # 실제 수락량만 차감(증발 방지)
 			if accepted > 0:
 				_remove_item(e["id"], accepted)
@@ -229,12 +261,20 @@ func add_gold(n: int) -> void:
 	stats_changed.emit()
 
 func _add_item(id: String, qty: int) -> void:
+	_discover(id)  # 스택 증가 경로에서도 최초 발견 등록 (early-return 앞)
 	for e in inventory:
 		if e["id"] == id:
 			e["qty"] = int(e["qty"]) + qty
 			stats_changed.emit(); return
 	inventory.append({"id": id, "qty": qty})
 	stats_changed.emit()
+
+# 도감: 산출물 최초 획득이면 등록 + 토스트
+func _discover(id: String) -> void:
+	if not GameData.is_produce(id) or id in collection:
+		return
+	collection.append(id)
+	message.emit("도감 등록: " + GameData.display_name(id))
 
 func _remove_item(id: String, qty: int) -> void:
 	for e in inventory:
@@ -270,6 +310,7 @@ func save_data() -> Dictionary:
 		"gold": gold,
 		"inventory": inventory.duplicate(true),
 		"selected_seed": selected_seed,
+		"collection": collection.duplicate(),
 	}
 
 func load_data(d: Dictionary) -> void:
@@ -277,6 +318,7 @@ func load_data(d: Dictionary) -> void:
 	global_position = Vector3(p[0], p[1], p[2])
 	gold = int(d.get("gold", 500))
 	inventory = d.get("inventory", []).duplicate(true)
+	collection = d.get("collection", []).duplicate()
 	selected_seed = d.get("selected_seed", "")
 	if selected_seed == "":
 		_select_first_seed()

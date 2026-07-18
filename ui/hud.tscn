@@ -1,9 +1,11 @@
-[gd_scene load_steps=5 format=3]
+[gd_scene load_steps=7 format=3]
 
 [ext_resource type="Script" path="res://ui/hud.gd" id="1"]
 [ext_resource type="Script" path="res://ui/calendar_panel.gd" id="2"]
 [ext_resource type="Script" path="res://ui/pause_menu.gd" id="3"]
 [ext_resource type="Script" path="res://ui/sleep_screen.gd" id="4"]
+[ext_resource type="Script" path="res://ui/fishing_game.gd" id="5"]
+[ext_resource type="Script" path="res://ui/collection_panel.gd" id="6"]
 
 [node name="HUD" type="CanvasLayer"]
 script = ExtResource("1")
@@ -59,3 +61,14 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("4")
+
+[node name="FishingGame" type="Control" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("5")
+
+[node name="CollectionPanel" type="Control" parent="."]
+script = ExtResource("6")

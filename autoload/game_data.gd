@@ -5,6 +5,8 @@ extends Node
 const SEASON_IDS := ["spring", "summer", "autumn", "winter"]
 
 var crops := {}            # crop_id → 정의
+var fish := {}             # fish_id → 정의 (낚시)
+var forage := {}           # forage_id → 정의 (채집)
 var npcs := {}             # npc_id → 정의
 var calendar := {}         # festival_id → 정의 (축제 선언)
 var dialogues := {}        # archetype → {normal:[], festival:[]}
@@ -12,6 +14,8 @@ var _seed_to_crop := {}    # seed_id → crop_id
 
 func _ready() -> void:
 	crops = _load_json("res://data/crops.json")
+	fish = _load_json("res://data/fish.json")
+	forage = _load_json("res://data/forage.json")
 	npcs = _load_json("res://data/npcs.json")
 	calendar = _load_json("res://data/calendar.json")
 	dialogues = _load_json("res://data/dialogues.json")
@@ -36,6 +40,26 @@ func _validate() -> void:
 			assert(c.has(key), "%s 에 %s 누락" % [cid, key])
 		assert(not seeds.has(c["seed_id"]), "seed_id 중복: " + c["seed_id"])
 		seeds[c["seed_id"]] = true
+	# 물고기·채집물 필수 필드 + 계절 유효 + difficulty(낚시 판정폭) 범위
+	for fid in fish:
+		var d: Dictionary = fish[fid]
+		for key in ["name", "sell_price", "seasons", "difficulty"]:
+			assert(d.has(key), "%s 에 %s 누락" % [fid, key])
+		var diff := float(d["difficulty"])
+		assert(diff >= 0.0 and diff <= 1.0, "%s difficulty 0..1 벗어남: %f" % [fid, diff])
+		for s in d["seasons"]:
+			assert(s in SEASON_IDS, "%s 계절 잘못됨: %s" % [fid, str(s)])
+	for fid in forage:
+		var d: Dictionary = forage[fid]
+		for key in ["name", "sell_price", "seasons"]:
+			assert(d.has(key), "%s 에 %s 누락" % [fid, key])
+		for s in d["seasons"]:
+			assert(s in SEASON_IDS, "%s 계절 잘못됨: %s" % [fid, str(s)])
+	# 아이템 ID 전역 유일성: crop/seed/fish/forage 충돌시 조회가 조용히 가려짐 (Codex)
+	var ids := {}
+	for key in crops.keys() + _seed_to_crop.keys() + fish.keys() + forage.keys():
+		assert(not ids.has(key), "아이템 ID 충돌: " + key)
+		ids[key] = true
 	# NPC 선물 목록의 아이템 ID 참조 무결성 (통합 검사)
 	for nid in npcs:
 		var g: Dictionary = npcs[nid].get("gifts", {})
@@ -57,15 +81,30 @@ func _validate() -> void:
 		assert(dialogues.has(arche), "%s archetype '%s' 대사 풀 없음" % [nid, arche])
 		assert(not dialogues[arche].get("normal", []).is_empty(), "%s normal 대사 비어있음" % arche)
 
-# 통합 아이템 ID 레지스트리 (현재 = 작물 + 씨앗. 도구·채집물 추가시 여기 확장)
+# 통합 아이템 ID 레지스트리 (작물·씨앗·물고기·채집물)
 func has_item_id(item_id: String) -> bool:
-	return crops.has(item_id) or _seed_to_crop.has(item_id)
+	return crops.has(item_id) or _seed_to_crop.has(item_id) or fish.has(item_id) or forage.has(item_id)
+
+# 산출물(판매·선물·도감 대상) — 씨앗 제외. crop/fish/forage.
+func is_produce(item_id: String) -> bool:
+	return crops.has(item_id) or fish.has(item_id) or forage.has(item_id)
+
+# source(crops/fish/forage) 중 해당 계절에 나는 id 목록
+func season_filter(source: Dictionary, sid: String) -> Array:
+	var out := []
+	for id in source:
+		if sid in source[id].get("seasons", []):
+			out.append(id)
+	return out
 
 func crop_from_seed(seed_id: String) -> String:
 	return _seed_to_crop.get(seed_id, "")
 
-func sell_price(crop_id: String) -> int:
-	return int(crops.get(crop_id, {}).get("sell_price", 0))
+func sell_price(item_id: String) -> int:
+	for src in [crops, fish, forage]:
+		if src.has(item_id):
+			return int(src[item_id].get("sell_price", 0))
+	return 0
 
 func seed_cost(seed_id: String) -> int:
 	var cid := crop_from_seed(seed_id)
@@ -80,8 +119,11 @@ func stage_count(crop_id: String) -> int:
 func all_seed_ids() -> Array:
 	return _seed_to_crop.keys()
 
-func display_name(crop_id: String) -> String:
-	return crops.get(crop_id, {}).get("name", crop_id)
+func display_name(item_id: String) -> String:
+	for src in [crops, fish, forage]:
+		if src.has(item_id):
+			return src[item_id].get("name", item_id)
+	return item_id
 
 func season_id(idx: int) -> String:
 	return SEASON_IDS[idx]

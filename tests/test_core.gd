@@ -25,10 +25,13 @@ func _ready() -> void:
 	_test_farm_loop()
 	_test_npc()
 	_test_save_v2_v3()
+	_test_save_v3_v4()
 	_test_v1_save_compat()
 	_test_calendar()
 	_test_festival()
 	_test_pause_menu()
+	_test_fishing_judge()
+	_test_collection_roundtrip()
 	print("ALL CORE TESTS PASS")
 	get_tree().quit()
 
@@ -140,8 +143,19 @@ func _test_npc() -> void:
 func _test_save_v2_v3() -> void:
 	var v2 := {"save_version": 2, "systems": {"farming": {"tiles": {}, "shipping_bin": []}}, "player": {"gold": 100}}
 	var m := SaveManager._migrate(v2)
-	assert(int(m["save_version"]) == 3, "v2 → v3")
-	assert(m["systems"].has("npc"), "systems.npc 생성")
+	assert(int(m["save_version"]) == SaveManager.VERSION, "v2 → 최신")
+	assert(m["systems"].has("npc"), "systems.npc 생성(v3)")
+	assert(m["player"].has("collection"), "collection 생성(v4)")
+
+func _test_save_v3_v4() -> void:
+	# v3 → v4: 도감 기본 빈 배열
+	var v3 := {"save_version": 3, "player": {"gold": 100}, "systems": {"npc": {}}}
+	var m := SaveManager._migrate(v3)
+	assert(int(m["save_version"]) == 4, "v3 → v4")
+	assert(m["player"]["collection"] == [], "collection 기본 []")
+	# player 키 없는 구조도 방어 (무버전/손상 세이브)
+	var nop := SaveManager._migrate({"save_version": 3})
+	assert(nop["player"]["collection"] == [], "player 없어도 collection 생성")
 
 func _test_calendar() -> void:
 	# 달력 데이터 로드 + 조회 (생일=npcs, 축제=calendar 단일 출처)
@@ -183,6 +197,31 @@ func _test_pause_menu() -> void:
 	assert(menu.visible, "메뉴 표시")
 	menu.close_menu()
 	assert(GameClock.state == GameClock.State.NORMAL, "메뉴 닫힘 → 이전 상태 복원")
+
+func _test_fishing_judge() -> void:
+	var FG := preload("res://ui/fishing_game.gd")
+	# 난이도↑ → 존 폭↓
+	assert(FG.zone_half_width(0.0) > FG.zone_half_width(1.0), "쉬운 어종 존이 더 넓음")
+	assert(FG.zone_half_width(0.5) >= 0.0 and FG.zone_half_width(1.0) >= 0.0, "존 폭 음수 아님")
+	# 중앙(0.5) 명중, 가장자리 실패
+	assert(FG.in_zone(0.5, FG.zone_half_width(0.5)), "중앙 명중")
+	assert(not FG.in_zone(0.95, FG.zone_half_width(1.0)), "가장자리 + 어려움 실패")
+	assert(FG.in_zone(0.5 + FG.zone_half_width(0.0) - 0.001, FG.zone_half_width(0.0)), "존 경계 안 명중")
+
+func _test_collection_roundtrip() -> void:
+	# 실제 player 스크립트로 도감 발견 → 저장 → 로드 유지 (스텁엔 도감 없음).
+	# add_child 안 함: 검증 대상(_discover/save_data/load_data)은 _ready·씬트리 불필요.
+	var p: Node = preload("res://player/player.gd").new()
+	p._discover("fish.carp")
+	p._discover("fish.carp")  # 중복 무시
+	p._discover("seed.turnip")  # 씨앗은 산출물 아님 → 미등록
+	assert(p.collection == ["fish.carp"], "발견 1회, 씨앗 제외: %s" % str(p.collection))
+	var d: Dictionary = p.save_data()
+	var p2: Node = preload("res://player/player.gd").new()
+	p2.load_data(d)
+	assert("fish.carp" in p2.collection, "저장→로드 도감 유지")
+	p.free()
+	p2.free()
 
 func _test_v1_save_compat() -> void:
 	# A단계(v1) 세이브를 그대로 로드 → 마이그레이션되어 복원 (호환)

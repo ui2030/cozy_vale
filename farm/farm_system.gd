@@ -76,8 +76,8 @@ func harvest(cell: Vector2i) -> String:
 
 # ── 판매상자 ───────────────────────────────────────────────────
 func deposit(item_id: String, qty: int) -> int:
-	if not GameData.crops.has(item_id) or qty <= 0:
-		return 0  # 작물만 판매 가능
+	if not GameData.is_produce(item_id) or qty <= 0:
+		return 0  # 산출물(작물·물고기·채집물)만 판매 가능
 	for e in shipping_bin:
 		if e["id"] == item_id:
 			e["qty"] = int(e["qty"]) + qty

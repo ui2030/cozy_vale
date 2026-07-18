@@ -1,0 +1,14 @@
+{
+	"fish.carp": {
+		"name": "Carp", "seasons": ["spring"], "sell_price": 30, "difficulty": 0.15
+	},
+	"fish.bluegill": {
+		"name": "Bluegill", "seasons": ["spring"], "sell_price": 45, "difficulty": 0.4
+	},
+	"fish.bass": {
+		"name": "Bass", "seasons": ["spring"], "sell_price": 75, "difficulty": 0.7
+	},
+	"fish.smelt": {
+		"name": "Smelt", "seasons": ["spring"], "sell_price": 55, "difficulty": 0.9
+	}
+}

@@ -25,6 +25,25 @@ func _ready() -> void:
 		var pb := get_tree().get_first_node_in_group("player")
 		if pb != null:
 			pb.global_position = Vector3(3.6, 2, 0)
+	if "pond" in OS.get_cmdline_user_args():  # 검증용: 연못 물가(낚시 프롬프트)
+		var pp := get_tree().get_first_node_in_group("player")
+		if pp != null:
+			pp.global_position = Vector3(10, 2, 3.8)
+	if "fishing" in OS.get_cmdline_user_args():  # 검증용: 낚시 미니게임 열린 상태
+		var pf := get_tree().get_first_node_in_group("player")
+		if pf != null:
+			pf.global_position = Vector3(10, 2, 3.8)
+		var fg := get_tree().get_first_node_in_group("fishing")
+		if fg != null:
+			fg.start("fish.bluegill", 0.4)
+	if "collection" in OS.get_cmdline_user_args():  # 검증용: 도감 패널(일부 발견)
+		var pc := get_tree().get_first_node_in_group("player")
+		if pc != null:
+			pc.collection = ["crop.turnip", "crop.cabbage", "fish.carp", "forage.dandelion"]
+		var cp := get_tree().get_first_node_in_group("collection_panel")
+		if cp != null:
+			cp.visible = true
+			cp._rebuild()
 
 # StandardMaterial3D 정적 메시 → 곡면 툰 (투명물=조준칸 제외)
 func _convert_statics(node: Node) -> void:

@@ -2,7 +2,7 @@ extends Node
 # 세이브 (DESIGN 11.1). JSON 단일 파일, 원자적 교체, save_version 마이그레이션, bak 폴백.
 # 저장 요청은 큐잉 후 다음 프레임 처리 (신호 연결 순서 문제 회피 — Codex 지적).
 
-const VERSION := 3
+const VERSION := 4
 const F_JSON := "user://save.json"
 const F_BAK := "user://save.bak"
 const F_TMP := "user://save.tmp"
@@ -24,6 +24,11 @@ var _migrations := {
 		var sys: Dictionary = d.get("systems", {})
 		sys["npc"] = sys.get("npc", {})
 		d["systems"] = sys
+		return d,
+	3: func(d: Dictionary) -> Dictionary:  # v3 → v4 (도감)
+		var pl: Dictionary = d.get("player", {})  # player 없어도 생성 후 채움
+		pl["collection"] = pl.get("collection", [])
+		d["player"] = pl
 		return d,
 }
 
