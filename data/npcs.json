@@ -38,5 +38,10 @@
 		"name": "Pip", "archetype": "curious", "birthday": {"season": "winter", "day": 10},
 		"home": [4, -9], "color": [0.55, 0.80, 0.85],
 		"gifts": {"loved": ["fish.smelt", "fish.bluegill"], "liked": ["fish.carp", "crop.cabbage"], "disliked": ["crop.potato"]}
+	},
+	"npc.nun": {
+		"name": "수녀님", "archetype": "shy", "birthday": {"season": "winter", "day": 3},
+		"home": [0, 12], "color": [0.55, 0.48, 0.62], "model": "res://assets/nun.glb",
+		"gifts": {"loved": ["forage.leek"], "liked": ["forage.dandelion", "crop.cabbage"], "disliked": ["fish.smelt"]}
 	}
 }

@@ -9,3 +9,10 @@
 
 # 테스트용 GLB (사용자 실제 캐릭터는 나중 명시적 추가)
 /lookdev/character/*.glb
+
+# 대용량 3D 모델 원본·작업파일 (레포 미포함)
+/assets/nun.glb
+/assets/cat_fixed*
+/assets/cat_rigged*
+/assets/cat_tripo_raw.glb
+/GOAL_CHARACTER.md

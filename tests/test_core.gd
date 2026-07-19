@@ -143,8 +143,8 @@ func _test_npc() -> void:
 	assert(int(_npcsys.state[id]["affection_points"]) == 250, "생일 loved ×8 → 250 clamp")
 
 func _test_npc_roster() -> void:
-	# 주민 8명 데이터 + 스폰
-	assert(GameData.npcs.size() == 8, "주민 8명")
+	# 주민 데이터 + 스폰 (기존 8 + 수녀님)
+	assert(GameData.npcs.size() == 9, "주민 9명")
 	for id in ["npc.rosa", "npc.milo", "npc.momo", "npc.pip"]:
 		assert(GameData.npcs.has(id), "신규 주민 %s" % id)
 		assert(_npcsys.npc_nodes.has(id), "%s 스폰됨" % id)

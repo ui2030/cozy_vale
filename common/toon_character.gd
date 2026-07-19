@@ -66,10 +66,14 @@ static func make_solid(color: Color, outline_width := 0.0) -> ShaderMaterial:
 		m.next_pass = o
 	return m
 
-static func aabb_of(node: Node, acc := AABB()) -> AABB:
+# 트리 밖(스폰 전) 노드에도 안전 — global_transform 대신 로컬 변환 누적
+static func aabb_of(node: Node, xform := Transform3D(), acc := AABB()) -> AABB:
+	var t := xform
+	if node is Node3D:
+		t = xform * (node as Node3D).transform
 	if node is VisualInstance3D:
-		var b: AABB = node.global_transform * node.get_aabb()
+		var b: AABB = t * node.get_aabb()
 		acc = b if acc.size == Vector3.ZERO else acc.merge(b)
 	for c in node.get_children():
-		acc = aabb_of(c, acc)
+		acc = aabb_of(c, t, acc)
 	return acc

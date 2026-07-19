@@ -25,6 +25,8 @@ const WALK_SCALE := 1.6       # cat walk 애니 재생속도
 const ARRIVE := 0.15          # 목표 도착 판정 거리
 const DAY_START := 8          # 배회 시작 시각
 const DAY_END := 20           # 배회 종료 시각
+const FACE_TIME := 0.25       # 대화/선물 시 플레이어 쪽으로 도는 트윈 길이
+const FACE_HOLD := 6.0        # 돈 뒤 배회 재개까지 그 방향 유지 시간(초)
 const POND_XZ := Vector2(10, 0)
 const POND_AVOID := 3.0
 
@@ -72,7 +74,24 @@ func _spawn(id: String) -> void:
 	}
 
 # ── 비주얼 어댑터 (종족별 실물 모델 교체는 여기만 수정) ──────────────
+# npcs.json에 "model" 필드 있으면 그 GLB를 실물 로드(색조 tint 없이 원본 텍스처).
+# 성인 키 = cat×NPC_SCALE 에 맞춰 AABB 높이 정규화(꼬마면 ×KID_MULT). 없으면 기존 고양이 색조.
+const MODEL_TARGET_H := 2.1    # 실물 GLB NPC 목표 월드 높이 (성인 기준)
+
 func _make_visual(id: String, ndef: Dictionary) -> Node3D:
+	var model_path := String(ndef.get("model", ""))
+	if model_path != "":
+		var m: Node3D = ToonChar.load_glb(model_path, OUTLINE_W)  # tint=흰=원본색
+		if m != null:
+			var box := ToonChar.aabb_of(m)
+			var ms := 1.0
+			if box.size.y > 0.001:
+				ms = MODEL_TARGET_H / box.size.y * (KID_MULT if id in KID_IDS else 1.0)
+			m.scale = Vector3(ms, ms, ms)
+			m.position.y = NPC_Y - box.position.y * ms  # 모델 발바닥(AABB 최저점)을 접지
+			m.rotation.y = PI  # 앞=+Z → look_at(-Z) 보정 (cat과 동일)
+			return m
+		# 로드 실패 시 아래 고양이 색조 폴백으로 진행
 	var c: Array = ndef["color"]
 	var tint := Color(c[0], c[1], c[2])
 	var cat: Node3D = ToonChar.load_glb(CAT_GLB, OUTLINE_W, tint)
@@ -148,6 +167,34 @@ func _pick_target(id: String) -> Vector3:
 		return Vector3(p.x, 0, p.y)
 	return Vector3(home[0], 0, home[1])
 
+# 말 건 플레이어 쪽으로 비주얼 yaw 회전 (전 주민 공통, talk·give가 호출).
+# 루트를 wander와 같은 look_at 규약으로 돌려(비주얼 rotation.y=PI 보정 재사용) 이중보정 없음.
+# 짧은 트윈 후 FACE_HOLD 동안 wait 상태로 두어 배회 look_at이 다음 프레임에 덮지 않게 함.
+func _face_player(id: String) -> void:
+	var node: Node3D = npc_nodes.get(id)
+	if node == null:
+		return
+	var player := get_tree().get_first_node_in_group("player") as Node3D
+	if player == null:
+		return
+	var flat := player.global_position - node.global_position
+	flat.y = 0.0
+	if flat.length() < 0.01:
+		return
+	var yaw := node.global_transform.looking_at(node.global_position + flat, Vector3.UP).basis.get_euler().y
+	var cur := node.rotation.y
+	yaw = cur + wrapf(yaw - cur, -PI, PI)  # 최단 회전
+	var st: Dictionary = _wander[id]
+	var old = st.get("face_tween")
+	if old != null and (old as Tween).is_valid():
+		(old as Tween).kill()
+	var tw := create_tween()
+	tw.tween_property(node, "rotation:y", yaw, FACE_TIME)
+	st["face_tween"] = tw
+	st["target"] = node.position          # 그 자리에서
+	st["wait"] = maxf(float(st["wait"]), FACE_HOLD)  # 배회 재개 지연 → yaw 유지
+	_set_walk(id, false)
+
 # walk/idle 전환 (같은 클립 재요청 무시)
 func _set_walk(id: String, walking: bool) -> void:
 	var st: Dictionary = _wander[id]
@@ -159,7 +206,7 @@ func _set_walk(id: String, walking: bool) -> void:
 	if anim.has_animation(want):
 		anim.play(want, 0.2, WALK_SCALE if walking else 1.0)
 
-# 스크린샷용: 주민 8명 카메라 앞 격자 배치 + 배회 정지 (world.gd "npcs" cmdline)
+# 스크린샷용: 전 주민 카메라 앞 격자 배치 + 배회 정지 (world.gd "npcs" cmdline)
 func pose_for_shot() -> void:
 	_shot_frozen = true
 	var ids := npc_nodes.keys()
@@ -174,6 +221,7 @@ func hearts(id: String) -> int:
 
 # 대화: 하루 1회 +5 (축제 중 ×2)
 func talk(id: String) -> Dictionary:
+	_face_player(id)  # 대화 성사 여부와 무관하게 플레이어를 향해 돎
 	var s: Dictionary = state[id]
 	var nm: String = GameData.npcs[id]["name"]
 	if s["talked_today"]:
@@ -215,6 +263,7 @@ func exit_festival() -> void:
 
 # 선물: 하루 1회, 취향별 ±, 생일 ×8, 0~250 clamp
 func give(id: String, item_id: String) -> Dictionary:
+	_face_player(id)  # 선물도 같은 상호작용 — 플레이어를 향해 돎
 	var s: Dictionary = state[id]
 	var nm: String = GameData.npcs[id]["name"]
 	if s["gifted_today"]:
