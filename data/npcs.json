@@ -1,47 +1,47 @@
 {
 	"npc.mira": {
 		"name": "Mira", "archetype": "cheerful", "birthday": {"season": "spring", "day": 12},
-		"home": [-9, -3], "color": [0.90, 0.55, 0.62], "candidate": true,
+		"home": [-20, -9], "color": [0.90, 0.55, 0.62], "candidate": true,
 		"gifts": {"loved": ["crop.strawberry"], "liked": ["crop.turnip", "forage.dandelion"], "disliked": ["crop.potato"]}
 	},
 	"npc.tom": {
 		"name": "Tom", "archetype": "gruff", "birthday": {"season": "spring", "day": 20},
-		"home": [9, -3], "color": [0.45, 0.55, 0.78],
+		"home": [22, 17], "color": [0.45, 0.55, 0.78],
 		"gifts": {"loved": ["crop.potato"], "liked": ["crop.cabbage"], "disliked": ["crop.strawberry"]}
 	},
 	"npc.luna": {
 		"name": "Luna", "archetype": "shy", "birthday": {"season": "spring", "day": 5},
-		"home": [-9, 9], "color": [0.92, 0.90, 0.86], "candidate": true,
+		"home": [-19, 20], "color": [0.92, 0.90, 0.86], "candidate": true,
 		"gifts": {"loved": ["crop.cabbage"], "liked": ["crop.strawberry", "forage.leek"], "disliked": ["crop.turnip"]}
 	},
 	"npc.finn": {
 		"name": "Finn", "archetype": "energetic", "birthday": {"season": "spring", "day": 25},
-		"home": [9, 9], "color": [0.88, 0.58, 0.32], "candidate": true,
+		"home": [-6, 19], "color": [0.88, 0.58, 0.32], "candidate": true,
 		"gifts": {"loved": ["fish.bass", "crop.turnip"], "liked": ["fish.bluegill", "crop.potato"], "disliked": ["crop.cabbage"]}
 	},
 	"npc.rosa": {
 		"name": "Rosa", "archetype": "easygoing", "birthday": {"season": "summer", "day": 8},
-		"home": [-13, 2], "color": [0.95, 0.72, 0.55],
+		"home": [-24, -3], "color": [0.95, 0.72, 0.55],
 		"gifts": {"loved": ["crop.cabbage", "forage.leek"], "liked": ["crop.potato", "forage.horseradish"], "disliked": ["fish.smelt"]}
 	},
 	"npc.milo": {
 		"name": "Milo", "archetype": "tsundere", "birthday": {"season": "autumn", "day": 14},
-		"home": [13, 3], "color": [0.62, 0.45, 0.32], "candidate": true,
+		"home": [-15, -11], "color": [0.62, 0.45, 0.32], "candidate": true,
 		"gifts": {"loved": ["crop.potato"], "liked": ["forage.horseradish", "crop.turnip"], "disliked": ["crop.strawberry"]}
 	},
 	"npc.momo": {
 		"name": "Momo", "archetype": "playful", "birthday": {"season": "summer", "day": 21},
-		"home": [-4, -9], "color": [0.70, 0.85, 0.55],
+		"home": [-8, 6], "color": [0.70, 0.85, 0.55],
 		"gifts": {"loved": ["forage.horseradish", "forage.dandelion"], "liked": ["forage.leek", "crop.strawberry"], "disliked": ["fish.carp"]}
 	},
 	"npc.pip": {
 		"name": "Pip", "archetype": "curious", "birthday": {"season": "winter", "day": 10},
-		"home": [4, -9], "color": [0.55, 0.80, 0.85],
+		"home": [-8, -4], "color": [0.55, 0.80, 0.85],
 		"gifts": {"loved": ["fish.smelt", "fish.bluegill"], "liked": ["fish.carp", "crop.cabbage"], "disliked": ["crop.potato"]}
 	},
 	"npc.nun": {
 		"name": "수녀님", "archetype": "shy", "birthday": {"season": "winter", "day": 3},
-		"home": [0, 12], "color": [0.55, 0.48, 0.62], "model": "res://assets/nun.glb",
+		"home": [-22, 10], "color": [0.55, 0.48, 0.62], "model": "res://assets/nun.glb",
 		"gifts": {"loved": ["forage.leek"], "liked": ["forage.dandelion", "crop.cabbage"], "disliked": ["fish.smelt"]}
 	}
 }

@@ -11,7 +11,7 @@ func _run() -> void:
 	await get_tree().process_frame
 	var player: Node = get_tree().get_first_node_in_group("player")
 	assert(player != null, "player 존재")
-	player.global_position = Vector3(3.6, 1.0, 0)  # 침대 옆으로 텔레포트
+	player.global_position = Vector3(5, 1.0, 10)  # 플레이어 집 침대(5,8.5) 옆으로 텔레포트
 	for i in 12:  # Area 겹침 등록 대기
 		await get_tree().physics_frame
 	var before: int = GameClock.abs_day

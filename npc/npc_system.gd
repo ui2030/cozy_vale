@@ -29,6 +29,17 @@ const FACE_TIME := 0.25       # 대화/선물 시 플레이어 쪽으로 도는 
 const FACE_HOLD := 6.0        # 돈 뒤 배회 재개까지 그 방향 유지 시간(초)
 const POND_XZ := Vector2(10, 0)
 const POND_AVOID := 3.0
+# 배회 목표에서 회피할 건물 keep-out(중심, 반경). world.gd _build_village의 solid/가시 건물과
+# 동기화 필수 — P2 Tripo 교체 시 함께 갱신. (경로탐색 아님: 목표점만 거름, DESIGN 11)
+const BUILDING_KEEPOUT := [
+	[Vector2(0, -18), 4.0],   # 회관
+	[Vector2(-20, -14), 3.0], # 집1
+	[Vector2(-24, 2), 3.0],   # 집2
+	[Vector2(-14, 22), 3.0],  # 집3
+	[Vector2(-7, -7), 2.5],   # 상점 박스
+	[Vector2(3, 15), 3.5],    # 플레이어 집 (v1.4 이동 반영)
+	[Vector2(24, 20), 3.0],   # 집4 (남동 강 건너)
+]
 
 # affection_points 0~250 저장, hearts는 파생 (Codex: F단계 청혼조건 재작업 방지)
 var state := {}         # npc_id → {affection_points, talked_today, gifted_today}
@@ -163,6 +174,13 @@ func _pick_target(id: String) -> Vector3:
 		if _farm != null and _farm.in_region(Vector2i(floori(p.x), floori(p.y))):
 			continue
 		if p.distance_to(POND_XZ) < POND_AVOID:
+			continue
+		var blocked := false
+		for ko in BUILDING_KEEPOUT:
+			if p.distance_to(ko[0]) < ko[1]:
+				blocked = true
+				break
+		if blocked:
 			continue
 		return Vector3(p.x, 0, p.y)
 	return Vector3(home[0], 0, home[1])

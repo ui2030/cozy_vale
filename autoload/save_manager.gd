@@ -3,6 +3,10 @@ extends Node
 # 저장 요청은 큐잉 후 다음 프레임 처리 (신호 연결 순서 문제 회피 — Codex 지적).
 
 const VERSION := 4
+# 월드 레이아웃 판(마을 P1). 정적 지오메트리/충돌체가 바뀌면 범프 → 구세이브의 플레이어
+# 위치가 신규 충돌체 안에 박혔을 수 있으므로 로드 시 광장으로 폴백(신규 게임엔 영향 없음).
+const WORLD_VERSION := 2
+const PLAZA_SPAWN := Vector3(0, 2, -3.5)  # 광장 안(분수 r1·밭 밖), 스폰/폴백 공용
 const F_JSON := "user://save.json"
 const F_BAK := "user://save.bak"
 const F_TMP := "user://save.tmp"
@@ -43,7 +47,7 @@ func _process(_delta: float) -> void:
 func _gather() -> Dictionary:
 	var data := {
 		"save_version": VERSION,
-		"meta": {"reason": _queued_reason, "saved_abs_day": GameClock.abs_day},
+		"meta": {"reason": _queued_reason, "saved_abs_day": GameClock.abs_day, "world_version": WORLD_VERSION},
 		"clock": GameClock.to_dict(),
 		"player": {},
 		"systems": {},  # B~F: systems.farming / systems.npc / systems.relationships
@@ -70,6 +74,9 @@ func load_game() -> bool:
 	var p := _player()
 	if p != null and p.has_method("load_data") and data.has("player"):
 		p.load_data(data["player"])
+		# 월드 판이 바뀐 세이브 → 저장 위치가 신규 충돌체에 박혔을 수 있어 광장으로 폴백
+		if int(data.get("meta", {}).get("world_version", 0)) != WORLD_VERSION:
+			p.global_position = PLAZA_SPAWN
 	var farm := _farm()
 	if farm != null and farm.has_method("load_data"):
 		farm.load_data(data.get("systems", {}).get("farming", {}))
