@@ -89,6 +89,36 @@ func has_item_id(item_id: String) -> bool:
 func is_produce(item_id: String) -> bool:
 	return crops.has(item_id) or fish.has(item_id) or forage.has(item_id)
 
+# 가중치·시간대 반영 물고기 선택 (순수 함수, test_core 단위검증).
+# defs=fish 정의 맵, pool=계절 통과 fish_id 목록, rng_value∈[0,1), hour=현재 시(0..23).
+# weight 없으면 1. hours([시작,끝]) 없으면 항상 후보. 후보 0이면 "".
+static func pick_fish(defs: Dictionary, pool: Array, rng_value: float, hour: int) -> String:
+	var cands := []
+	var total := 0.0
+	for fid in pool:
+		var d: Dictionary = defs[fid]
+		if not _hour_ok(d.get("hours", []), hour):
+			continue
+		var w := float(d.get("weight", 1.0))
+		cands.append([fid, w])
+		total += w
+	if cands.is_empty():
+		return ""
+	var r := clampf(rng_value, 0.0, 1.0) * total
+	for c in cands:
+		r -= c[1]
+		if r < 0.0:
+			return c[0]
+	return cands[cands.size() - 1][0]  # 부동소수 안전망
+
+# hours=[start,end]. end>24=자정 넘김(예 [18,26]=18시~익일2시). 빈 배열=항상 가능.
+static func _hour_ok(hours: Array, hour: int) -> bool:
+	if hours.is_empty():
+		return true
+	var start := int(hours[0])
+	var end := int(hours[1])
+	return (hour >= start and hour < end) or (hour + 24 >= start and hour + 24 < end)
+
 # source(crops/fish/forage) 중 해당 계절에 나는 id 목록
 func season_filter(source: Dictionary, sid: String) -> Array:
 	var out := []

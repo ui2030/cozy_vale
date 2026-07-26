@@ -7,5 +7,8 @@
 	},
 	"forage.horseradish": {
 		"name": "Horseradish", "seasons": ["spring"], "sell_price": 30
+	},
+	"forage.morel": {
+		"name": "Morel", "seasons": ["spring"], "sell_price": 90, "rare": true
 	}
 }

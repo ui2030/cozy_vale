@@ -1,14 +1,17 @@
 {
 	"fish.carp": {
-		"name": "Carp", "seasons": ["spring"], "sell_price": 30, "difficulty": 0.15
+		"name": "Carp", "seasons": ["spring"], "sell_price": 30, "difficulty": 0.15, "weight": 50
 	},
 	"fish.bluegill": {
-		"name": "Bluegill", "seasons": ["spring"], "sell_price": 45, "difficulty": 0.4
+		"name": "Bluegill", "seasons": ["spring"], "sell_price": 45, "difficulty": 0.4, "weight": 30
 	},
 	"fish.bass": {
-		"name": "Bass", "seasons": ["spring"], "sell_price": 75, "difficulty": 0.7
+		"name": "Bass", "seasons": ["spring"], "sell_price": 75, "difficulty": 0.7, "weight": 15
 	},
 	"fish.smelt": {
-		"name": "Smelt", "seasons": ["spring"], "sell_price": 55, "difficulty": 0.9
+		"name": "Smelt", "seasons": ["spring"], "sell_price": 110, "difficulty": 0.9, "weight": 5
+	},
+	"fish.catfish": {
+		"name": "Catfish", "seasons": ["spring"], "sell_price": 150, "difficulty": 0.85, "weight": 10, "hours": [18, 26]
 	}
 }

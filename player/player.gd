@@ -216,7 +216,10 @@ func _start_fishing() -> void:
 	if _fishing == null or pool.is_empty():
 		message.emit("여긴 잡을 게 없네요")
 		return
-	var fid: String = pool[randi() % pool.size()]
+	var fid: String = GameData.pick_fish(GameData.fish, pool, randf(), GameClock.hour())
+	if fid == "":  # 시간대 필터로 후보 0 (밤물고기만 남는 낮 등)
+		message.emit("지금은 물릴 게 없네요")
+		return
 	_fishing.start(fid, float(GameData.fish[fid].get("difficulty", 0.5)))
 	get_viewport().set_input_as_handled()  # 시작 E가 즉시 판정되는 것 방지
 

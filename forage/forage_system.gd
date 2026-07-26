@@ -10,6 +10,18 @@ const SPAWN_POINTS := [
 	Vector3(-9, 0, 5), Vector3(-8, 0, -4), Vector3(-3, 0, -6), Vector3(6, 0, -7),
 ]
 const SPAWN_PCT := 55  # 각 지점 스폰 확률(%)
+# 밭·침대·상점서 먼 외곽 지점(뒤 4개) — 여기서만 낮은 확률로 희귀 채집물.
+const REMOTE_IDX := [4, 5, 6, 7]
+const RARE_PCT := 20  # 원거리 지점에서 일반 대신 희귀가 나올 확률(%)
+
+# 원거리 지점의 희귀 등장 결정 (순수 함수, test_core 단위검증). 결정적 해시 h 기준.
+# 반환: 희귀면 rare_id, 아니면 "" (일반 스폰 유지). 스폰여부(h%100)와 겹치지 않는 자리 사용.
+static func pick_rare(is_remote: bool, h: int, rare_ids: Array) -> String:
+	if not is_remote or rare_ids.is_empty():
+		return ""
+	if (h / 100) % 100 < RARE_PCT:
+		return rare_ids[(h / 10000) % rare_ids.size()]
+	return ""
 
 var _roots := []  # 현재 스폰된 root Node3D
 
@@ -27,10 +39,21 @@ func _respawn() -> void:
 	var pool := GameData.season_filter(GameData.forage, GameData.season_id(GameClock.season()))
 	if pool.is_empty():
 		return
+	var rare_pool := []   # 희귀는 원거리 전용
+	var common_pool := []
+	for id in pool:
+		if GameData.forage[id].get("rare", false):
+			rare_pool.append(id)
+		else:
+			common_pool.append(id)
 	for i in SPAWN_POINTS.size():
 		var h := absi(hash([GameClock.abs_day, i]))  # 결정적: 같은 날 재로드 = 같은 배치
 		if h % 100 < SPAWN_PCT:
-			_spawn(SPAWN_POINTS[i], pool[h % pool.size()])
+			var rid := pick_rare(i in REMOTE_IDX, h, rare_pool)
+			if rid != "":
+				_spawn(SPAWN_POINTS[i], rid, true)
+			elif not common_pool.is_empty():
+				_spawn(SPAWN_POINTS[i], common_pool[h % common_pool.size()], false)
 
 func _clear() -> void:
 	for r in _roots:
@@ -38,7 +61,7 @@ func _clear() -> void:
 			r.queue_free()
 	_roots.clear()
 
-func _spawn(pos: Vector3, fid: String) -> void:
+func _spawn(pos: Vector3, fid: String, rare := false) -> void:
 	var root := Node3D.new()
 	root.position = pos
 	var mesh := MeshInstance3D.new()
@@ -46,7 +69,8 @@ func _spawn(pos: Vector3, fid: String) -> void:
 	sm.radius = 0.28
 	sm.height = 0.56
 	mesh.mesh = sm
-	mesh.material_override = ToonChar.make_solid(Color(0.5, 0.75, 0.35), 0.006)
+	var col := Color(0.86, 0.68, 0.20) if rare else Color(0.5, 0.75, 0.35)  # 희귀=금색(원거리서 식별)
+	mesh.material_override = ToonChar.make_solid(col, 0.006)
 	mesh.position = Vector3(0, 0.32, 0)
 	root.add_child(mesh)
 	var area := Area3D.new()

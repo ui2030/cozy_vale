@@ -33,6 +33,8 @@ func _ready() -> void:
 	_test_festival()
 	_test_pause_menu()
 	_test_fishing_judge()
+	_test_pick_fish()
+	_test_forage_rare()
 	_test_collection_roundtrip()
 	print("ALL CORE TESTS PASS")
 	get_tree().quit()
@@ -260,6 +262,39 @@ func _test_fishing_judge() -> void:
 	assert(FG.in_zone(0.5, FG.zone_half_width(0.5)), "중앙 명중")
 	assert(not FG.in_zone(0.95, FG.zone_half_width(1.0)), "가장자리 + 어려움 실패")
 	assert(FG.in_zone(0.5 + FG.zone_half_width(0.0) - 0.001, FG.zone_half_width(0.0)), "존 경계 안 명중")
+
+func _test_pick_fish() -> void:
+	# 가중치 선택 + 야간 시간대 필터 (순수 함수)
+	var defs := {
+		"fish.a": {"weight": 50, "difficulty": 0.1},
+		"fish.b": {"weight": 30, "difficulty": 0.4},
+		"fish.night": {"weight": 10, "difficulty": 0.8, "hours": [18, 26]},
+	}
+	var pool := ["fish.a", "fish.b", "fish.night"]
+	# 낮 12시: 밤물고기 제외 → a(50)+b(30)=80
+	assert(GameData.pick_fish(defs, pool, 0.0, 12) == "fish.a", "rng0 → 첫 후보 a")
+	assert(GameData.pick_fish(defs, pool, 0.6, 12) == "fish.a", "48<50 → a")     # 0.6*80=48
+	assert(GameData.pick_fish(defs, pool, 0.63, 12) == "fish.b", "50.4>50 → b")  # 0.63*80=50.4
+	assert(GameData.pick_fish(defs, pool, 0.99, 12) == "fish.b", "낮엔 밤물고기 안 나옴")
+	# 밤 20시: 밤물고기 후보. 0.99*90=89.1 > a+b(80) → night
+	assert(GameData.pick_fish(defs, pool, 0.99, 20) == "fish.night", "밤엔 밤물고기 후보")
+	# 새벽 1시(+24=25 ∈ [18,26)) 포함, 2시(26)은 배제
+	assert(GameData.pick_fish(defs, ["fish.night"], 0.5, 1) == "fish.night", "새벽1시 밤물고기 가능")
+	assert(GameData.pick_fish(defs, ["fish.night"], 0.5, 2) == "", "새벽2시(end 배타) 없음")
+	assert(GameData.pick_fish(defs, ["fish.night"], 0.5, 12) == "", "낮 밤전용만 → 후보없음")
+	# 실데이터: catfish는 야간, weight 필드 존재
+	assert(GameData.fish["fish.catfish"].get("hours", []).size() == 2, "catfish 야간 창")
+	assert(GameData.pick_fish(GameData.fish, ["fish.catfish"], 0.5, 12) == "", "낮엔 catfish 안 나옴")
+
+func _test_forage_rare() -> void:
+	var FS := preload("res://forage/forage_system.gd")
+	assert(FS.pick_rare(false, 12345, ["forage.morel"]) == "", "근거리는 희귀 없음")
+	assert(FS.pick_rare(true, 12345, []) == "", "희귀풀 없으면 없음")
+	# 원거리 + 밴드 안: (1500/100)%100=15 < 20 → morel
+	assert(FS.pick_rare(true, 1500, ["forage.morel"]) == "forage.morel", "원거리 희귀밴드 → morel")
+	# 원거리지만 밴드 밖: (9500/100)%100=95 → 일반
+	assert(FS.pick_rare(true, 9500, ["forage.morel"]) == "", "원거리라도 밴드밖 → 일반")
+	assert(GameData.forage["forage.morel"].get("rare", false), "morel = 희귀 플래그")
 
 func _test_collection_roundtrip() -> void:
 	# 실제 player 스크립트로 도감 발견 → 저장 → 로드 유지 (스텁엔 도감 없음).
