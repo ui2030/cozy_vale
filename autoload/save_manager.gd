@@ -36,6 +36,9 @@ var _migrations := {
 		return d,
 }
 
+func _ready() -> void:
+	set_process(false)  # 기본 활성이면 첫 프레임에 무요청 _write 실행(하네스 세이브 오염 원인)
+
 func request_save(reason := "") -> void:
 	_queued_reason = reason
 	set_process(true)
