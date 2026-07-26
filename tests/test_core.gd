@@ -37,6 +37,7 @@ func _ready() -> void:
 	_test_forage_rare()
 	_test_collection_roundtrip()
 	_test_daynight()
+	_test_ambience_curve()
 	print("ALL CORE TESTS PASS")
 	get_tree().quit()
 
@@ -335,6 +336,25 @@ func _test_daynight() -> void:
 	# 6시 전환점 = 밤<x<낮 (연속 보간, 스냅 없음)
 	var d6: Dictionary = DN.sample(6.0)
 	assert(d6["amb_e"] > n0["amb_e"] and d6["amb_e"] < 0.55, "새벽6시 밤<x<낮")
+
+func _test_ambience_curve() -> void:
+	# 낮=새 / 밤=귀뚜라미 크로스페이드 곡선 (autoload/sfx.gd 순수 함수)
+	assert(Sfx.day_weight(12.0) == 1.0, "정오 = 낮 앰비언스 최대")
+	assert(Sfx.day_weight(2.0) == 0.0 and Sfx.day_weight(23.0) == 0.0, "심야 = 낮 앰비언스 0")
+	assert(Sfx.day_weight(6.0) > 0.0 and Sfx.day_weight(6.0) < 1.0, "새벽 = 전환 중")
+	assert(Sfx.day_weight(19.0) > 0.0 and Sfx.day_weight(19.0) < 1.0, "해질녘 = 전환 중")
+	assert(Sfx.day_weight(6.0) < Sfx.day_weight(6.5), "새벽엔 낮 비중 증가")
+	assert(Sfx.day_weight(19.0) > Sfx.day_weight(19.5), "해질녘엔 낮 비중 감소")
+	# 등파워: 두 트랙 선형에너지 합이 어디서나 1 (중간점 음량 꺼짐 없음)
+	for h in [0.0, 6.0, 12.0, 19.0, 23.9]:
+		var w: float = Sfx.day_weight(h)
+		var e := db_to_linear(Sfx.fade_db(w)) ** 2 + db_to_linear(Sfx.fade_db(1.0 - w)) ** 2
+		assert(absf(e - 1.0) < 0.001, "등파워 크로스페이드 h=%s" % h)
+	assert(Sfx.fade_db(0.0) <= -80.0, "가중치 0 = 무음 바닥")
+	# 버스 조회 폴백 (레이아웃 없거나 오타여도 Master로 흘러 로그 도배 안 함)
+	assert(Sfx.bus_or_master("존재하지않는버스") == "Master", "없는 버스 → Master 폴백")
+	assert(Sfx.bus_or_master("SFX") == "SFX", "SFX 버스 존재")
+	assert(Sfx.bus_or_master("Ambience") == "Ambience", "Ambience 버스 존재")
 
 func _test_v1_save_compat() -> void:
 	# A단계(v1) 세이브를 그대로 로드 → 마이그레이션되어 복원 (호환)

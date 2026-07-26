@@ -39,6 +39,7 @@ func _sleep_active() -> bool:
 	return ss != null and ss.is_active()
 
 func open_menu() -> void:
+	Sfx.play("ui_open")
 	_prev_state = GameClock.state
 	GameClock.state = GameClock.State.PAUSED
 	var cal := get_tree().get_first_node_in_group("calendar_panel")
@@ -48,6 +49,7 @@ func open_menu() -> void:
 	_show(View.MAIN)
 
 func close_menu() -> void:
+	Sfx.play("ui_close")
 	GameClock.state = _prev_state
 	visible = false
 

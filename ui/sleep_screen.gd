@@ -30,6 +30,7 @@ func request_sleep() -> void:
 		return
 	_prev_state = GameClock.state
 	GameClock.state = GameClock.State.PAUSED
+	Sfx.play("ui_open")
 	_confirm.visible = true
 	var btns: Array = _confirm.find_children("", "Button", true, false)
 	if not btns.is_empty():
@@ -37,11 +38,13 @@ func request_sleep() -> void:
 
 func _on_no() -> void:
 	_confirm.visible = false
+	Sfx.play("ui_close")
 	GameClock.state = _prev_state
 
 func _on_yes() -> void:
 	_confirm.visible = false
 	_busy = true
+	Sfx.play("sleep")
 	var t1 := create_tween()
 	t1.tween_property(_fade, "color:a", 1.0, 0.5)
 	await t1.finished

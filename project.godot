@@ -15,6 +15,7 @@ InputSetup="*res://autoload/input_setup.gd"
 GameData="*res://autoload/game_data.gd"
 GameClock="*res://autoload/game_clock.gd"
 SaveManager="*res://autoload/save_manager.gd"
+Sfx="*res://autoload/sfx.gd"
 
 [display]
 

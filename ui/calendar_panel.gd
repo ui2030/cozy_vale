@@ -49,6 +49,7 @@ func _ready() -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("calendar"):
 		visible = not visible
+		Sfx.play("ui_open" if visible else "ui_close")
 		if visible:
 			_rebuild()
 		get_viewport().set_input_as_handled()

@@ -43,6 +43,7 @@ func start(fish_id: String, difficulty: float) -> void:
 	_dir = 1.0
 	_active = true
 	visible = true
+	Sfx.play("cast")
 	_layout()
 
 func _process(delta: float) -> void:
@@ -66,6 +67,7 @@ func _judge() -> void:
 	var ok := in_zone(_marker, _half)
 	_active = false
 	visible = false
+	Sfx.play("fish_success" if ok else "fish_fail")
 	if ok:
 		var p := get_tree().get_first_node_in_group("player")
 		if p != null:

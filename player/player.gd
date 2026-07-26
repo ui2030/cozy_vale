@@ -29,6 +29,9 @@ const ToonChar := preload("res://common/toon_character.gd")  # class_name 대신
 
 var _anim: AnimationPlayer
 var _cur_anim := ""
+var _step_t := 0.0  # 발소리 간격 누적 (걷는 동안만)
+
+const STEP_INTERVAL := 0.42  # 발소리 주기(초) — walk 클립 보속에 맞춘 실측 절충값
 
 func _setup_visual() -> void:
 	var cat: Node3D = ToonChar.load_glb(CAT_GLB, 0.004)
@@ -58,6 +61,11 @@ func _ready() -> void:
 	_farm = get_tree().get_first_node_in_group("farm")
 	_npcsys = get_tree().get_first_node_in_group("npc_system")
 	_setup_visual()
+	# 3D 소리는 플레이어 기준으로 들린다. 기본 리스너인 Camera3D는 뒤로 9.5·위로 6.5 떨어져
+	# 있어 그대로 두면 물가 감쇠 거리가 카메라 기준이 돼 어긋난다.
+	var listener := AudioListener3D.new()
+	add_child(listener)
+	listener.make_current()
 	_face_dir(_last_dir)  # 정지 스폰도 조준(_last_dir=아래)과 일치하게
 	_make_highlight()
 	if selected_seed == "":
@@ -89,8 +97,20 @@ func _physics_process(delta: float) -> void:
 	if dir.length() > 0.1:
 		_face_dir(dir)
 	# 수평 속도로 walk/idle 전환
-	_play_anim("walk" if Vector2(velocity.x, velocity.z).length() > 0.1 else "idle")
+	var moving := Vector2(velocity.x, velocity.z).length() > 0.1
+	_play_anim("walk" if moving else "idle")
+	_footsteps(delta, moving)
 	_update_highlight()
+
+# 걷는 동안 STEP_INTERVAL마다 발소리. 멈추면 다음 첫 걸음이 바로 나도록 누적값을 채워 둔다.
+func _footsteps(delta: float, moving: bool) -> void:
+	if not moving:
+		_step_t = STEP_INTERVAL
+		return
+	_step_t += delta
+	if _step_t >= STEP_INTERVAL:
+		_step_t = 0.0
+		Sfx.play("step", -6.0)
 
 # 이동/조준 방향으로 몸을 돌림 (_last_dir = 조준 기준, 건드리지 않음)
 func _face_dir(dir: Vector3) -> void:
@@ -143,21 +163,26 @@ func _use_tool() -> void:
 	if _farm == null:
 		return
 	var cell := _aim_cell()
+	# 소리는 전부 "실제로 상태가 바뀐 경우"에만 — 헛손질에 효과음이 나면 성공 피드백이 망가진다.
 	if _farm.is_mature_at(cell):
 		var cid: String = _farm.harvest(cell)
 		if cid != "":
 			_add_item(cid, 1)
+			Sfx.play("harvest")
 		return
 	var t: Dictionary = _farm.get_tile(cell)
 	if not t.is_empty() and t.get("crop_id", "") != "":
-		_farm.water(cell)  # 심긴 상태 → 물
+		if _farm.water(cell):  # 심긴 상태 → 물 (이미 준 날은 false)
+			Sfx.play("water")
 		return
 	if not t.is_empty() and t.get("crop_id", "") == "":
 		if selected_seed != "" and _count(selected_seed) > 0:  # 갈아엎음 + 씨앗 → 심기
 			if _farm.plant(cell, selected_seed):
 				_remove_item(selected_seed, 1)
+				Sfx.play("plant")
 		return
-	_farm.till(cell)  # 맨땅 → 괭이질
+	if _farm.till(cell):  # 맨땅 → 괭이질
+		Sfx.play("hoe")
 
 # ── 상호작용 (침대/상점/판매상자/대화) ─────────────────────────
 # 겹친 대상 중 가장 가까운 것 {kind, area}. 프롬프트·실행 공용 (판정 단일화).
@@ -205,6 +230,8 @@ func _try_interact() -> void:
 		"bin": _deposit_all()
 		"npc":
 			var r: Dictionary = _npcsys.talk(t["area"].get_meta("npc_id"))
+			if r["ok"]:  # 오늘 이미 대화한 상대는 무음 (대사만)
+				Sfx.play("talk")
 			message.emit(r["msg"])
 		"water": _start_fishing()
 		"forage": _pick_forage(t["area"])
@@ -231,6 +258,7 @@ func _pick_forage(area: Area3D) -> void:
 	if fs != null:
 		fs.remove(area)
 	_add_item(fid, 1)
+	Sfx.play("pickup")
 
 func _give() -> void:
 	var npc_area := _nearest_npc()
@@ -269,16 +297,21 @@ func _buy_seed() -> void:
 	if gold >= cost:
 		gold -= cost
 		_add_item(selected_seed, 1)
+		Sfx.play("coin")
 		message.emit("Bought " + GameData.display_name(GameData.crop_from_seed(selected_seed)) + " seed")
 	else:
 		message.emit("골드 부족")
 
 func _deposit_all() -> void:
+	var any := false
 	for e in inventory.duplicate():
 		if GameData.is_produce(e["id"]):  # 산출물(작물·물고기·채집물) 판매상자로
 			var accepted: int = _farm.deposit(e["id"], int(e["qty"]))  # 실제 수락량만 차감(증발 방지)
 			if accepted > 0:
 				_remove_item(e["id"], accepted)
+				any = true
+	if any:  # 빈손으로 상자를 열면 무음
+		Sfx.play("deposit")
 
 # ── 소지금/인벤 ────────────────────────────────────────────────
 func add_gold(n: int) -> void:

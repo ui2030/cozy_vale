@@ -18,6 +18,7 @@ func _ready() -> void:
 	_add_env()
 	_build_village()        # 마을 P1 컬러박스 (임시 지오메트리, make_solid=곡면 툰)
 	_convert_statics(self)  # tscn 정적 물체(바닥·기능물)를 곡면 툰으로 통일
+	_water_audio()          # 물가 3D 앰비언스 (연못·분수·강)
 	if not SaveManager.load_game():
 		print("새 게임 시작")
 	# from_dict는 신호를 안 쏘므로 로드된 시각으로 축제 배치를 즉시 재평가 (축제날 아침 로드 누락 방지)
@@ -103,6 +104,36 @@ func _ready() -> void:
 	# 재귀 말미에 있어 노드마다 호출되던 것을 _ready 종단으로 이전 — 1회 캡처).
 	if "shot" in OS.get_cmdline_user_args():
 		await _shot()
+
+# 물가 소리: 연못·분수 + 강 폴리라인을 따라 ~9 간격으로 AudioStreamPlayer3D를 심는다.
+# 강은 길어서(전장 ~90) 점 음원 하나로는 다리 근처에서만 들린다 — 등간격 다발이 선을 흉내낸다.
+# 같은 루프라 위상이 겹치면 콤필터링(금속성 울림)이 나므로 시작 지점을 무작위로 어긋뜨린다.
+func _water_audio() -> void:
+	if Sfx.water_loop == null or Sfx.silent:  # 헤드리스면 에미터 자체를 안 만든다
+		return
+	var spots := [Vector3(10, 0.3, 0), Vector3(0, 0.7, 0)]  # 연못(world.tscn) / 분수(광장 중앙)
+	for i in RIVER_PTS.size() - 1:
+		var a: Vector2 = RIVER_PTS[i]
+		var b: Vector2 = RIVER_PTS[i + 1]
+		var n := maxi(1, int(round((b - a).length() / 9.0)))
+		for k in n:
+			var c: Vector2 = a + (b - a) * ((k + 0.5) / float(n))
+			spots.append(Vector3(c.x, 0.3, c.y))
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 20260727
+	for s in spots:
+		var sp := AudioStreamPlayer3D.new()
+		sp.stream = Sfx.water_loop
+		sp.bus = Sfx.bus_or_master("Ambience")
+		sp.unit_size = 6.0        # 이 거리부터 감쇠 시작
+		sp.max_distance = 18.0    # 넘으면 무음 (카메라가 아니라 플레이어 리스너 기준)
+		sp.volume_db = -4.0
+		# 루프가 1.9초로 짧다 — 시작 위상과 피치를 에미터마다 흩어 놔야 여러 개가 동시에 들릴 때
+		# 같은 파형이 겹쳐 나는 금속성 울림(콤필터링)과 "똑같은 소리 반복" 느낌이 사라진다.
+		sp.pitch_scale = rng.randf_range(0.88, 1.12)
+		sp.position = s
+		add_child(sp)
+		sp.play(rng.randf() * Sfx.water_loop.get_length())
 
 # StandardMaterial3D 정적 메시 → 곡면 툰 (투명물=조준칸 제외)
 func _convert_statics(node: Node) -> void:
