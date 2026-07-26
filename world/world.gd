@@ -2,8 +2,15 @@ extends Node3D
 # A단계 월드 루트. 환경/조명 세팅 + 세이브 로드.
 
 const ToonChar := preload("res://common/toon_character.gd")
+const WATER_SHADER := preload("res://world/water.gdshader")
 
 @onready var _sun: DirectionalLight3D = $Sun
+
+# 바람의 지휘봉풍 애니메이션 물 머티리얼(연못·강·분수 공용, base=C_WATER 기본값).
+func _water_mat() -> ShaderMaterial:
+	var m := ShaderMaterial.new()
+	m.shader = WATER_SHADER
+	return m
 
 func _ready() -> void:
 	_sun.rotation_degrees = Vector3(-52, -125, 0)
@@ -88,9 +95,13 @@ func _ready() -> void:
 # StandardMaterial3D 정적 메시 → 곡면 툰 (투명물=조준칸 제외)
 func _convert_statics(node: Node) -> void:
 	if node is MeshInstance3D:
-		var m = node.material_override
-		if m is StandardMaterial3D and m.transparency == BaseMaterial3D.TRANSPARENCY_DISABLED:
-			node.material_override = ToonChar.make_solid(m.albedo_color, 0.0)
+		var par := node.get_parent()
+		if par != null and par.is_in_group("water"):  # 연못(water 그룹) 수면 → 애니 물
+			node.material_override = _water_mat()
+		else:
+			var m = node.material_override
+			if m is StandardMaterial3D and m.transparency == BaseMaterial3D.TRANSPARENCY_DISABLED:
+				node.material_override = ToonChar.make_solid(m.albedo_color, 0.0)
 	for c in node.get_children():
 		_convert_statics(c)
 
@@ -255,7 +266,7 @@ func _fountain(parent: Node, at: Vector3) -> void:
 	_cyl(parent, at + Vector3(0, 0.3, 0), 1.2, 0.6, C_STONE)
 	_cyl(parent, at + Vector3(0, 0.75, 0), 0.8, 0.4, C_STONE)
 	_cyl(parent, at + Vector3(0, 1.15, 0), 0.35, 0.5, C_STONE)
-	_cyl(parent, at + Vector3(0, 0.62, 0), 1.0, 0.1, C_WATER, 0.0)  # 수면
+	_cyl(parent, at + Vector3(0, 0.62, 0), 1.0, 0.1, C_WATER, 0.0).material_override = _water_mat()  # 수면(애니 물)
 	var sb := StaticBody3D.new()
 	sb.position = at + Vector3(0, 1, 0)
 	var cs := CollisionShape3D.new()
@@ -321,6 +332,7 @@ func _river_and_bridges(parent: Node) -> void:
 		floor_box.rotation.y = ang  # 어두운 채널 바닥(깊이감)
 		var water := _box(parent, Vector3(mid.x, 0.16, mid.y), Vector3(3.0, 0.14, span + 0.4), C_WATER, 0.0)
 		water.rotation.y = ang      # 밝은 물면(강둑보다 낮게 inset), 폭3
+		water.material_override = _water_mat()  # 애니 물(연못과 통일)
 		for s in [1.0, -1.0]:       # 양안 강둑(브라운) — 물면보다 ~0.45 높아 파인 채널로 읽힘
 			var bc: Vector2 = mid + perp * (2.05 * s)
 			var bank := _box(parent, Vector3(bc.x, 0.35, bc.y), Vector3(1.0, 0.7, span + 0.4), C_WOOD, 0.004)
