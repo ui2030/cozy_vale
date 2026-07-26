@@ -42,9 +42,11 @@ func open_menu() -> void:
 	Sfx.play("ui_open")
 	_prev_state = GameClock.state
 	GameClock.state = GameClock.State.PAUSED
-	var cal := get_tree().get_first_node_in_group("calendar_panel")
-	if cal != null:
-		cal.visible = false
+	# 열려 있는 패널은 전부 닫는다 — hud.tscn에서 PauseMenu보다 뒤에 있는 패널은 메뉴 위에 겹쳐 그려진다
+	for g in ["calendar_panel", "collection_panel", "inventory_panel"]:
+		var pan := get_tree().get_first_node_in_group(g)
+		if pan != null:
+			pan.visible = false
 	visible = true
 	_show(View.MAIN)
 

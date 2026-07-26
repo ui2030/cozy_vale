@@ -176,7 +176,7 @@ func _use_tool() -> void:
 			Sfx.play("water")
 		return
 	if not t.is_empty() and t.get("crop_id", "") == "":
-		if selected_seed != "" and _count(selected_seed) > 0:  # 갈아엎음 + 씨앗 → 심기
+		if selected_seed != "" and count(selected_seed) > 0:  # 갈아엎음 + 씨앗 → 심기
 			if _farm.plant(cell, selected_seed):
 				_remove_item(selected_seed, 1)
 				Sfx.play("plant")
@@ -342,11 +342,18 @@ func _remove_item(id: String, qty: int) -> void:
 				inventory.erase(e)
 			stats_changed.emit(); return
 
-func _count(id: String) -> int:
+func count(id: String) -> int:  # UI(HUD·가방 패널)도 읽는 공개 조회
 	for e in inventory:
 		if e["id"] == id:
 			return int(e["qty"])
 	return 0
+
+# 가방 패널 클릭 선택 (Q 순환과 같은 집합·같은 신호 — 두 경로가 어긋나지 않게 여기로 단일화)
+func select_seed(id: String) -> void:
+	if id == selected_seed or not id in GameData.all_seed_ids():
+		return
+	selected_seed = id
+	stats_changed.emit()
 
 func _select_first_seed() -> void:
 	var seeds := GameData.all_seed_ids()

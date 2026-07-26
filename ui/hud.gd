@@ -56,5 +56,5 @@ func _refresh() -> void:
 	]
 	if _player != null:
 		var seed_name := GameData.display_name(GameData.crop_from_seed(_player.selected_seed))
-		line += "    Gold: %d    Seed: %s" % [_player.gold, seed_name]
+		line += "    Gold: %d    Seed: %s x%d" % [_player.gold, seed_name, _player.count(_player.selected_seed)]
 	_label.text = line

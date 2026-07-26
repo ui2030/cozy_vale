@@ -89,6 +89,23 @@ func _ready() -> void:
 		if cp != null:
 			cp.visible = true
 			cp._rebuild()
+	if "inventory" in OS.get_cmdline_user_args():  # 검증용: 가방 패널(여러 종 보유)
+		SaveManager.set_process(false)  # 소지품·소지금을 덮어쓰므로 유저 세이브 보호
+		GameClock.game_min = 720        # 정오 (판독 가능한 밝기)
+		var pi := get_tree().get_first_node_in_group("player")
+		if pi != null:
+			pi.gold = 730
+			pi.inventory = [
+				{"id": "seed.turnip", "qty": 3}, {"id": "seed.cabbage", "qty": 1},
+				{"id": "crop.turnip", "qty": 5}, {"id": "crop.strawberry", "qty": 2},
+				{"id": "fish.carp", "qty": 1}, {"id": "forage.dandelion", "qty": 4},
+			]
+			pi.select_seed("seed.cabbage")  # 선택 표시가 첫 항목이 아닌 걸 스샷으로 확인
+			pi.stats_changed.emit()         # HUD 씨앗 수량 갱신
+		var ip := get_tree().get_first_node_in_group("inventory_panel")
+		if ip != null:
+			ip.visible = true
+			ip._rebuild()
 	var _args := OS.get_cmdline_user_args()
 	# 날씨 검증: -- weather rain|clear. 날씨는 abs_day 결정적이라 강제 스위치를 두는 대신
 	# 원하는 날씨의 첫 봄날로 시계를 옮긴다(실제 판정 함수를 그대로 통과 — 프로덕션 코드에 테스트 훅 0).
@@ -172,9 +189,13 @@ func _shot() -> void:
 			pw._anim.seek(0.35, true)  # 스트라이드 중간 프레임
 	await RenderingServer.frame_post_draw
 	var img := get_viewport().get_texture().get_image()
-	DirAccess.make_dir_recursive_absolute("res://lookdev/shots")
-	img.save_png("res://lookdev/shots/world.png")
-	print("saved world.png  clock=", GameClock.hour(), ":", GameClock.minute())
+	# -- out <상대경로> 로 저장 위치 지정 (없으면 world.png — 기존 동작)
+	var args := OS.get_cmdline_user_args()
+	var oi := args.find("out")
+	var rel: String = args[oi + 1] if oi != -1 and oi + 1 < args.size() else "world.png"
+	DirAccess.make_dir_recursive_absolute("res://lookdev/shots/" + rel.get_base_dir())
+	img.save_png("res://lookdev/shots/" + rel)
+	print("saved ", rel, "  clock=", GameClock.hour(), ":", GameClock.minute())
 	get_tree().quit()
 
 # 낮밤 조명 검증 캡처: PAUSED 유지(시계 N:00 고정), 조명 안정 후 1회 캡처. 세이브 미변경.
