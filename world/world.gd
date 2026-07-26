@@ -89,8 +89,19 @@ func _ready() -> void:
 		if cp != null:
 			cp.visible = true
 			cp._rebuild()
-	# 낮밤 검증: -- hour N (시계를 N시로 강제, PAUSED 고정 → FAST shot 흐름과 분리). 세이브 미변경.
 	var _args := OS.get_cmdline_user_args()
+	# 날씨 검증: -- weather rain|clear. 날씨는 abs_day 결정적이라 강제 스위치를 두는 대신
+	# 원하는 날씨의 첫 봄날로 시계를 옮긴다(실제 판정 함수를 그대로 통과 — 프로덕션 코드에 테스트 훅 0).
+	var _wi := _args.find("weather")
+	if _wi != -1 and _wi + 1 < _args.size():
+		SaveManager.set_process(false)  # 세이브 미변경
+		var want: bool = _args[_wi + 1] == "rain"
+		for d in 28:  # 봄 안에서 (계절 고사·채집 풀 영향 없이)
+			if GameData.is_rainy(d) == want:
+				GameClock.abs_day = d
+				break
+		print("weather shot: abs_day=", GameClock.abs_day, " rainy=", GameData.is_rainy(GameClock.abs_day))
+	# 낮밤 검증: -- hour N (시계를 N시로 강제, PAUSED 고정 → FAST shot 흐름과 분리). 세이브 미변경.
 	var _hi := _args.find("hour")
 	if _hi != -1 and _hi + 1 < _args.size():
 		SaveManager.set_process(false)  # SaveManager._process 기본활성 1프레임 자동쓰기 억제 → 세이브 무변경
@@ -171,9 +182,14 @@ func _shot_hour(hn: int) -> void:
 	await get_tree().create_timer(0.6).timeout  # 물리 착지 + day_night 파라미터 적용 대기
 	await RenderingServer.frame_post_draw
 	var img := get_viewport().get_texture().get_image()
-	DirAccess.make_dir_recursive_absolute("res://lookdev/shots/daynight")
-	img.save_png("res://lookdev/shots/daynight/hour_%02d.png" % hn)
-	print("saved daynight/hour_%02d.png" % hn)
+	var args := OS.get_cmdline_user_args()
+	var wi := args.find("weather")
+	var rel := "daynight/hour_%02d.png" % hn
+	if wi != -1 and wi + 1 < args.size():  # 날씨 강제 샷은 별도 폴더로
+		rel = "weather/%s_hour_%02d.png" % [args[wi + 1], hn]
+	DirAccess.make_dir_recursive_absolute("res://lookdev/shots/" + rel.get_base_dir())
+	img.save_png("res://lookdev/shots/" + rel)
+	print("saved ", rel)
 	get_tree().quit()
 
 # 여백 체감 샷: 카메라를 광장 중앙 대상으로, 존 반대편 위에서 게임카메라 각도(수평9.5·높이6.5,

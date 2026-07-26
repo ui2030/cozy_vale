@@ -166,6 +166,26 @@ func festival_on(season: String, day: int) -> Dictionary:
 			return f
 	return {}
 
+# ── 날씨 ────────────────────────────────────────────────────────
+# 하루 단위 결정적 강수: abs_day만 보고 정하므로 저장할 상태가 없다(채집 리스폰과 같은 패턴,
+# DESIGN 11.1 저장 표면 최소). 구세이브도 그대로 호환 — 세이브 포맷 무변경.
+# 축제날은 강제 맑음(비 오는 꽃축제는 없다).
+const RAIN_PCT := 25
+
+# 결정적 정수 믹서. Variant.hash()를 안 쓰는 이유: 엔진 버전·플랫폼 간 안정성이 계약이 아니라
+# 언젠가 값이 바뀌면 과거 날짜 날씨가 통째로 달라진다(Codex 지적). 시드 상수로 채집 해시와 분리해
+# "비 오는 날엔 항상 희귀 채집물" 같은 우연 상관을 막는다.
+static func rain_roll(abs_day: int) -> int:
+	var x := (abs_day + 0x51ED2701) * 0x9E3779B1
+	x = ((x ^ (x >> 15)) * 0x2C1B3C6D) & 0x7FFFFFFFFFFF
+	x = ((x ^ (x >> 13)) * 0x297A2D39) & 0x7FFFFFFFFFFF
+	return (x ^ (x >> 16)) & 0x7FFFFFFF
+
+func is_rainy(abs_day: int) -> bool:
+	if not festival_on(SEASON_IDS[GameClock.season_at(abs_day)], GameClock.day_of_season_at(abs_day)).is_empty():
+		return false
+	return rain_roll(abs_day) % 100 < RAIN_PCT
+
 # 해당 (계절,일)이 생일인 주민 이름 목록
 func birthdays_on(season: String, day: int) -> Array:
 	var out := []

@@ -59,8 +59,13 @@ func sleep_to_morning() -> void:
 		season_changed.emit(prev_season, season())
 
 # 파생 (전부 abs_day에서 계산 — 어디에도 중복 저장 안 함)
-func season() -> int: return int(abs_day / DAYS_PER_SEASON) % 4
-func day_of_season() -> int: return abs_day % DAYS_PER_SEASON + 1
+# _at 변형은 임의의 abs_day용 순수 함수 — 날씨처럼 "오늘 말고 그날" 판정을 하는 쪽이
+# 달력 수식을 자기 파일에 복제하지 않게 한다(시간 파생은 여기가 단일 출처).
+static func season_at(d: int) -> int: return int(d / DAYS_PER_SEASON) % 4
+static func day_of_season_at(d: int) -> int: return d % DAYS_PER_SEASON + 1
+
+func season() -> int: return season_at(abs_day)
+func day_of_season() -> int: return day_of_season_at(abs_day)
 func year() -> int: return int(abs_day / (DAYS_PER_SEASON * 4)) + 1
 func weekday() -> int: return abs_day % 7
 func hour() -> int: return int(game_min / 60)

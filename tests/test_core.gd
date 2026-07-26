@@ -38,6 +38,7 @@ func _ready() -> void:
 	_test_collection_roundtrip()
 	_test_daynight()
 	_test_ambience_curve()
+	_test_weather()
 	print("ALL CORE TESTS PASS")
 	get_tree().quit()
 
@@ -94,8 +95,23 @@ func _test_migration_v1_v2() -> void:
 	assert(int(nover["save_version"]) == SaveManager.VERSION, "무버전 → 최신")
 	assert(nover["systems"]["farming"].has("tiles"), "무버전 → farming 생성")
 
+# 취침 n회 동안 계속 맑고 계절도 안 넘어가는 봄 시작일 (없으면 -1). 날씨가 결정적이라
+# 수동 물주기를 검증하는 테스트가 우연히 비 오는 날에 걸리면 깨진다 — 맑은 구간에 고정한다.
+# 상한이 DAYS_PER_SEASON - n인 이유: 마지막 취침(s+n)까지 봄이어야 봄 작물이 고사하지 않음.
+func _clear_run(n: int) -> int:
+	for s in range(0, GameClock.DAYS_PER_SEASON - n):
+		var ok := true
+		for k in n + 1:  # 시작일 포함 s..s+n 전부 맑음
+			if GameData.is_rainy(s + k):
+				ok = false
+				break
+		if ok:
+			return s
+	return -1
+
 func _test_farm_loop() -> void:
-	GameClock.abs_day = 0
+	GameClock.abs_day = _clear_run(6)  # 이 테스트는 수동 물주기 경로 — 맑은 구간에서만 유효
+	assert(GameClock.abs_day >= 0, "봄에 맑은 6일 연속 구간이 없음 (RAIN_PCT 재조정 필요)")
 	GameClock.game_min = 360
 	var cell := Vector2i(1, 3)
 	assert(_farm.till(cell), "괭이질")
@@ -355,6 +371,55 @@ func _test_ambience_curve() -> void:
 	assert(Sfx.bus_or_master("존재하지않는버스") == "Master", "없는 버스 → Master 폴백")
 	assert(Sfx.bus_or_master("SFX") == "SFX", "SFX 버스 존재")
 	assert(Sfx.bus_or_master("Ambience") == "Ambience", "Ambience 버스 존재")
+
+func _test_weather() -> void:
+	# ── 결정성: abs_day만의 함수 (세이브 안 하므로 재로드해도 같아야 함)
+	var days := []
+	for d in 200:
+		days.append(GameData.is_rainy(d))
+	for d in 200:
+		assert(GameData.is_rainy(d) == days[d], "abs_day %d 날씨 비결정적" % d)
+	# ── 확률대: 목표 25%, 200일 표본 산포 감안해 넉넉히
+	var rainy := days.count(true)
+	assert(rainy > 25 and rainy < 75, "200일 중 비 %d일 — 25%% 대역 밖" % rainy)
+	# ── 축제날(봄 D15 = abs_day 14) 강제 맑음
+	assert(not GameData.festival_on("spring", 15).is_empty(), "전제: 봄 D15 = 꽃축제")
+	assert(not GameData.is_rainy(14), "축제날은 강제 맑음")
+	# ── 채집 해시와 무상관: 비 여부와 채집 스폰이 같은 날 늘 붙어 다니면 안 됨
+	var agree := 0
+	for d in 200:
+		var spawn: bool = absi(hash([d, 0])) % 100 < 55  # forage_system SPAWN_PCT 재현
+		if spawn == days[d]:
+			agree += 1
+	assert(agree > 60 and agree < 140, "비-채집 해시 상관 의심 (일치 %d/200)" % agree)
+
+	# ── 비 오는 날 자동 물주기 (farm day_changed 4단계 정합)
+	var rd := -1   # 봄의 첫 비 오는 날
+	var cd := -1   # 그 뒤 첫 맑은 날
+	for d in range(1, 28):
+		if rd < 0 and days[d]:
+			rd = d
+		elif rd >= 0 and cd < 0 and not days[d]:
+			cd = d
+	assert(rd > 0 and cd > rd, "봄에 비/맑음 검증일 확보 (rd=%d cd=%d)" % [rd, cd])
+	GameClock.abs_day = rd - 1
+	GameClock.game_min = 1300
+	var cell := Vector2i(4, 4)
+	assert(_farm.till(cell) and _farm.plant(cell, "seed.turnip"), "검증용 심기")
+	GameClock.sleep_to_morning()   # → rd (비)
+	assert(_farm.get_tile(cell)["watered"], "비 오는 날 아침 = 자동 물주기")
+	assert(not _farm.water(cell), "이미 젖음 → 수동 물주기 조용히 무시")
+	var g0 := int(_farm.get_tile(cell)["watered_growth_days"])
+	# 비 온 날 하루 = 성장 +1 (물 준 날과 동일 수식)
+	GameClock.abs_day = cd - 1     # 다음 취침이 맑은 날이 되게 이동
+	GameClock.sleep_to_morning()   # → cd (맑음)
+	assert(int(_farm.get_tile(cell)["watered_growth_days"]) == g0 + 1, "비 온 날 성장 +1")
+	assert(not _farm.get_tile(cell)["watered"], "맑은 날 아침엔 마름")
+	# 비 오는 날에 새로 심어도 즉시 젖음 (아침 일괄 처리를 놓치지 않게)
+	GameClock.abs_day = rd
+	var c3 := Vector2i(5, 4)
+	assert(_farm.till(c3) and _farm.plant(c3, "seed.turnip"), "비 오는 날 심기")
+	assert(_farm.get_tile(c3)["watered"], "비 오는 날 심은 작물도 젖음")
 
 func _test_v1_save_compat() -> void:
 	# A단계(v1) 세이브를 그대로 로드 → 마이그레이션되어 복원 (호환)

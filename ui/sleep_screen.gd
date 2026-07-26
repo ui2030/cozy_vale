@@ -55,7 +55,8 @@ func _on_yes() -> void:
 	await t2.finished
 	GameClock.state = _prev_state
 	_busy = false
-	_toast("%s D%d 아침이 밝았어요" % [SEASON_EN[GameClock.season()], GameClock.day_of_season()])
+	var sky := " — 오늘은 비가 와요" if GameData.is_rainy(GameClock.abs_day) else ""
+	_toast("%s D%d 아침이 밝았어요%s" % [SEASON_EN[GameClock.season()], GameClock.day_of_season(), sky])
 
 func _toast(text: String) -> void:
 	var hud := get_tree().get_first_node_in_group("hud")

@@ -22,11 +22,17 @@ const KEYS := [
 	{"h": 24.0, "sun_rot": Vector3(-58, -125, 0), "sun_col": Color(0.55, 0.62, 0.90), "sun_e": 0.18, "amb_col": Color(0.36, 0.40, 0.55), "amb_e": 0.40},
 ]
 
+# 날씨 → 하늘 흐림. 조명 키프레임(위 KEYS)은 건드리지 않는다 — 비 분위기는 구름량과 빗줄기로만.
+const CLOUD_CLEAR := 0.32   # sky.gdshader 기본값
+const CLOUD_RAIN := 0.85
+const CLOUD_RATE := 0.6     # 초당 전이량 (자정 날짜 전환 시 구름이 툭 튀지 않게)
+
 var _sun: DirectionalLight3D
 var _env: Environment
 var _sky_mat: ShaderMaterial
+var _cov := -1.0  # 음수 = 미초기화(첫 프레임은 스냅)
 
-func _process(_dt: float) -> void:
+func _process(dt: float) -> void:
 	if _sun == null:
 		_cache()  # world.gd _ready(_add_env)가 자식(this)보다 늦게 돌아 지연 캐시
 		if _sun == null:
@@ -41,6 +47,9 @@ func _process(_dt: float) -> void:
 		_env.ambient_light_energy = p["amb_e"]
 	if _sky_mat != null:
 		_sky_mat.set_shader_parameter("time_of_day", h)
+		var cov_t := CLOUD_RAIN if GameData.is_rainy(GameClock.abs_day) else CLOUD_CLEAR
+		_cov = cov_t if _cov < 0.0 else move_toward(_cov, cov_t, dt * CLOUD_RATE)
+		_sky_mat.set_shader_parameter("cloud_coverage", _cov)
 
 func _cache() -> void:
 	_sun = get_node_or_null("../Sun") as DirectionalLight3D

@@ -17,6 +17,11 @@ func _ready() -> void:
 func in_region(cell: Vector2i) -> bool:
 	return REGION.has_point(cell)
 
+# 비 오는 날은 심긴 작물이 전부 젖어 있다(자동 물주기). watered를 새로 놓는 자리는 전부 이걸 통과시켜
+# "오늘 비면 젖음"이 한 군데서만 결정되게 한다 — 일변경 리셋·심기·재수확·세이브 로드 공통.
+func _wet_today() -> bool:
+	return GameData.is_rainy(GameClock.abs_day)
+
 func _center(cell: Vector2i) -> Vector3:
 	return Vector3(cell.x + 0.5, 0.0, cell.y + 0.5)
 
@@ -45,7 +50,7 @@ func plant(cell: Vector2i, seed_id: String) -> bool:
 	t["crop_id"] = cid
 	t["planted_abs_day"] = GameClock.abs_day
 	t["watered_growth_days"] = 0
-	t["watered"] = false
+	t["watered"] = _wet_today()  # 비 오는 날 심으면 즉시 젖음
 	_refresh(cell)
 	return true
 
@@ -65,7 +70,7 @@ func harvest(cell: Vector2i) -> String:
 	var regrow := int(GameData.crops[cid].get("regrow_days", 0))
 	if regrow > 0:
 		t["watered_growth_days"] = GameData.grow_days(cid) - regrow  # 재수확
-		t["watered"] = false
+		t["watered"] = _wet_today()
 	else:
 		t["crop_id"] = ""
 		t["planted_abs_day"] = -1
@@ -93,8 +98,9 @@ func _on_day_changed(_prev: int, _abs_day: int) -> void:
 		if t.get("crop_id", "") != "" and t.get("watered", false):
 			t["watered_growth_days"] = int(t["watered_growth_days"]) + 1
 	_season_deaths()        # 3. 계절 경계 작물 고사
-	for cell in tiles:      # 4. 물 리셋
-		tiles[cell]["watered"] = false
+	var rain := _wet_today()  # 4. 물 리셋 (비 오는 날은 리셋 대신 전부 자동 물주기)
+	for cell in tiles:
+		tiles[cell]["watered"] = rain
 	_refresh_all()
 
 func _settle_shipping() -> void:
@@ -188,7 +194,9 @@ func load_data(d: Dictionary) -> void:
 		# JSON 라운드트립 int→float 정규화 (산술 필드)
 		t["watered_growth_days"] = int(t.get("watered_growth_days", 0))
 		t["planted_abs_day"] = int(t.get("planted_abs_day", -1))
-		t["watered"] = bool(t.get("watered", false))
+		# 날씨 도입 이전 세이브(비 오는 날인데 watered=false)를 로드 시각에 맞춰 보정.
+		# 신규 세이브는 이미 젖은 채로 저장되므로 idempotent.
+		t["watered"] = bool(t.get("watered", false)) or _wet_today()
 		t["tilled"] = bool(t.get("tilled", true))
 		tiles[Vector2i(int(parts[0]), int(parts[1]))] = t
 	shipping_bin = d.get("shipping_bin", []).duplicate(true)
