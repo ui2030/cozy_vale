@@ -36,6 +36,7 @@ func _ready() -> void:
 	_test_pick_fish()
 	_test_forage_rare()
 	_test_collection_roundtrip()
+	_test_daynight()
 	print("ALL CORE TESTS PASS")
 	get_tree().quit()
 
@@ -310,6 +311,30 @@ func _test_collection_roundtrip() -> void:
 	assert("fish.carp" in p2.collection, "저장→로드 도감 유지")
 	p.free()
 	p2.free()
+
+func _test_daynight() -> void:
+	# 시각→조명 순수 보간(day_night.sample). 낮 룩 불변 + 밤 감광 + 자정 랩 연속 검증.
+	var DN := preload("res://world/day_night.gd")
+	# 낮(9~16) = 승인값 상수 (9/12/16 동일)
+	assert(DN.sample(12.0)["amb_e"] == 0.55, "정오 ambient energy = 승인값 0.55")
+	assert(DN.sample(12.0)["sun_e"] == 1.0, "정오 sun energy = 1.0")
+	assert(DN.sample(9.0)["amb_e"] == 0.55 and DN.sample(16.0)["amb_e"] == 0.55, "9·16시 낮 상수")
+	assert(DN.sample(12.0)["sun_rot"] == Vector3(-52, -125, 0), "낮 태양각 승인값 유지")
+	# 밤(자정) = 감광하되 암흑 아님(판독 가능)
+	var n0: Dictionary = DN.sample(0.0)
+	assert(n0["amb_e"] < 0.5 and n0["amb_e"] > 0.3, "밤 ambient 감광하되 암흑 아님")
+	assert(n0["amb_e"] < 0.55, "밤이 낮보다 어두움")
+	assert(n0["sun_e"] < 0.3, "밤 태양 에너지 급감")
+	# 자정 넘김 연속(0시 == 24시, 그리고 랩 경계 근처 pop 없음)
+	assert(n0["amb_e"] == DN.sample(24.0)["amb_e"] and n0["sun_e"] == DN.sample(24.0)["sun_e"], "자정 랩 연속")
+	assert(absf(DN.sample(23.9)["amb_e"] - DN.sample(0.1)["amb_e"]) < 0.01, "23.9시≈0.1시(자정 pop 없음)")
+	# 노을(18시) = 따뜻(R>B) + 태양 낮은 고도
+	var s18: Dictionary = DN.sample(18.0)
+	assert(s18["amb_col"].r > s18["amb_col"].b, "노을 환경광 따뜻(R>B)")
+	assert(s18["sun_rot"].x > -30.0, "노을 태양 지평선 근처(낮은 고도)")
+	# 6시 전환점 = 밤<x<낮 (연속 보간, 스냅 없음)
+	var d6: Dictionary = DN.sample(6.0)
+	assert(d6["amb_e"] > n0["amb_e"] and d6["amb_e"] < 0.55, "새벽6시 밤<x<낮")
 
 func _test_v1_save_compat() -> void:
 	# A단계(v1) 세이브를 그대로 로드 → 마이그레이션되어 복원 (호환)

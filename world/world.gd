@@ -3,6 +3,7 @@ extends Node3D
 
 const ToonChar := preload("res://common/toon_character.gd")
 const WATER_SHADER := preload("res://world/water.gdshader")
+const SKY_SHADER := preload("res://world/sky.gdshader")
 
 @onready var _sun: DirectionalLight3D = $Sun
 
@@ -87,6 +88,17 @@ func _ready() -> void:
 		if cp != null:
 			cp.visible = true
 			cp._rebuild()
+	# 낮밤 검증: -- hour N (시계를 N시로 강제, PAUSED 고정 → FAST shot 흐름과 분리). 세이브 미변경.
+	var _args := OS.get_cmdline_user_args()
+	var _hi := _args.find("hour")
+	if _hi != -1 and _hi + 1 < _args.size():
+		SaveManager.set_process(false)  # SaveManager._process 기본활성 1프레임 자동쓰기 억제 → 세이브 무변경
+		GameClock.game_min = int(_args[_hi + 1]) * 60
+		GameClock.state = GameClock.State.PAUSED
+		var ph := get_tree().get_first_node_in_group("player")
+		if ph != null:  # 세이브 무관하게 광장 조망으로 고정
+			ph.global_position = Vector3(0, 2, -3.5)
+		await _shot_hour(int(_args[_hi + 1]))
 	# 스크린샷 캡처는 배치용 cmdline 처리를 모두 마친 뒤 한 번만 (기존엔 _convert_statics
 	# 재귀 말미에 있어 노드마다 호출되던 것을 _ready 종단으로 이전 — 1회 캡처).
 	if "shot" in OS.get_cmdline_user_args():
@@ -123,6 +135,16 @@ func _shot() -> void:
 	print("saved world.png  clock=", GameClock.hour(), ":", GameClock.minute())
 	get_tree().quit()
 
+# 낮밤 조명 검증 캡처: PAUSED 유지(시계 N:00 고정), 조명 안정 후 1회 캡처. 세이브 미변경.
+func _shot_hour(hn: int) -> void:
+	await get_tree().create_timer(0.6).timeout  # 물리 착지 + day_night 파라미터 적용 대기
+	await RenderingServer.frame_post_draw
+	var img := get_viewport().get_texture().get_image()
+	DirAccess.make_dir_recursive_absolute("res://lookdev/shots/daynight")
+	img.save_png("res://lookdev/shots/daynight/hour_%02d.png" % hn)
+	print("saved daynight/hour_%02d.png" % hn)
+	get_tree().quit()
+
 # 여백 체감 샷: 카메라를 광장 중앙 대상으로, 존 반대편 위에서 게임카메라 각도(수평9.5·높이6.5,
 # 피치 ~34°)로 바라보게 수동 배치. 추종 스크립트는 정지시켜 프레임 고정.
 func _frame_open(zone: Vector2) -> void:
@@ -137,10 +159,15 @@ func _frame_open(zone: Vector2) -> void:
 
 func _add_env() -> void:
 	var env := Environment.new()
-	env.background_mode = Environment.BG_COLOR
-	env.background_color = Color(0.93, 0.90, 0.85)
+	# 시간대 하늘(sky.gdshader). ambient는 COLOR로 두고 day_night.gd가 명시 제어(sky가 ambient 구동 안 함).
+	env.background_mode = Environment.BG_SKY
+	var sky := Sky.new()
+	var sm := ShaderMaterial.new()
+	sm.shader = SKY_SHADER
+	sky.sky_material = sm
+	env.sky = sky
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color(0.78, 0.76, 0.82)
+	env.ambient_light_color = Color(0.78, 0.76, 0.82)  # 낮 승인값(day_night가 시각별로 덮어씀)
 	env.ambient_light_energy = 0.55
 	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
 	var we := WorldEnvironment.new()
