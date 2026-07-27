@@ -7,6 +7,8 @@ extends Node3D
 # 실내 개념이 없는 게임이라 전역 강수로 충분하다. 소프트 수채 툰 그림체 기준:
 # 스플래시·물웅덩이·굴절 없이 납작한 선만 떨어뜨린다.
 
+const Interior := preload("res://world/interior.gd")
+
 const AREA := 14.0   # 플레이어 중심 강수 범위(한 변) — 고정 카메라 화각을 덮는 최소 크기
 const TOP := 9.0     # 낙하 시작 높이
 
@@ -26,7 +28,8 @@ func _process(_dt: float) -> void:
 	if _player != null:
 		var p := _player.global_position
 		global_position = Vector3(p.x, 0.0, p.z)  # 수평만 추종 (높이는 에미터가 고정)
-	var want := GameData.is_rainy(GameClock.abs_day)
+	# 실내(플레이어 집)에선 강수 정지 — 지붕 없는 오픈탑이라 비가 방 안으로 쏟아진다.
+	var want := GameData.is_rainy(GameClock.abs_day) and not (_player != null and Interior.inside(_player.global_position))
 	if want != _rain.emitting:
 		_rain.emitting = want
 

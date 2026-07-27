@@ -5,6 +5,7 @@ extends Node3D
 # 앵커 반경 배회, 밤·축제 중엔 정지(우선순위: 축제 > 밤 > 스케줄 > 배회).
 
 const WorldScript := preload("res://world/world.gd")  # 강 폴리라인·다리 좌표 단일 출처
+const Interior := preload("res://world/interior.gd")  # 실내 좌표·배우자 정위치 단일 출처
 const HEART := 25       # 25포인트 = 하트 1칸
 const MAX_AFF := 250    # 10칸
 const FESTIVAL_MULT := 2  # 축제 중 대화 호감도 배율
@@ -89,6 +90,7 @@ const WEDDING_HOLD_MIN := 30  # 광장 집합 유지(게임분)
 const WEDDING_PLAZA := Vector2(0, -6)  # 광장 북측(분수 r2 밖) — 꽃축제와 같은 집합 지점
 const SPOUSE_MORNING_H := 6   # 배우자 아침 = 기상시각부터 플레이어 집 앞
 const SPOUSE_EVENING_H := 18  # 배우자 저녁 = 다시 플레이어 집 앞 (밤엔 그 자리 정지)
+const HOME_HIDE_R := 7.0      # 밤 귀가 연출: 자기 집 이 반경 안이면 "집에 들어감"으로 숨김
 
 # affection_points 0~250 저장, hearts는 파생 (Codex: F단계 청혼조건 재작업 방지)
 var state := {}         # npc_id → {affection_points, talked_today, gifted_today, dates_seen}
@@ -100,6 +102,7 @@ var npc_nodes := {}     # npc_id → 스폰 root Node3D (축제 이동용, Festi
 var _wander := {}       # npc_id → {target:Vector3, wait:float, anim:AnimationPlayer, cur:String}
 var _festival_active := false
 var _shot_frozen := false  # 스크린샷 배치 시 배회 정지
+var _spouse_indoor := false  # 배우자가 지금 실내(플레이어 집 안)에 배치돼 있는가
 var _farm: Node
 
 func _ready() -> void:
@@ -137,6 +140,7 @@ func _spawn(id: String) -> void:
 		"target": root.position, "wait": randf_range(0.0, WAIT_MAX),
 		"anim": ToonChar.find_anim(vis) if vis != null else null, "cur": "",
 		"place": "home", "path": [],   # path = 남은 경유 웨이포인트(Vector2)
+		"vis": vis, "area": area, "hidden": false,  # 밤 귀가 페이드용
 	}
 
 # ── 비주얼 어댑터 (종족별 실물 모델 교체는 여기만 수정) ──────────────
@@ -190,12 +194,90 @@ func _fallback_capsule(tint: Color) -> Node3D:
 func _process(delta: float) -> void:
 	_check_wedding()  # 모든 early-return 앞 — 메뉴/밤/축제 중에도 예약된 결혼식은 진행돼야 한다
 	_check_date()     # 데이트 도착 판정·밤 중단도 배회 정지와 무관하게 돌아야 한다
+	_update_spouse_indoor()  # 실내 배치·복귀는 밤/일시정지에도 판정 (배우자 저녁 18시~는 밤과 겹친다)
+	_update_home_hide()      # 밤 귀가 연출도 마찬가지 (PAUSED인 스크린샷 하네스에서도 보여야 한다)
 	if _shot_frozen or _festival_active or GameClock.state == GameClock.State.PAUSED or not _is_daytime():
 		for id in npc_nodes:  # 축제=광장 배치 유지, 그 외=idle
 			_set_walk(id, false)
 		return
 	for id in npc_nodes:
+		if _spouse_indoor and String(id) == spouse:
+			continue  # 실내 배치 중 = 실외 배회·스케줄이 이 노드를 건드리지 않는다
 		_wander_step(id, delta)
+
+# ── 배우자 실내 동거 (G단계) ────────────────────────────────────
+# 기혼 + 배우자 스케줄이 player_home + 플레이어가 실내에 있음 → 배우자를 실내 정위치로 배치.
+# 경로탐색으로 들여보내지 않는다 — 실내는 격리 좌표라 route()의 강·건물 판정 밖이다(배치로 충분).
+func _update_spouse_indoor() -> void:
+	var player := get_tree().get_first_node_in_group("player") as Node3D
+	var place := "" if spouse == "" else place_at(_schedule(spouse), GameClock.hour())
+	var want := spouse_indoors(spouse, place, player != null and Interior.inside(player.global_position))
+	if want == _spouse_indoor:
+		if want:  # 실내 유지: 정위치 고정(다른 로직이 밀어냈어도 되돌림)
+			npc_nodes[spouse].position = Interior.SPOUSE_SPOT
+		return
+	_spouse_indoor = want
+	if want:
+		var st: Dictionary = _wander[spouse]
+		st["path"] = []
+		st["wait"] = 0.0
+		npc_nodes[spouse].position = Interior.SPOUSE_SPOT
+		_set_walk(spouse, false)
+		_set_hidden(spouse, false)  # 실내에선 항상 보인다(밤 귀가 숨김과 배타)
+	elif spouse != "" and npc_nodes.has(spouse):
+		snap_to_schedule()  # 실내 → 실외: 그 시각 앵커로 복귀
+
+# 순수 판정 (test_core 단위검증)
+static func spouse_indoors(spouse_id: String, place: String, player_inside: bool) -> bool:
+	return spouse_id != "" and player_inside and place == "player_home"
+
+# ── 밤 귀가 연출 ────────────────────────────────────────────────
+# 활동 종료(DAY_END) 후 자기 집 앞에 서 있는 주민을 숨겨 "집에 들어감"으로 읽히게 한다.
+# 축제(결혼식 포함) 중엔 강제 가시, 실내 배치된 배우자도 제외.
+func _update_home_hide() -> void:
+	for id in npc_nodes:
+		var home: Array = GameData.npcs[id]["home"]
+		var p: Vector3 = npc_nodes[id].position
+		var at_home := Vector2(p.x, p.z).distance_to(Vector2(home[0], home[1])) < HOME_HIDE_R
+		var indoor: bool = _spouse_indoor and String(id) == spouse
+		_set_hidden(id, night_hidden(GameClock.hour(), at_home, _festival_active, indoor))
+
+# 순수 판정 (test_core 단위검증)
+static func night_hidden(h: int, at_home: bool, festival: bool, indoor_spouse: bool) -> bool:
+	return at_home and not festival and not indoor_spouse and (h < DAY_START or h >= DAY_END)
+
+# 모델 숨김 + 상호작용 비활성.
+# 상호작용 차단은 "npc" 그룹 탈퇴로 한다 — Area3D.monitorable을 껐다 켜면 두 Area가 그대로
+# 멈춰 있는 한 브로드페이즈 쌍이 다시 안 맺혀 영구히 감지 불능이 된다(실측). 그룹은
+# player._area_kind()가 매 판정마다 읽으므로 즉시·양방향으로 확실하다.
+# ponytail: toon.gdshader에 알파가 없어 진짜 알파 페이드는 불가 — 스케일 축소로 대신한다.
+func _set_hidden(id: String, hide: bool) -> void:
+	var st: Dictionary = _wander[id]
+	if bool(st["hidden"]) == hide:
+		return
+	st["hidden"] = hide
+	var area: Area3D = st["area"]
+	if hide:
+		area.remove_from_group("npc")
+	else:
+		area.add_to_group("npc")
+	var vis: Node3D = st["vis"]
+	if vis == null:
+		return
+	if not st.has("base_scale"):
+		st["base_scale"] = vis.scale
+	var base: Vector3 = st["base_scale"]
+	var old = st.get("hide_tween")
+	if old != null and (old as Tween).is_valid():
+		(old as Tween).kill()  # 반대 전환이 겹치면 뒤늦은 콜백이 다시 숨겨버린다
+	var tw := create_tween()
+	st["hide_tween"] = tw
+	if hide:
+		tw.tween_property(vis, "scale", base * 0.01, 0.4)
+		tw.tween_callback(func() -> void: vis.visible = false)
+	else:
+		vis.visible = true
+		tw.tween_property(vis, "scale", base, 0.4)
 
 func _is_daytime() -> bool:
 	var h := GameClock.hour()
@@ -402,6 +484,8 @@ func _anchor_pos(id: String, place: String) -> Vector2:
 # 이미 그 장소 반경 안이면 위치는 그대로 두고 상태만 정렬(자정 day_changed 제자리 순간이동 방지).
 func snap_to_schedule() -> void:
 	for id in npc_nodes:
+		if _spouse_indoor and String(id) == spouse:
+			continue  # 실내 배치 중인 배우자는 실외 앵커로 끌어내지 않는다
 		var st: Dictionary = _wander[id]
 		var place := place_at(_schedule(id), GameClock.hour())
 		var a := _anchor_pos(id, place)
@@ -508,12 +592,14 @@ func _pool_line(id: String, key: String) -> String:
 # ── 축제 (FestivalSystem이 상태만 설정, 호감도·이동은 여기 소유) ──
 func enter_festival(plaza: Vector2) -> void:
 	_festival_active = true
+	_spouse_indoor = false  # 축제 > 실내 동거 (배우자도 광장으로)
 	var ids := npc_nodes.keys()
 	var n := ids.size()
 	for i in n:
 		var ang := TAU * i / float(maxi(n, 1))
 		var pos := plaza + Vector2(cos(ang), sin(ang)) * FEST_RING
 		npc_nodes[ids[i]].position = Vector3(pos.x, 0, pos.y)
+		_set_hidden(ids[i], false)  # 밤 축제(결혼식 포함)에도 전원 보이게
 
 func exit_festival() -> void:
 	_festival_active = false
@@ -735,4 +821,5 @@ func load_data(d: Dictionary) -> void:
 		engaged = {"id": String(eng["id"]), "wedding_abs_day": int(eng.get("wedding_abs_day", 0))}
 	_wedding_end = -1  # 식 도중 저장/로드 → 연출은 재생 안 함(married 상태는 이미 확정)
 	_date = {}         # 데이트는 저장하지 않는다 — 로드하면 그날 다시 제안받는다(미소진)
+	_spouse_indoor = false  # 실내 배치는 매 프레임 재판정 — 스냅이 배우자를 건너뛰지 않게 먼저 해제
 	snap_to_schedule()  # 위치는 저장 안 함 — 로드한 시각의 장소에서 시작(집→광장 단체 행군 방지)

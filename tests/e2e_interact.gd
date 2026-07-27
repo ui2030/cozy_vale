@@ -4,6 +4,7 @@ extends Node
 # 주의: parse_input_event는 다음 프레임 flush라 await 여유를 둔다. 유저 세이브는 셸에서 백업/복원.
 
 func _ready() -> void:
+	SaveManager.suspended = true  # 취침 경로를 태우므로 유저 세이브 쓰기를 원천 차단
 	add_child(preload("res://world/world.tscn").instantiate())  # world._ready: 세이브 로드
 	_run.call_deferred()
 
@@ -11,7 +12,7 @@ func _run() -> void:
 	await get_tree().process_frame
 	var player: Node = get_tree().get_first_node_in_group("player")
 	assert(player != null, "player 존재")
-	player.global_position = Vector3(5, 1.0, 10)  # 플레이어 집 침대(5,8.5) 옆으로 텔레포트
+	player.global_position = Vector3(119.4, 1.0, 118.2)  # 실내 침대 옆 (G단계: 침대가 실내로 이전)
 	for i in 12:  # Area 겹침 등록 대기
 		await get_tree().physics_frame
 	var before: int = GameClock.abs_day

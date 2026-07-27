@@ -1,6 +1,7 @@
-[gd_scene load_steps=25 format=3]
+[gd_scene load_steps=23 format=3]
 
 [ext_resource type="Script" path="res://world/world.gd" id="1"]
+[ext_resource type="Script" path="res://world/interior.gd" id="11"]
 [ext_resource type="Script" path="res://world/day_night.gd" id="9"]
 [ext_resource type="Script" path="res://world/weather.gd" id="10"]
 [ext_resource type="PackedScene" path="res://player/player.tscn" id="2"]
@@ -21,15 +22,6 @@ albedo_color = Color(0.62, 0.8, 0.52, 1)
 
 [sub_resource type="BoxShape3D" id="ground_col"]
 size = Vector3(80, 0.2, 80)
-
-[sub_resource type="BoxMesh" id="bed_mesh"]
-size = Vector3(1.6, 0.6, 2.6)
-
-[sub_resource type="StandardMaterial3D" id="bed_mat"]
-albedo_color = Color(0.75, 0.55, 0.62, 1)
-
-[sub_resource type="BoxShape3D" id="bed_col"]
-size = Vector3(1.6, 0.6, 2.6)
 
 [sub_resource type="BoxMesh" id="shop_mesh"]
 size = Vector3(1.5, 1.5, 1.5)
@@ -94,25 +86,8 @@ script = ExtResource("7")
 [node name="ForageSystem" type="Node3D" parent="."]
 script = ExtResource("8")
 
-[node name="Bed" type="Area3D" parent="." groups=["bed"]]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 3, 0.4, 16)
-
-[node name="BedMesh" type="MeshInstance3D" parent="Bed"]
-mesh = SubResource("bed_mesh")
-material_override = SubResource("bed_mat")
-
-[node name="BedCol" type="CollisionShape3D" parent="Bed"]
-shape = SubResource("bed_col")
-
-[node name="Label" type="Label3D" parent="Bed"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.2, 0)
-billboard = 1
-no_depth_test = true
-fixed_size = true
-pixel_size = 0.0007
-font_size = 96
-outline_size = 24
-text = "침대"
+[node name="Interior" type="Node3D" parent="."]
+script = ExtResource("11")
 
 [node name="Shop" type="Area3D" parent="." groups=["shop"]]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5, 0.75, -5)

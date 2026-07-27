@@ -45,6 +45,7 @@ func _ready() -> void:
 	_test_daynight()
 	_test_ambience_curve()
 	_test_weather()
+	_test_interior()
 	print("ALL CORE TESTS PASS")
 	get_tree().quit()
 
@@ -752,3 +753,45 @@ func _test_v1_save_compat() -> void:
 	GameClock.abs_day = 0
 	assert(SaveManager.load_game(), "v1 세이브 로드")
 	assert(GameClock.abs_day == 9, "v1 → clock 복원")
+
+# 실내(G단계) 순수 로직: 격리 좌표 판정 + 문 왕복 좌표 계약 + 배우자 실내/밤 귀가 조건.
+func _test_interior() -> void:
+	var I := preload("res://world/interior.gd")
+	var N := preload("res://npc/npc_system.gd")
+	const PLAYER_R := 1.3  # player.tscn InteractArea 반경 (프롬프트 사거리 = 이것 + 대상 반경)
+	# ── 정적 배치가 바뀌었으므로 구세이브 위치는 광장 폴백돼야 한다
+	assert(SaveManager.WORLD_VERSION == 3, "침대 실내 이전 = WORLD_VERSION 3")
+	# ── 실내/실외 판정
+	assert(I.inside(I.ORIGIN), "원점 = 실내")
+	assert(I.inside(I.IN_SPAWN) and I.inside(I.IN_DOOR), "실내 스폰·문 = 실내")
+	assert(I.inside(I.SPOUSE_SPOT) and I.inside(I.BED_CENTER), "배우자 자리·침대 = 실내")
+	assert(not I.inside(I.OUT_SPAWN) and not I.inside(I.OUT_DOOR), "집 앞 = 실외")
+	assert(not I.inside(Vector3(0, 2, -3.5)), "광장 = 실외")
+	assert(not I.inside(Vector3(3, 2, 15)), "플레이어 집(마을 쪽) = 실외")
+	# ── 마을과 물리적으로 겹치지 않는다 (Ground 80×80 = |x|,|z| ≤ 40 밖)
+	assert(absf(I.ORIGIN.x) - I.HALF > 40.0 and absf(I.ORIGIN.z) - I.HALF > 40.0, "실내가 마을 지면 밖")
+	for ko in N.BUILDING_KEEPOUT:
+		assert(Vector2(I.ORIGIN.x, I.ORIGIN.z).distance_to(ko[0]) > 40.0, "실내가 마을 건물에서 충분히 멈")
+	# ── 문 왕복: 도착점이 반대편 트리거 사거리 밖이어야 E 연타로 튕기지 않는다
+	assert(I.IN_SPAWN.distance_to(I.IN_DOOR) > I.DOOR_R + PLAYER_R, "실내 스폰이 실내 문 밖")
+	assert(I.OUT_SPAWN.distance_to(I.OUT_DOOR) > I.DOOR_R + PLAYER_R, "실외 스폰이 실외 문 밖")
+	# 왕복이 닫혀 있다: 실외 문으로 들어가면 실내, 실내 문으로 나가면 실외
+	assert(I.inside(I.IN_SPAWN) and not I.inside(I.OUT_SPAWN), "문 왕복 목적지 짝이 맞음")
+	# 침대는 실내 문과 프롬프트가 겹치지 않을 만큼 떨어져 있다(단일판정이 문을 먹지 않게)
+	assert(I.BED_CENTER.distance_to(I.IN_DOOR) > I.DOOR_R + PLAYER_R, "침대와 실내 문 이격")
+	# ── 배우자 실내 배치 조건 (기혼 && 스케줄=player_home && 플레이어가 실내)
+	assert(N.spouse_indoors("npc.mira", "player_home", true), "기혼+집앞시각+플레이어 실내 = 실내 배치")
+	assert(not N.spouse_indoors("", "player_home", true), "미혼이면 안 함")
+	assert(not N.spouse_indoors("npc.mira", "plaza", true), "낮 스케줄(광장)엔 안 함")
+	assert(not N.spouse_indoors("npc.mira", "player_home", false), "플레이어가 밖이면 안 함")
+	# 배우자 스케줄이 실제로 아침·저녁에 player_home을 준다(위 조건이 발화하는지 = 데이터 정합)
+	var ss: Array = N.spouse_schedule(GameData.npcs["npc.mira"]["schedule"])
+	assert(N.place_at(ss, N.SPOUSE_MORNING_H) == "player_home", "배우자 아침 = 집 앞")
+	assert(N.place_at(ss, N.SPOUSE_EVENING_H) == "player_home", "배우자 저녁 = 집 앞")
+	# ── 밤 귀가 페이드 조건
+	assert(N.night_hidden(22, true, false, false), "밤 + 자기 집 = 숨김")
+	assert(N.night_hidden(7, true, false, false), "활동 시작(8시) 전도 숨김")
+	assert(not N.night_hidden(12, true, false, false), "낮엔 안 숨김")
+	assert(not N.night_hidden(22, false, false, false), "집에서 멀면 안 숨김(길에 서 있는 그림 유지)")
+	assert(not N.night_hidden(22, true, true, false), "축제 중엔 강제 가시")
+	assert(not N.night_hidden(22, true, false, true), "실내 배치된 배우자는 예외")

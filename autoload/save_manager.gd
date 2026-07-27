@@ -5,13 +5,16 @@ extends Node
 const VERSION := 5
 # 월드 레이아웃 판(마을 P1). 정적 지오메트리/충돌체가 바뀌면 범프 → 구세이브의 플레이어
 # 위치가 신규 충돌체 안에 박혔을 수 있으므로 로드 시 광장으로 폴백(신규 게임엔 영향 없음).
-const WORLD_VERSION := 2
+const WORLD_VERSION := 3  # v3: 침대가 야외(3,16)→실내로 이전, 집 앞 문 트리거 추가
 const PLAZA_SPAWN := Vector3(0, 2, -3.5)  # 광장 안(분수 r1·밭 밖), 스폰/폴백 공용
 const F_JSON := "user://save.json"
 const F_BAK := "user://save.bak"
 const F_TMP := "user://save.tmp"
 
 var _queued_reason := ""
+# 스크린샷·e2e 하네스 전용 쓰기 차단. set_process(false)만으로는 부족하다 — 취침 등
+# 게임 코드가 request_save()를 부르면 process가 다시 켜져 유저 세이브를 덮어쓴다(오염 전력).
+var suspended := false
 
 # save_version v → v+1 순수 함수 체인 (키 = from_version).
 var _migrations := {
@@ -51,6 +54,8 @@ func _ready() -> void:
 	set_process(false)  # 기본 활성이면 첫 프레임에 무요청 _write 실행(하네스 세이브 오염 원인)
 
 func request_save(reason := "") -> void:
+	if suspended:
+		return
 	_queued_reason = reason
 	set_process(true)
 

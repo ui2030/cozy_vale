@@ -12,7 +12,7 @@ func _run() -> void:
 	assert(player != null, "player 존재")
 	GameClock.game_min = 1320  # 밤 = NPC 집에서 정지 (배회 흔들림 제거)
 	var cases := [
-		[Vector3(3, 1.0, 16), "E: 취침"],         # 플레이어 집 침대(3,16)
+		[Vector3(119.4, 1.0, 118.2), "E: 취침"],  # 실내 침대(ORIGIN-3,-3.43) 남동 — G단계에서 실내 이전
 		[Vector3(-5, 1.0, -3.4), "E: 상점"],      # 상점 트리거(-5,-5) 전면 (불변)
 		[Vector3(9.5, 1.0, 5.5), "E: 판매 상자"], # 밭 옆 판매상자(9.5,7) (불변)
 		[Vector3(10, 1.0, 3.8), "E: 낚시"],       # 연못(10,0) 물가 (불변)
@@ -24,7 +24,13 @@ func _run() -> void:
 		var got: String = player.interact_prompt()
 		assert(got == c[1], "%s 기대 '%s' 실제 '%s'" % [str(c[0]), c[1], got])
 		print("  OK ", c[1])
-	# NPC 대화: mira 집(-20,-9) 옆 (다른 프롬프트 간섭 없는 곳)
+	# NPC 대화: mira 집(-20,-9) 옆 (다른 프롬프트 간섭 없는 곳).
+	# G단계부터 밤엔 집에 있는 주민이 숨는다(귀가 연출) → 낮으로 옮기되 PAUSED로 배회를 얼리고
+	# 위치를 명시 배치해 결정성을 유지한다(기존 "밤=정지" 트릭의 대체).
+	GameClock.game_min = 12 * 60
+	GameClock.state = GameClock.State.PAUSED
+	var npcsys: Node = get_tree().get_first_node_in_group("npc_system")
+	npcsys.npc_nodes["npc.mira"].position = Vector3(-20, 0, -9)
 	player.global_position = Vector3(-20, 1.0, -7.8)
 	for i in 12:
 		await get_tree().physics_frame

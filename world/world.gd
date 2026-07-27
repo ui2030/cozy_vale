@@ -2,6 +2,7 @@ extends Node3D
 # A단계 월드 루트. 환경/조명 세팅 + 세이브 로드.
 
 const ToonChar := preload("res://common/toon_character.gd")
+const Interior := preload("res://world/interior.gd")  # 실내 스폰·침대 좌표 단일 출처
 const WATER_SHADER := preload("res://world/water.gdshader")
 const SKY_SHADER := preload("res://world/sky.gdshader")
 
@@ -34,7 +35,7 @@ func _ready() -> void:
 	if "bedshot" in OS.get_cmdline_user_args():  # 스크린샷 검증용: 침대 옆(프롬프트+라벨)
 		var pb := get_tree().get_first_node_in_group("player")
 		if pb != null:
-			pb.global_position = Vector3(3, 2, 17.2)  # 플레이어 집 침대(3,16) 남쪽
+			pb.global_position = Interior.BED_CENTER + Vector3(1.8, 1.2, 0.8)  # 실내 침대 남동쪽
 	# 마을 조망 시점(북향 고정 카메라) — 각 지점 남쪽에 플레이어를 두면 북쪽 구조물이 잡힘
 	var _vp := {
 		"v_windmill":  Vector3(29, 2, -15),   # 강 건너 풍차 언덕(29,-24)
@@ -123,6 +124,16 @@ func _ready() -> void:
 			ip.visible = true
 			ip._rebuild()
 	var _args := OS.get_cmdline_user_args()
+	# 실내 검증: -- interior [spouse] [hour N]. 플레이어를 실내 스폰에 세운다.
+	# `-- shot interior` = 낮 컷, `-- interior hour 21` = 밤 컷, `-- interior spouse hour 7` = 아침 배우자 컷.
+	# suspended=true는 set_process(false)보다 강한 차단 — 취침 등 게임 코드의 request_save까지 막는다.
+	# `-- interior door hour 13` = 집 앞 문 프롬프트 컷.
+	if "interior" in _args:
+		SaveManager.suspended = true
+		var pin := get_tree().get_first_node_in_group("player")
+		if pin != null:
+			pin.global_position = (Interior.OUT_DOOR + Vector3(0, 0, 1.0)) if "door" in _args else Interior.IN_SPAWN
+			pin._face_dir(Interior.FACE_IN)  # 둘 다 북(집 문 / 방 안쪽)을 본다
 	# 날씨 검증: -- weather rain|clear. 날씨는 abs_day 결정적이라 강제 스위치를 두는 대신
 	# 원하는 날씨의 첫 봄날로 시계를 옮긴다(실제 판정 함수를 그대로 통과 — 프로덕션 코드에 테스트 훅 0).
 	var _wi := _args.find("weather")
@@ -141,8 +152,12 @@ func _ready() -> void:
 		GameClock.game_min = int(_args[_hi + 1]) * 60
 		GameClock.state = GameClock.State.PAUSED
 		var ph := get_tree().get_first_node_in_group("player")
-		if ph != null:  # 세이브 무관하게 광장 조망으로 고정
+		if ph != null and not "interior" in _args:  # 세이브 무관하게 광장 조망으로 고정
 			ph.global_position = Vector3(0, 2, -3.5)
+		if "spouse" in _args:  # 시각 확정 뒤에 기혼화 — 배우자 실내 배치는 시각(place_at) 파생이다
+			var nsp := get_tree().get_first_node_in_group("npc_system")
+			if nsp != null:
+				nsp.spouse = "npc.mira"
 		await _shot_hour(int(_args[_hi + 1]))
 	# 스크린샷 캡처는 배치용 cmdline 처리를 모두 마친 뒤 한 번만 (기존엔 _convert_statics
 	# 재귀 말미에 있어 노드마다 호출되던 것을 _ready 종단으로 이전 — 1회 캡처).
@@ -208,7 +223,8 @@ func _shot() -> void:
 	# -- out <상대경로> 로 저장 위치 지정 (없으면 world.png — 기존 동작)
 	var args := OS.get_cmdline_user_args()
 	var oi := args.find("out")
-	var rel: String = args[oi + 1] if oi != -1 and oi + 1 < args.size() else "world.png"
+	var _def := "interior/day.png" if "interior" in args else "world.png"
+	var rel: String = args[oi + 1] if oi != -1 and oi + 1 < args.size() else _def
 	DirAccess.make_dir_recursive_absolute("res://lookdev/shots/" + rel.get_base_dir())
 	img.save_png("res://lookdev/shots/" + rel)
 	print("saved ", rel, "  clock=", GameClock.hour(), ":", GameClock.minute())
@@ -222,7 +238,10 @@ func _shot_hour(hn: int) -> void:
 	var args := OS.get_cmdline_user_args()
 	var wi := args.find("weather")
 	var rel := "daynight/hour_%02d.png" % hn
-	if wi != -1 and wi + 1 < args.size():  # 날씨 강제 샷은 별도 폴더로
+	if "interior" in args:  # 실내 샷은 별도 폴더로 (배우자·문 컷은 파일명 접두로 구분)
+		var pre := ("spouse_" if "spouse" in args else "") + ("door_" if "door" in args else "")
+		rel = "interior/%shour_%02d.png" % [pre, hn]
+	elif wi != -1 and wi + 1 < args.size():  # 날씨 강제 샷은 별도 폴더로
 		rel = "weather/%s_hour_%02d.png" % [args[wi + 1], hn]
 	DirAccess.make_dir_recursive_absolute("res://lookdev/shots/" + rel.get_base_dir())
 	img.save_png("res://lookdev/shots/" + rel)
@@ -289,10 +308,12 @@ func _build_village() -> void:
 	_house(v, Vector3(24, 0, 20), 4, 4, 4, true, -1.0)
 	# 상점 박스(광장 북서 림, 불변) — footprint 3×3, 피벗(-7,-7), 전고 3. SOLID. 트리거=tscn Shop(-5,-5).
 	_house(v, Vector3(-7, 0, -7), 3, 3, 3, true)
-	# 플레이어 집(남, 밭 남쪽) — footprint 5×5, 피벗(3,15), 전고 5. DECOR(무충돌: 편입 침대 접근용).
+	# 플레이어 집(남, 밭 남쪽) — footprint 5×5, 피벗(3,15), 전고 5. DECOR(무충돌: 실내 문 접근용).
 	# (6,13)→(3,15): 광장 림 이격 5.07→6.5로 규정(≥6) 충족 (Fable 검수 반영)
-	# door_sign -1 = 북향 문(광장·남측 길 방향 — 남향 기본문이면 길이 문 반대면에 닿음)
-	_house(v, Vector3(3, 0, 15), 5, 5, 5, false, -1.0)
+	# door_sign +1 = 남향 문. 길은 북에서 오지만 문은 남면이어야 한다 — 추종 카메라가 플레이어
+	# 뒤(+Z)·위에 있어서 북면 문 앞에 서면 집 몸통이 카메라와 플레이어 사이를 통째로 가린다.
+	# 실측: 지붕 먼쪽 모서리(z=12.25,y=5.45)를 넘어 보려면 플레이어가 z<6.2여야 한다(문은 z=12.45).
+	_house(v, Vector3(3, 0, 15), 5, 5, 5, false, 1.0)
 	# 정자(서, 집C와 ≥8) — footprint 4×4, 피벗(-26,14), 전고 3. DECOR(개방 퍼걸러).
 	_pavilion(v, Vector3(-26, 0, 14))
 	_river_and_bridges(v)

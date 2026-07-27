@@ -200,7 +200,7 @@ func interact_target() -> Dictionary:
 	return {} if best == null else {"kind": best_kind, "area": best}
 
 func _area_kind(a: Area3D) -> String:
-	for k in ["bed", "shop", "bin", "npc", "water", "forage"]:
+	for k in ["bed", "shop", "bin", "npc", "water", "forage", "door"]:
 		if a.is_in_group(k):
 			return k
 	return ""
@@ -217,6 +217,7 @@ func interact_prompt() -> String:
 		"npc": return "E: 대화 — " + GameData.npcs[t["area"].get_meta("npc_id")]["name"]
 		"water": return "E: 낚시"
 		"forage": return "E: 줍기"
+		"door": return String(t["area"].get_meta("door_label", "E: 문"))
 	return ""
 
 func _try_interact() -> void:
@@ -235,6 +236,14 @@ func _try_interact() -> void:
 			message.emit(r["msg"])
 		"water": _start_fishing()
 		"forage": _pick_forage(t["area"])
+		"door": _use_door(t["area"])
+
+# 문 = 좌표 텔레포트 (씬 전환 없음). 도착점은 반대편 문 트리거 밖이라 E 연타로 왕복하지 않는다.
+func _use_door(area: Area3D) -> void:
+	global_position = area.get_meta("door_to")
+	velocity = Vector3.ZERO
+	_face_dir(area.get_meta("door_face", Vector3(0, 0, 1)))
+	Sfx.play("ui_open")
 
 func _start_fishing() -> void:
 	if _fishing == null:

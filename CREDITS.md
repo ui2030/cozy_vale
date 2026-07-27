@@ -40,3 +40,28 @@ Kenney에는 자연 환경음 팩이 없어 OpenGameArt.org의 CC0 음원을 사
 | `bird_day.ogg` | isaiah658 | [Ambient Bird Sounds](https://opengameart.org/content/ambient-bird-sounds) | `birds-isaiah658.ogg` |
 | `cricket_night.mp3` | Wolfgang_ (rec. Ted Kerr) | [Crickets Ambient Noise - loopable](https://opengameart.org/content/crickets-ambient-noise-loopable) | `crickets.mp3` |
 | `water_loop.ogg` | rubberduck | [30 CC0 SFX loops](https://opengameart.org/content/30-cc0-sfx-loops) | `water_flowing.ogg` |
+
+## 실내 가구·구조물 — `assets/furniture/`
+
+Kenney (Kenney Vleugels, kenney.nl) — [Furniture Kit 2.0](https://kenney.nl/assets/furniture-kit), CC0 1.0.
+원본 배포판의 `Models/GLTF format/` 안에서 **실제로 쓰는 조각만** 골라 복사했다(파일명·바이트 무변경).
+게임은 Godot 임포트 파이프라인이 아니라 런타임 `GLTFDocument` 로드를 쓴다(`world/interior.gd`).
+
+| 게임 내 파일 | 용도 |
+|---|---|
+| `floorFull.glb` | 실내 바닥 타일 |
+| `wall.glb` | 벽 |
+| `wallWindow.glb` | 창문 벽 |
+| `wallDoorway.glb` | 문틀 벽 (실내 출구) |
+| `bedDouble.glb` | 부부 침대 (취침 트리거) |
+| `sideTable.glb` | 침대 협탁 |
+| `lampRoundTable.glb` | 협탁 위 램프 |
+| `lampRoundFloor.glb` | 스탠드 조명 |
+| `table.glb` | 식탁 |
+| `chair.glb` | 식탁 의자 ×2 |
+| `bookcaseClosedDoors.glb` | 책장 |
+| `rugRectangle.glb` | 러그 |
+| `pottedPlant.glb` | 화분 |
+| `kitchenStove.glb` | 부엌 — 레인지 |
+| `kitchenSink.glb` | 부엌 — 싱크대 |
+| `kitchenFridge.glb` | 부엌 — 냉장고 |
