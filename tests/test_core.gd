@@ -26,6 +26,7 @@ func _ready() -> void:
 	_test_npc()
 	_test_npc_roster()
 	_test_wander()
+	_test_npc_schedule()
 	_test_save_v2_v3()
 	_test_save_v3_v4()
 	_test_v1_save_compat()
@@ -212,6 +213,75 @@ func _test_wander() -> void:
 		_npcsys._process(0.5)
 	assert(node.position.distance_to(night) < 0.01, "밤엔 배회 정지")
 	GameClock.state = GameClock.State.PAUSED  # 결정성 복원
+
+# NPC 하루 스케줄: 시각→장소 파생(순수) + 다리 경유 + 전 구간 통행 가능 + 로드/취침 배치.
+func _test_npc_schedule() -> void:
+	var N := preload("res://npc/npc_system.gd")
+	var BR: Array = preload("res://world/world.gd").BRIDGES
+	# ── 시각 → 장소 (순수 함수)
+	var sc := [{"h": 8, "place": "home"}, {"h": 10, "place": "plaza"}, {"h": 19, "place": "home"}]
+	assert(N.place_at(sc, 6) == "home", "첫 항목 전 = 집")
+	assert(N.place_at(sc, 10) == "plaza", "경계 시각 = 그 장소")
+	assert(N.place_at(sc, 12) == "plaza", "다음 항목 전까지 유지")
+	assert(N.place_at(sc, 23) == "home", "마지막 항목 유지")
+	assert(N.place_at([], 12) == "home", "스케줄 없으면 집")
+	# ── 데이터 검증 (game_data 참조 무결성 확장: 장소 id·시각 정렬)
+	for id in GameData.npcs:
+		var s: Array = GameData.npcs[id].get("schedule", [])
+		assert(not s.is_empty(), "%s schedule 없음" % id)
+		var prev := -1
+		for e in s:
+			var h := int(e["h"])
+			assert(h > prev and h >= 0 and h < 24, "%s schedule 시각 오름차순·범위" % id)
+			prev = h
+			assert(e["place"] == "home" or N.ANCHORS.has(e["place"]), "%s 알 수 없는 장소 %s" % [id, str(e["place"])])
+		assert(String(s[s.size() - 1]["place"]) == "home", "%s 하루 끝 = 집(밤 정지 정합)" % id)
+	# ── 강 건너 목적지 = 다리 데크 양끝 경유 (직선 도하 금지)
+	var wm: Vector2 = N.ANCHORS["windmill"]
+	var pz: Vector2 = N.ANCHORS["plaza"]
+	assert(N.needs_bridge(wm, pz), "풍차(강 건너)→광장 = 강 횡단")
+	var path: Array = N.route(wm, pz)
+	var on_deck := 0
+	for w in path:
+		for br in BR:
+			if (w as Vector2).distance_to(br) < N.DECK_HALF + 0.01:
+				on_deck += 1
+	assert(on_deck == 2, "다리 데크 양끝 2점 경유 (실제 %d, wp %d)" % [on_deck, path.size()])
+	assert(not N.needs_bridge(pz, N.ANCHORS["shop"]), "같은 편 = 다리 불필요")
+	assert(N.route(pz, N.ANCHORS["shop"]).size() == 1, "장애물 없으면 직선 1점")
+	# ── 전 주민 전 구간: 건물·물 관통 0 (앵커 좌표가 world.gd 배치와 어긋나면 여기서 터짐)
+	for id in GameData.npcs:
+		var s: Array = GameData.npcs[id]["schedule"]
+		var hm: Array = GameData.npcs[id]["home"]
+		var home := Vector2(hm[0], hm[1])
+		for i in s.size():
+			var a_place := String(s[i - 1]["place"]) if i > 0 else String(s[s.size() - 1]["place"])
+			var b_place := String(s[i]["place"])
+			if a_place == b_place:
+				continue
+			var a: Vector2 = home if a_place == "home" else N.ANCHORS[a_place]
+			var b: Vector2 = home if b_place == "home" else N.ANCHORS[b_place]
+			assert(not N._inside_block(a) and not N._inside_block(b), "%s 앵커가 장애물 안 (%s→%s)" % [id, a_place, b_place])
+			var cur := a
+			for w in N.route(a, b):
+				var seg: Vector2 = w
+				assert(N._block_hit(cur, seg).is_empty(), "%s %s→%s 구간이 건물/물 관통" % [id, a_place, b_place])
+				assert(not N.needs_bridge(cur, seg), "%s %s→%s 구간이 다리 밖 도하" % [id, a_place, b_place])
+				cur = seg
+	# ── 데크 높이 리프트 (다리 위에서만 들림 = 발이 물에 안 잠김)
+	assert(absf(N._deck_y(BR[0]) - N.DECK_Y) < 0.001, "다리 중심 = 데크 높이")
+	assert(N._deck_y(BR[0] + Vector2(10, 0)) == 0.0, "다리 밖 = 지면")
+	# ── 로드/취침 점프: 그 시각 장소에 이미 배치 (단체 행군 방지)
+	GameClock.game_min = 13 * 60
+	_npcsys.snap_to_schedule()
+	var mp: Vector3 = _npcsys.npc_nodes["npc.mira"].position
+	var shop: Vector2 = N.ANCHORS["shop"]  # mira 13시 = 상점
+	assert(Vector2(mp.x, mp.z).distance_to(shop) <= N.ANCHOR_R_MAX + 0.01, "13시 로드 = 상점 앞 배치")
+	GameClock.game_min = 1320  # 22시 = 집
+	_npcsys.snap_to_schedule()
+	var mh: Array = GameData.npcs["npc.mira"]["home"]
+	mp = _npcsys.npc_nodes["npc.mira"].position
+	assert(Vector2(mp.x, mp.z).distance_to(Vector2(mh[0], mh[1])) < 0.01, "밤 = 집 배치")
 
 func _test_save_v2_v3() -> void:
 	var v2 := {"save_version": 2, "systems": {"farming": {"tiles": {}, "shipping_bin": []}}, "player": {"gold": 100}}

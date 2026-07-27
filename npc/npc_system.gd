@@ -1,8 +1,10 @@
 extends Node3D
 # 주민 시스템 (DESIGN 6.4). 데이터 구동 — npcs.json에서 주민 스폰·호감도·대화·선물.
 # 비주얼 = 주인공 고양이 모델 색조 변형 재사용(_make_visual 어댑터 한 곳만 거침 → 종족별
-# 실물 모델 교체 용이). 낮엔 집 반경 배회, 밤·축제 중엔 정지(축제는 광장 배치 우선).
+# 실물 모델 교체 용이). 낮엔 npcs.json "schedule"대로 명명 앵커를 걸어서 오가고 도착하면 그
+# 앵커 반경 배회, 밤·축제 중엔 정지(우선순위: 축제 > 밤 > 스케줄 > 배회).
 
+const WorldScript := preload("res://world/world.gd")  # 강 폴리라인·다리 좌표 단일 출처
 const HEART := 25       # 25포인트 = 하트 1칸
 const MAX_AFF := 250    # 10칸
 const FESTIVAL_MULT := 2  # 축제 중 대화 호감도 배율
@@ -23,14 +25,12 @@ const WAIT_MIN := 5.0
 const WAIT_MAX := 15.0
 const WALK_SCALE := 1.6       # cat walk 애니 재생속도
 const ARRIVE := 0.15          # 목표 도착 판정 거리
-const DAY_START := 8          # 배회 시작 시각
-const DAY_END := 20           # 배회 종료 시각
+const DAY_START := 8          # 활동 시작 시각
+const DAY_END := 20           # 활동 종료 시각(이후 그 자리 정지 — 스케줄이 19시 home으로 넣어둠)
 const FACE_TIME := 0.25       # 대화/선물 시 플레이어 쪽으로 도는 트윈 길이
 const FACE_HOLD := 6.0        # 돈 뒤 배회 재개까지 그 방향 유지 시간(초)
-const POND_XZ := Vector2(10, 0)
-const POND_AVOID := 3.0
-# 배회 목표에서 회피할 건물 keep-out(중심, 반경). world.gd _build_village의 solid/가시 건물과
-# 동기화 필수 — P2 Tripo 교체 시 함께 갱신. (경로탐색 아님: 목표점만 거름, DESIGN 11)
+# 회피할 장애물 keep-out(중심, 반경). world.gd _build_village + world.tscn의 solid/가시물과
+# 동기화 필수 — P2 Tripo 교체 시 함께 갱신. 배회 목표점 거르기 + 보행 구간 우회 공용.
 const BUILDING_KEEPOUT := [
 	[Vector2(0, -18), 4.0],   # 회관
 	[Vector2(-20, -14), 3.0], # 집1
@@ -39,7 +39,34 @@ const BUILDING_KEEPOUT := [
 	[Vector2(-7, -7), 2.5],   # 상점 박스
 	[Vector2(3, 15), 3.5],    # 플레이어 집 (v1.4 이동 반영)
 	[Vector2(24, 20), 3.0],   # 집4 (남동 강 건너)
+	[Vector2(0, 0), 2.0],     # 분수 (광장 중앙, 충돌 r1)
+	[Vector2(-5, -5), 1.6],   # 상점 카운터 (world.tscn Shop)
+	[Vector2(9.5, 7), 1.1],   # 판매 상자 (world.tscn ShippingBin)
+	[Vector2(10, 0), 2.9],    # 연못 (수면 r2.5)
+	[Vector2(29, -18.5), 3.4],# 풍차 언덕 램프
+	[Vector2(29, -24), 3.2],  # 풍차 대지
 ]
+# 밭은 여기 없다: 마을 동쪽 길이 밭 모서리를 지나므로 통과 보행은 허용하고, 서 있는 목표점만
+# _farm.in_region으로 거른다(작물 위에 안 서게).
+
+# ── 하루 스케줄 (데이터 구동: npcs.json "schedule") ──────────────────
+# 명명 앵커 좌표(home만 npcs.json). world.gd _build_village 실측 기준 — 건물·물·밭 밖.
+const ANCHORS := {
+	"plaza": Vector2(-4.5, 3.5),    # 광장 판석(r6) 남서 림, 분수 밖
+	"shop": Vector2(-3.5, -3.5),    # 상점 앞마당 (건물 -7,-7 / 카운터 -5,-5 앞)
+	"pond": Vector2(12, -3.5),      # 연못(10,0) 북동 물가
+	"bridge": Vector2(13, 6.2),     # 동 다리(17,7) 서쪽 발치
+	"windmill": Vector2(27, -12),   # 풍차 언덕 램프 발치 (강 건너 = 다리 경유)
+}
+const ANCHOR_R_MIN := 1.5   # 장소 앵커 배회 반경 (집보다 좁게 = 모여 있는 그림)
+const ANCHOR_R_MAX := 3.0
+const RIVER_AVOID := 2.9    # 강 중심선 이 거리 안엔 목표점 금지 (물폭3 + 양안 강둑)
+const DECK_HALF := 3.4      # 다리 데크 반폭(가로 6) — 경유 웨이포인트 = 데크 양끝
+const DECK_Y := 0.9         # 데크 상면 y (world.gd _arch_bridge: 중심 0.75 + 두께 0.3/2)
+const DECK_KEEP := 4.0      # 목표점 금지 반경(데크 밑에 서지 않게)
+const BLOCK_PAD := 0.3      # 구간이 장애물 원을 이만큼 침범하면 우회
+const DETOUR_PAD := 1.5     # 우회점을 원 밖 이만큼 띄움
+const DETOUR_MAX := 4       # 한 구간당 우회 삽입 상한
 
 # affection_points 0~250 저장, hearts는 파생 (Codex: F단계 청혼조건 재작업 방지)
 var state := {}         # npc_id → {affection_points, talked_today, gifted_today}
@@ -55,6 +82,7 @@ func _ready() -> void:
 	for id in GameData.npcs:
 		state[id] = {"affection_points": 0, "talked_today": false, "gifted_today": false}
 		_spawn(id)
+	snap_to_schedule()  # 시작 시각의 장소에서 출발 (새 게임 06시면 전원 집)
 	if not GameClock.day_changed.is_connected(_on_day_changed):
 		GameClock.day_changed.connect(_on_day_changed)
 
@@ -82,6 +110,7 @@ func _spawn(id: String) -> void:
 	_wander[id] = {
 		"target": root.position, "wait": randf_range(0.0, WAIT_MAX),
 		"anim": ToonChar.find_anim(vis) if vis != null else null, "cur": "",
+		"place": "home", "path": [],   # path = 남은 경유 웨이포인트(Vector2)
 	}
 
 # ── 비주얼 어댑터 (종족별 실물 모델 교체는 여기만 수정) ──────────────
@@ -147,43 +176,211 @@ func _is_daytime() -> bool:
 func _wander_step(id: String, delta: float) -> void:
 	var st: Dictionary = _wander[id]
 	var node: Node3D = npc_nodes[id]
+	_follow_schedule(id)
 	if st["wait"] > 0.0:
 		st["wait"] = float(st["wait"]) - delta
 		_set_walk(id, false)
 		return
 	var target: Vector3 = st["target"]
 	var flat := Vector3(target.x - node.position.x, 0, target.z - node.position.z)
-	if flat.length() < ARRIVE:  # 도착 → 대기 후 다음 목표
+	if flat.length() < ARRIVE:  # 도착
+		var path: Array = st["path"]
+		if not path.is_empty():   # 경유점 → 쉬지 않고 다음 구간
+			st["target"] = _v3(path.pop_front())
+			return
 		st["wait"] = randf_range(WAIT_MIN, WAIT_MAX)
 		st["target"] = _pick_target(id)
 		_set_walk(id, false)
 		return
 	var step := minf(WANDER_SPEED * delta, flat.length())  # 프레임 드랍 시 목표 초과 방지
 	node.position += flat.normalized() * step
+	node.position.y = _deck_y(Vector2(node.position.x, node.position.z))  # 다리 위면 데크 높이
 	node.look_at(node.global_position + flat, Vector3.UP)  # yaw만 (flat.y=0)
 	_set_walk(id, true)
 
-# 집 반경 4~6m 랜덤점. 밭·연못 회피(목표점만 거름, 경로탐색 금지). 실패시 집 폴백.
+# 스케줄 장소가 바뀌었으면 그 앵커까지의 경로를 깐다(순간이동 없음 — 걸어서 간다).
+func _follow_schedule(id: String) -> void:
+	var st: Dictionary = _wander[id]
+	var place := place_at(_schedule(id), GameClock.hour())
+	if place == st["place"]:
+		return
+	st["place"] = place
+	var node: Node3D = npc_nodes[id]
+	var path := route(Vector2(node.position.x, node.position.z), _anchor_pos(id, place))
+	st["target"] = _v3(path.pop_front())
+	st["path"] = path
+	st["wait"] = 0.0
+
+# 현재 장소 앵커 반경의 랜덤점. 밭·강·다리데크·keepout 회피(목표점만 거름 — DESIGN 11).
 func _pick_target(id: String) -> Vector3:
-	var home: Array = GameData.npcs[id]["home"]
-	var hp := Vector2(home[0], home[1])
+	var place := String(_wander[id]["place"])
+	var c := _anchor_pos(id, place)
+	var at_home := place == "home"
 	for _i in 8:
 		var ang := randf() * TAU
-		var r := randf_range(WANDER_R_MIN, WANDER_R_MAX)
-		var p := hp + Vector2(cos(ang), sin(ang)) * r
+		var r := randf_range(WANDER_R_MIN if at_home else ANCHOR_R_MIN, WANDER_R_MAX if at_home else ANCHOR_R_MAX)
+		var p := c + Vector2(cos(ang), sin(ang)) * r
 		if _farm != null and _farm.in_region(Vector2i(floori(p.x), floori(p.y))):
 			continue
-		if p.distance_to(POND_XZ) < POND_AVOID:
-			continue
-		var blocked := false
-		for ko in BUILDING_KEEPOUT:
-			if p.distance_to(ko[0]) < ko[1]:
-				blocked = true
-				break
-		if blocked:
+		if _river_dist(p) < RIVER_AVOID or _near_bridge(p, DECK_KEEP) or _inside_block(p):
 			continue
 		return Vector3(p.x, 0, p.y)
-	return Vector3(home[0], 0, home[1])
+	return Vector3(c.x, 0, c.y)
+
+# ── 스케줄 파생 + 경로 (순수 함수 — test_core 단위검증) ─────────────
+# 시각(0~23) → 그 시각의 장소 id. 스케줄은 시각 오름차순, 첫 항목 이전(이른 아침)은 home.
+static func place_at(sched: Array, h: int) -> String:
+	var place := "home"
+	for e in sched:
+		if int(e["h"]) <= h:
+			place = String(e["place"])
+	return place
+
+# from→to 웨이포인트(도착점 포함). 강을 건너면 최단 다리의 데크 양끝을 경유로 삽입.
+static func route(from: Vector2, to: Vector2) -> Array:
+	if not needs_bridge(from, to):
+		return _detour(from, to)
+	var gate: Array = []
+	var best := INF
+	for br in WorldScript.BRIDGES:
+		var g := _gates(br, from)
+		var l: float = from.distance_to(g[0]) + g[0].distance_to(g[1]) + g[1].distance_to(to)
+		if l < best:
+			best = l
+			gate = g
+	return _detour(from, gate[0]) + [gate[1]] + _detour(gate[1], to)
+
+# 구간이 다리 밖에서 강을 가로지르는가 (강은 다리 3곳으로만 통행 — world.gd 충돌벽 gap과 동일 규칙)
+static func needs_bridge(a: Vector2, b: Vector2) -> bool:
+	for i in WorldScript.RIVER_PTS.size() - 1:
+		var x = Geometry2D.segment_intersects_segment(a, b, WorldScript.RIVER_PTS[i], WorldScript.RIVER_PTS[i + 1])
+		if x != null and not _near_bridge(x, 1.2):
+			return true
+	return false
+
+# 다리 데크 양끝(강 가로지르는 방향). from에서 가까운 쪽이 먼저 = 진입단.
+static func _gates(br: Vector2, from: Vector2) -> Array:
+	var flow := Vector2.RIGHT
+	var best := INF
+	for i in WorldScript.RIVER_PTS.size() - 1:
+		var a: Vector2 = WorldScript.RIVER_PTS[i]
+		var b: Vector2 = WorldScript.RIVER_PTS[i + 1]
+		var d := _near_on(a, b, br).distance_to(br)
+		if d < best:
+			best = d
+			flow = (b - a).normalized()
+	var perp := Vector2(flow.y, -flow.x) * DECK_HALF
+	return [br - perp, br + perp] if from.distance_to(br - perp) <= from.distance_to(br + perp) else [br + perp, br - perp]
+
+# 직선 구간이 장애물 원을 지나면 원 밖으로 밀어낸 우회점을 끼운다(A* 아님 — 허브형 마을이라
+# 한두 개면 충분). 후보 4개 중 다른 장애물·강에 안 걸리고 짧은 쪽.
+# ponytail: 실패해도 직선 폴백 — 실제 스케줄 전 구간이 뚫리는지는 test_core가 지킨다.
+static func _detour(from: Vector2, to: Vector2) -> Array:
+	var out: Array = []
+	var cur := from
+	for _i in DETOUR_MAX:
+		var ko := _block_hit(cur, to)
+		if ko.is_empty():
+			break
+		var c: Vector2 = ko[0]
+		var rr := float(ko[1]) + DETOUR_PAD
+		var u := (to - cur).normalized()
+		if u == Vector2.ZERO:
+			break
+		var perp := Vector2(-u.y, u.x)
+		var n := _near_on(cur, to, c) - c
+		n = n.normalized() if n.length() > 0.2 else perp
+		var best := to
+		var best_s := INF
+		for w: Vector2 in [c + n * rr, c - n * rr, c + perp * rr, c - perp * rr]:
+			# 가중합: 원 안(치명) > 막힌 구간 > 길이
+			var s := cur.distance_to(w) + w.distance_to(to)
+			s += 100000.0 * float(_inside_block(w)) + 1000.0 * float(_bad(cur, w) + _bad(w, to))
+			if s < best_s:
+				best_s = s
+				best = w
+		out.append(best)
+		cur = best
+	out.append(to)
+	return out
+
+static func _bad(a: Vector2, b: Vector2) -> int:
+	return (1 if not _block_hit(a, b).is_empty() else 0) + (2 if needs_bridge(a, b) else 0)
+
+# 구간이 처음 침범하는 keepout 원 [중심, 반경] (없으면 [])
+static func _block_hit(a: Vector2, b: Vector2) -> Array:
+	var hit: Array = []
+	var best := INF
+	for ko in BUILDING_KEEPOUT:
+		var q := _near_on(a, b, ko[0])
+		if q.distance_to(ko[0]) < float(ko[1]) + BLOCK_PAD:
+			var t := q.distance_to(a)
+			if t < best:
+				best = t
+				hit = ko
+	return hit
+
+static func _inside_block(p: Vector2) -> bool:
+	for ko in BUILDING_KEEPOUT:
+		if p.distance_to(ko[0]) < float(ko[1]) + BLOCK_PAD:
+			return true
+	return false
+
+static func _near_bridge(p: Vector2, r: float) -> bool:
+	for br in WorldScript.BRIDGES:
+		if p.distance_to(br) < r:
+			return true
+	return false
+
+static func _river_dist(p: Vector2) -> float:
+	var d := INF
+	for i in WorldScript.RIVER_PTS.size() - 1:
+		d = minf(d, _near_on(WorldScript.RIVER_PTS[i], WorldScript.RIVER_PTS[i + 1], p).distance_to(p))
+	return d
+
+# 선분 ab 위에서 p에 가장 가까운 점
+static func _near_on(a: Vector2, b: Vector2, p: Vector2) -> Vector2:
+	var ab := b - a
+	var l2 := ab.length_squared()
+	if l2 < 0.0001:
+		return a
+	return a + ab * clampf((p - a).dot(ab) / l2, 0.0, 1.0)
+
+# 다리 위를 지날 때만 데크 높이로 들어올림 — 발이 물에 잠기거나 데크를 관통하는 그림 방지.
+# (배회 목표는 DECK_KEEP 밖이라 강을 건너는 중에만 0이 아니다)
+static func _deck_y(p: Vector2) -> float:
+	var d := INF
+	for br in WorldScript.BRIDGES:
+		d = minf(d, p.distance_to(br))
+	return DECK_Y * smoothstep(DECK_HALF, DECK_HALF - 1.9, d)
+
+static func _v3(p: Vector2) -> Vector3:
+	return Vector3(p.x, 0, p.y)
+
+func _schedule(id: String) -> Array:
+	return GameData.npcs[id].get("schedule", [])
+
+func _anchor_pos(id: String, place: String) -> Vector2:
+	if ANCHORS.has(place):
+		return ANCHORS[place]
+	var home: Array = GameData.npcs[id]["home"]  # "home" + 알 수 없는 place 폴백
+	return Vector2(home[0], home[1])
+
+# 현재 시각의 스케줄 장소로 즉시 배치 (로드·취침 점프·축제 종료 — 단체 행군 방지).
+# 이미 그 장소 반경 안이면 위치는 그대로 두고 상태만 정렬(자정 day_changed 제자리 순간이동 방지).
+func snap_to_schedule() -> void:
+	for id in npc_nodes:
+		var st: Dictionary = _wander[id]
+		var place := place_at(_schedule(id), GameClock.hour())
+		var a := _anchor_pos(id, place)
+		var node: Node3D = npc_nodes[id]
+		st["place"] = place
+		st["path"] = []
+		node.position.y = 0.0
+		if Vector2(node.position.x, node.position.z).distance_to(a) > WANDER_R_MAX:
+			node.position = _v3(a) if place == "home" else _pick_target(id)
+		st["target"] = _pick_target(id)
+		st["wait"] = randf_range(0.0, WAIT_MAX)
 
 # 말 건 플레이어 쪽으로 비주얼 yaw 회전 (전 주민 공통, talk·give가 호출).
 # 루트를 wander와 같은 look_at 규약으로 돌려(비주얼 rotation.y=PI 보정 재사용) 이중보정 없음.
@@ -209,8 +406,8 @@ func _face_player(id: String) -> void:
 	var tw := create_tween()
 	tw.tween_property(node, "rotation:y", yaw, FACE_TIME)
 	st["face_tween"] = tw
-	st["target"] = node.position          # 그 자리에서
-	st["wait"] = maxf(float(st["wait"]), FACE_HOLD)  # 배회 재개 지연 → yaw 유지
+	# wait만 늘린다 — 이동 목표·경유 큐는 그대로 두고 그 자리에 멈춰 서서 yaw 유지, 뒤에 이어감
+	st["wait"] = maxf(float(st["wait"]), FACE_HOLD)
 	_set_walk(id, false)
 
 # walk/idle 전환 (같은 클립 재요청 무시)
@@ -273,11 +470,7 @@ func enter_festival(plaza: Vector2) -> void:
 
 func exit_festival() -> void:
 	_festival_active = false
-	for id in npc_nodes:  # 집 위치로 복귀 (데이터가 단일 출처)
-		var home: Array = GameData.npcs[id]["home"]
-		npc_nodes[id].position = Vector3(home[0], 0, home[1])
-		_wander[id]["target"] = npc_nodes[id].position  # 배회 재개 기준 리셋
-		_wander[id]["wait"] = randf_range(0.0, WAIT_MAX)
+	snap_to_schedule()  # 그 시각 스케줄 장소로 복귀 (밤이면 집 — 데이터가 단일 출처)
 
 # 선물: 하루 1회, 취향별 ±, 생일 ×8, 0~250 clamp
 func give(id: String, item_id: String) -> Dictionary:
@@ -313,6 +506,7 @@ func _on_day_changed(_prev: int, _abs_day: int) -> void:
 	for id in state:
 		state[id]["talked_today"] = false
 		state[id]["gifted_today"] = false
+	snap_to_schedule()  # 취침으로 시각이 점프해도 아침엔 그 시각 장소에 이미 가 있게
 
 # ── 저장 ───────────────────────────────────────────────────────
 func save_data() -> Dictionary:
@@ -328,3 +522,4 @@ func load_data(d: Dictionary) -> void:
 			state[id]["affection_points"] = clampi(pts, 0, MAX_AFF)
 			state[id]["talked_today"] = bool(s.get("talked_today", false))
 			state[id]["gifted_today"] = bool(s.get("gifted_today", false))
+	snap_to_schedule()  # 위치는 저장 안 함 — 로드한 시각의 장소에서 시작(집→광장 단체 행군 방지)
