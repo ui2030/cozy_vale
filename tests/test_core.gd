@@ -29,9 +29,14 @@ func _ready() -> void:
 	_test_npc_schedule()
 	_test_save_v2_v3()
 	_test_save_v3_v4()
+	_test_save_v4_v5()
 	_test_v1_save_compat()
 	_test_calendar()
 	_test_festival()
+	_test_ring_item()
+	_test_spouse_schedule()
+	_test_dates()
+	_test_marriage()
 	_test_pause_menu()
 	_test_fishing_judge()
 	_test_pick_fish()
@@ -294,11 +299,28 @@ func _test_save_v3_v4() -> void:
 	# v3 → v4: 도감 기본 빈 배열
 	var v3 := {"save_version": 3, "player": {"gold": 100}, "systems": {"npc": {}}}
 	var m := SaveManager._migrate(v3)
-	assert(int(m["save_version"]) == 4, "v3 → v4")
+	assert(int(m["save_version"]) == SaveManager.VERSION, "v3 → 최신")
 	assert(m["player"]["collection"] == [], "collection 기본 []")
 	# player 키 없는 구조도 방어 (무버전/손상 세이브)
 	var nop := SaveManager._migrate({"save_version": 3})
 	assert(nop["player"]["collection"] == [], "player 없어도 collection 생성")
+
+func _test_save_v4_v5() -> void:
+	# v4 → v5: 결혼 상태 키 생성, 기존 호감도 보존
+	var v4 := {"save_version": 4, "player": {"gold": 100, "collection": []},
+		"systems": {"npc": {"npc.mira": {"affection_points": 40}}}}
+	var m := SaveManager._migrate(v4)
+	assert(int(m["save_version"]) == 5, "v4 → v5")
+	assert(m["systems"]["npc"]["spouse"] == null, "spouse 기본 null")
+	assert(m["systems"]["npc"]["engaged"] == null, "engaged 기본 null")
+	assert(int(m["systems"]["npc"]["npc.mira"]["affection_points"]) == 40, "기존 호감도 보존")
+	assert(int(m["systems"]["npc"]["npc.mira"]["dates_seen"]) == 0, "주민별 dates_seen 생성")
+	# systems 없는 구조도 방어 (손상 세이브)
+	var nop := SaveManager._migrate({"save_version": 4})
+	assert(nop["systems"]["npc"]["spouse"] == null, "systems 없어도 생성")
+	# 최초 포맷(v1)에서 한 번에 최신까지
+	var v1 := SaveManager._migrate({"save_version": 1})
+	assert(v1["systems"]["npc"].has("spouse") and v1["systems"]["npc"].has("engaged"), "v1 → v5 결혼 키")
 
 func _test_calendar() -> void:
 	# 달력 데이터 로드 + 조회 (생일=npcs, 축제=calendar 단일 출처)
@@ -330,6 +352,234 @@ func _test_festival() -> void:
 	fest.evaluate()
 	assert(not _npcsys._festival_active, "축제 종료")
 	assert(_npcsys.npc_nodes[id].position.distance_to(home_pos) < 0.01, "집 복귀")
+
+# ── F단계: 연애·결혼 (DESIGN 6.5) ───────────────────────────────
+func _test_ring_item() -> void:
+	# 프러포즈 아이템이 씨앗·산출물 집합에 섞이면 Q순환 오염·판매상자 증발·선물 오소모가 난다.
+	assert(GameData.has_item_id(GameData.RING_ID), "반지 = 유효 아이템 ID")
+	assert(not GameData.is_produce(GameData.RING_ID), "반지는 산출물 아님(판매·도감·선물취향 제외)")
+	assert(not (GameData.RING_ID in GameData.all_seed_ids()), "반지는 씨앗 순환 집합 밖")
+	assert(GameData.display_name(GameData.RING_ID) == GameData.RING_NAME, "반지 표시 이름")
+	assert(GameData.RING_COST > 500, "시작 골드 500으로 1일차 즉시 구매 불가 = 저축 필요")
+	assert(_farm.deposit(GameData.RING_ID, 1) == 0, "반지는 판매상자가 거부")
+
+func _test_spouse_schedule() -> void:
+	# 배우자 스케줄 오버라이드: 순수 함수 + npcs.json 원본 불변 + 앵커 통행 가능
+	var N := preload("res://npc/npc_system.gd")
+	var raw := JSON.stringify(GameData.npcs["npc.mira"]["schedule"])
+	var sp: Array = N.spouse_schedule(GameData.npcs["npc.mira"]["schedule"])
+	assert(JSON.stringify(GameData.npcs["npc.mira"]["schedule"]) == raw, "npcs.json 원본 불변")
+	assert(N.place_at(sp, 6) == "player_home", "기상 시각(06시) = 플레이어 집 앞")
+	assert(N.place_at(sp, 7) == "player_home", "아침 유지")
+	assert(N.place_at(sp, 13) == "shop", "낮은 원래 자기 스케줄 유지 (mira 13시 상점)")
+	assert(N.place_at(sp, 19) == "player_home", "저녁 = 플레이어 집 앞")
+	assert(N.place_at(sp, 23) == "player_home", "밤에도 그 자리(집 대신 플레이어 집 앞)")
+	var prev := -1
+	for e in sp:
+		assert(int(e["h"]) > prev, "오버라이드 스케줄 시각 오름차순")
+		prev = int(e["h"])
+		assert(N.ANCHORS.has(e["place"]), "알 수 없는 장소 %s" % str(e["place"]))
+	# player_home 앵커 정합 (건물 keepout·밭·강 밖)
+	var ph: Vector2 = N.ANCHORS["player_home"]
+	assert(not N._inside_block(ph), "player_home 앵커가 건물 keepout 안")
+	assert(not _farm.in_region(Vector2i(floori(ph.x), floori(ph.y))), "player_home 앵커가 밭 위")
+	assert(N._river_dist(ph) > N.RIVER_AVOID, "player_home 앵커가 강 근처")
+	# 후보 4명 배우자 스케줄 전 구간: 건물·물 관통 0 (기존 스케줄 불변식과 같은 검사)
+	for id in ["npc.mira", "npc.luna", "npc.finn", "npc.milo"]:
+		var s: Array = N.spouse_schedule(GameData.npcs[id]["schedule"])
+		for i in s.size():
+			var a: Vector2 = N.ANCHORS[String(s[i - 1]["place"])] if i > 0 else N.ANCHORS[String(s[s.size() - 1]["place"])]
+			var b: Vector2 = N.ANCHORS[String(s[i]["place"])]
+			var cur := a
+			for w in N.route(a, b):
+				assert(N._block_hit(cur, w).is_empty(), "%s 배우자 구간이 건물/물 관통" % id)
+				assert(not N.needs_bridge(cur, w), "%s 배우자 구간이 다리 밖 도하" % id)
+				cur = w
+
+func _test_dates() -> void:
+	# 데이트 이벤트: 하트가 열고(9·10칸), 대화가 방아쇠, 도착 앵커는 스케줄 인프라 재활용.
+	var N := preload("res://npc/npc_system.gd")
+	var id := "npc.luna"  # mira는 결혼 테스트가 쓰므로 분리
+	GameClock.abs_day = 0  # spring D1 = 축제 아님
+	GameClock.game_min = 12 * 60
+	_npcsys.spouse = ""
+	_npcsys.engaged = {}
+	_npcsys._date = {}
+	_npcsys.state[id]["dates_seen"] = 0
+	# ── ♥8에선 안 열림
+	_npcsys.state[id]["affection_points"] = 8 * _npcsys.HEART
+	assert(_npcsys.date_index(id) == -1, "♥8 = 데이트 아직 안 열림")
+	# ── ♥9 → 데이트 1(연못), 대화가 방아쇠
+	_npcsys.state[id]["affection_points"] = 9 * _npcsys.HEART
+	assert(_npcsys.date_index(id) == 0, "♥9 = 데이트 1 열림")
+	_npcsys.state[id]["talked_today"] = false
+	var t: Dictionary = _npcsys.talk(id)
+	assert(t["ok"] and "연못" in String(t["msg"]), "대화 = 데이트 제안(연못): %s" % t["msg"])
+	assert(_npcsys._date["id"] == id and _npcsys._date["place"] == "pond", "데이트 상태: %s" % str(_npcsys._date))
+	assert(not _npcsys.talk(id)["ok"], "같은 날 재대화 불가 = 데이트 하루 1회")
+	# 스케줄 오버라이드(데이트 > 배우자 > npcs.json)
+	assert(N.place_at(_npcsys._schedule(id), 12) == "pond", "데이트 중 스케줄 = 연못")
+	assert(N.place_at(_npcsys._schedule(id), 19) == "pond", "데이트는 저녁 스케줄도 덮음")
+	assert(N.place_at(_npcsys._schedule("npc.finn"), 15) == "bridge", "데이트 무관 주민은 원래 스케줄(finn 15시 다리)")
+	# ── 동시 데이트 금지
+	_npcsys.state["npc.finn"]["dates_seen"] = 0
+	_npcsys.state["npc.finn"]["affection_points"] = 9 * _npcsys.HEART
+	assert(_npcsys.date_index("npc.finn") == -1, "데이트 진행 중 다른 데이트 금지")
+	# ── 밤 = 중단(미소진, 다시 발생 가능)
+	GameClock.game_min = 21 * 60
+	_npcsys._check_date()
+	assert(_npcsys._date.is_empty(), "밤엔 데이트 중단")
+	assert(int(_npcsys.state[id]["dates_seen"]) == 0, "중단은 소진 아님")
+	GameClock.game_min = 12 * 60
+	assert(_npcsys.date_index(id) == 0, "중단 후 다시 열림")
+	# ── 완주: 진행도 +1 + 호감 보너스 + 오버라이드 해제
+	_npcsys._start_date(id, 0)
+	var before := int(_npcsys.state[id]["affection_points"])
+	_npcsys._finish_date(id, 0)
+	assert(int(_npcsys.state[id]["dates_seen"]) == 1, "데이트 1 완주")
+	assert(int(_npcsys.state[id]["affection_points"]) == before + _npcsys.DATE_BONUS, "완주 호감 보너스 +%d" % _npcsys.DATE_BONUS)
+	assert(_npcsys._date.is_empty(), "완주 후 오버라이드 해제")
+	assert(N.place_at(_npcsys._schedule(id), 12) == "plaza", "원래 스케줄 복귀(luna 12시 광장)")
+	# ── 순서 보장: 데이트 2는 ♥10부터
+	assert(_npcsys.date_index(id) == -1, "♥9 + 1회 완주 → 데이트 2는 아직")
+	_npcsys.state[id]["affection_points"] = _npcsys.MAX_AFF
+	assert(_npcsys.date_index(id) == 1, "♥10 = 데이트 2 열림")
+	assert(String(_npcsys.DATE_PLACES[1]) == "windmill", "데이트 2 = 풍차 언덕(강 건너 = 다리 경유)")
+	_npcsys._start_date(id, 1)
+	_npcsys._finish_date(id, 1)
+	assert(int(_npcsys.state[id]["dates_seen"]) == 2, "데이트 2 완주")
+	assert(_npcsys.date_index(id) == -1, "2회 완주 후 더 안 열림")
+	# ── 축제일엔 시작 금지
+	GameClock.abs_day = 14  # spring D15 = 꽃축제
+	assert(_npcsys.date_index("npc.finn") == -1, "축제일 데이트 금지")
+	GameClock.abs_day = 0
+	assert(_npcsys.date_index("npc.finn") == 0, "축제 아닌 날 열림")
+	# ── 비후보는 데이트 없음
+	_npcsys.state["npc.tom"]["affection_points"] = _npcsys.MAX_AFF
+	assert(_npcsys.date_index("npc.tom") == -1, "비후보는 데이트 없음")
+	# ── 세이브 라운드트립 (dates_seen)
+	var sd: Dictionary = _npcsys.save_data()
+	assert(int(sd[id]["dates_seen"]) == 2, "세이브에 데이트 진행도")
+	_npcsys.load_data({id: {"affection_points": 250, "dates_seen": 1.0}})
+	assert(int(_npcsys.state[id]["dates_seen"]) == 1, "로드 float → int 정규화")
+	_npcsys.load_data({id: {"affection_points": 250}})  # 데이트 이전 세이브 = 필드 없음
+	assert(int(_npcsys.state[id]["dates_seen"]) == 0, "구세이브(필드 없음) → 0")
+	# 원복
+	_npcsys._date = {}
+	for nid in _npcsys.state:
+		_npcsys.state[nid]["dates_seen"] = 0
+	SaveManager.set_process(false)  # _finish_date가 큐잉한 저장 취소
+
+func _test_marriage() -> void:
+	var id := "npc.mira"
+	GameClock.abs_day = 0
+	GameClock.game_min = 8 * 60
+	_npcsys.spouse = ""
+	_npcsys.engaged = {}
+	_npcsys._date = {}
+	for nid in _npcsys.state:
+		_npcsys.state[nid]["dates_seen"] = 0
+	# ── 청혼 게이트 ①: 하트 부족 (만렙 ♥10 필요)
+	_npcsys.state[id]["affection_points"] = 0
+	assert(not _npcsys.propose(id)["ok"], "♥0 청혼 거절")
+	_npcsys.state[id]["affection_points"] = 9 * _npcsys.HEART + 24  # ♥9 (경계 바로 아래)
+	assert(_npcsys.hearts(id) == 9, "전제: ♥9")
+	assert(not _npcsys.propose(id)["ok"], "♥9 = 만렙 미달 → 거절")
+	# ── 청혼 게이트 ②: ♥10이어도 데이트 2회 전엔 거절 (힌트가 다름)
+	_npcsys.state[id]["affection_points"] = _npcsys.MAX_AFF
+	assert(_npcsys.hearts(id) == _npcsys.PROPOSE_HEARTS, "전제: ♥10 만렙")
+	var r0: Dictionary = _npcsys.propose(id)
+	assert(not r0["ok"], "♥10 + 데이트 0회 → 거절")
+	assert("데이트 0/2" in String(r0["msg"]), "거절 힌트에 데이트 진행도: %s" % r0["msg"])
+	_npcsys.state[id]["dates_seen"] = 1
+	assert(not _npcsys.propose(id)["ok"], "데이트 1회만 봐도 거절")
+	_npcsys.state[id]["dates_seen"] = 2
+	# ── 후보 판정 (비후보는 player 쪽에서 반지 분기 자체를 안 탄다)
+	for c in ["npc.mira", "npc.luna", "npc.finn", "npc.milo"]:
+		assert(_npcsys.is_candidate(c), "%s 결혼 후보" % c)
+	for c in ["npc.tom", "npc.rosa", "npc.momo", "npc.pip", "npc.nun"]:
+		assert(not _npcsys.is_candidate(c), "%s 후보 아님" % c)
+	# ── 거절이면 반지 무소모 (실제 player 소모 경로)
+	var p: Node = preload("res://player/player.gd").new()
+	p._npcsys = _npcsys
+	p._add_item(GameData.RING_ID, 1)
+	_npcsys.state[id]["dates_seen"] = 0  # 데이트 미완주 = 거절 조건
+	assert(not p.propose_with_ring(id)["ok"], "조건 미달 청혼 실패")
+	assert(p.count(GameData.RING_ID) == 1, "거절 = 반지 무소모")
+	# ── ♥10 + 데이트 2회 → 수락(약혼), 반지 소모
+	_npcsys.state[id]["dates_seen"] = 2
+	assert(p.propose_with_ring(id)["ok"], "♥10 + 데이트 2회 청혼 수락")
+	assert(p.count(GameData.RING_ID) == 0, "수락 = 반지 소모")
+	assert(_npcsys.engaged["id"] == id and _npcsys.spouse == "", "약혼 상태(아직 미혼)")
+	assert(int(_npcsys.engaged["wedding_abs_day"]) == _npcsys.ENGAGE_DAYS, "결혼식 = 청혼 3일 뒤")
+	# ── 약혼 중 이중 청혼 거절 + 무소모
+	p._add_item(GameData.RING_ID, 1)
+	assert(not p.propose_with_ring("npc.luna")["ok"], "약혼 중 이중 청혼 거절")
+	assert(p.count(GameData.RING_ID) == 1, "이중 청혼도 반지 무소모")
+	# ── 결혼식 발동 시점: 전날·당일 09시 전엔 대기
+	GameClock.abs_day = _npcsys.ENGAGE_DAYS - 1
+	GameClock.game_min = 12 * 60
+	_npcsys._check_wedding()
+	assert(_npcsys.spouse == "", "결혼식 전날엔 미혼 유지")
+	GameClock.abs_day = _npcsys.ENGAGE_DAYS
+	GameClock.game_min = 8 * 60
+	_npcsys._check_wedding()
+	assert(_npcsys.spouse == "", "당일 09시 전엔 대기")
+	# ── 당일 09시 → 결혼 성립 + 주민 광장 집합
+	GameClock.game_min = _npcsys.WEDDING_HOUR * 60
+	_npcsys._check_wedding()
+	assert(_npcsys.spouse == id and _npcsys.engaged.is_empty(), "09시 결혼 성립")
+	assert(_npcsys._festival_active, "결혼식 = 주민 광장 집합(축제 API 재활용)")
+	var at_plaza := 0
+	for nid in _npcsys.npc_nodes:
+		var np: Vector3 = _npcsys.npc_nodes[nid].position
+		if Vector2(np.x, np.z).distance_to(_npcsys.WEDDING_PLAZA) < _npcsys.FEST_RING + 0.5:
+			at_plaza += 1
+	assert(at_plaza >= GameData.npcs.size() - 1, "주민 광장 링 집합 (%d명)" % at_plaza)
+	# ── 집합 종료: 절대분 판정이라 식 중 자정을 넘겨도 풀린다
+	GameClock.abs_day += 1
+	GameClock.game_min = 6 * 60
+	_npcsys._check_wedding()
+	assert(not _npcsys._festival_active, "자정 넘겨도 집합 해제(절대분 판정)")
+	# ── 기혼자 재청혼 거절 + 무소모
+	assert(not p.propose_with_ring("npc.luna")["ok"], "기혼 재청혼 거절")
+	assert(p.count(GameData.RING_ID) == 1, "기혼 재청혼도 무소모")
+	# ── 배우자 = married 아침 인사 + 하트 표기
+	_npcsys.state[id]["talked_today"] = false
+	var t: Dictionary = _npcsys.talk(id)
+	assert(t["ok"] and "♥" in String(t["msg"]), "대화 토스트 하트 표기: %s" % t["msg"])
+	var found := false
+	for line in GameData.dialogues["cheerful"]["married"]:
+		if String(line) in String(t["msg"]):
+			found = true
+	assert(found, "배우자는 married 대사: %s" % t["msg"])
+	# ── 시간창을 지나침(취침·로드) → 연출 없이 즉시 완혼 폴백
+	_npcsys.spouse = ""
+	_npcsys.engaged = {"id": "npc.luna", "wedding_abs_day": GameClock.abs_day + 1}
+	GameClock.abs_day += 5
+	GameClock.game_min = 20 * 60
+	_npcsys._check_wedding()
+	assert(_npcsys.spouse == "npc.luna", "지나친 결혼식 = 즉시 완혼")
+	assert(not _npcsys._festival_active, "폴백은 광장 집합 없음")
+	# ── 결혼식이 축제날과 겹치면 하루 미룸 (봄 D15 = abs_day 14)
+	assert(_npcsys.wedding_day_for(14) == 15, "축제날 결혼식 → 하루 미룸")
+	assert(_npcsys.wedding_day_for(13) == 13, "축제 아닌 날 그대로")
+	# ── 세이브 라운드트립 + 방어
+	var sd: Dictionary = _npcsys.save_data()
+	assert(sd["spouse"] == "npc.luna" and sd["engaged"] == null, "세이브에 배우자/약혼")
+	assert(sd.has(id) and int(sd[id]["affection_points"]) > 0, "호감도와 같은 딕셔너리 공존")
+	_npcsys.load_data({"spouse": "npc.luna", "engaged": {"id": id, "wedding_abs_day": 7.0}})
+	assert(_npcsys.spouse == "npc.luna", "로드 배우자 복원")
+	assert(int(_npcsys.engaged["wedding_abs_day"]) == 7, "JSON float → int 정규화")
+	_npcsys.load_data({"spouse": "npc.ghost", "engaged": {"id": "npc.ghost"}})
+	assert(_npcsys.spouse == "" and _npcsys.engaged.is_empty(), "없는 npc_id → 미혼 폴백(유령 배우자 방지)")
+	# 상태 원복 — 뒤 테스트가 배우자 스케줄 오버라이드에 영향받지 않게
+	_npcsys.spouse = ""
+	_npcsys.engaged = {}
+	_npcsys._wedding_end = -1
+	_npcsys.exit_festival()
+	SaveManager.set_process(false)  # _wed()가 큐잉한 저장 취소 (유저 세이브 미변경)
+	p.free()
 
 func _test_pause_menu() -> void:
 	var menu := preload("res://ui/pause_menu.gd").new()

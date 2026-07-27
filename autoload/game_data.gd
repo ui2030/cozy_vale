@@ -4,6 +4,14 @@ extends Node
 # 계절 canonical ID — 시즌 인덱스↔문자열의 단일 출처 (npc 생일·farm 고사·calendar 검증 공용)
 const SEASON_IDS := ["spring", "summer", "autumn", "winter"]
 
+# 프러포즈 아이템 (DESIGN 6.5). 유일한 비산출물 아이템이라 json 파일 대신 여기 상수.
+# is_produce=false 로 두는 것이 계약: 판매상자·선물 취향 판정·도감·씨앗 순환에서 전부 자동 배제된다.
+# 가격 1200 근거: 시작 골드 500(1일차 구매 불가) + 최고가 산출물 catfish 150의 8배
+# + 순무 12타일 한 사이클(4일) 총매출 720 → 농사 위주 수입 ~150~250/일에서 5~8일 저축.
+const RING_ID := "ring.moonlight"
+const RING_NAME := "달빛 꽃반지"
+const RING_COST := 1200
+
 var crops := {}            # crop_id → 정의
 var fish := {}             # fish_id → 정의 (낚시)
 var forage := {}           # forage_id → 정의 (채집)
@@ -80,10 +88,14 @@ func _validate() -> void:
 		var arche: String = npcs[nid].get("archetype", "")
 		assert(dialogues.has(arche), "%s archetype '%s' 대사 풀 없음" % [nid, arche])
 		assert(not dialogues[arche].get("normal", []).is_empty(), "%s normal 대사 비어있음" % arche)
+		# 결혼 후보(candidate)는 연애 대사가 다 있어야 함 (F단계: 데이트 → 청혼 → 결혼식 → 부부)
+		if npcs[nid].get("candidate", false):
+			for key in ["date_invite", "date1", "date2", "propose_accept", "propose_reject", "wedding", "married"]:
+				assert(not dialogues[arche].get(key, []).is_empty(), "%s(%s) %s 대사 없음" % [nid, arche, key])
 
-# 통합 아이템 ID 레지스트리 (작물·씨앗·물고기·채집물)
+# 통합 아이템 ID 레지스트리 (작물·씨앗·물고기·채집물·반지)
 func has_item_id(item_id: String) -> bool:
-	return crops.has(item_id) or _seed_to_crop.has(item_id) or fish.has(item_id) or forage.has(item_id)
+	return item_id == RING_ID or crops.has(item_id) or _seed_to_crop.has(item_id) or fish.has(item_id) or forage.has(item_id)
 
 # 산출물(판매·선물·도감 대상) — 씨앗 제외. crop/fish/forage.
 func is_produce(item_id: String) -> bool:
@@ -150,6 +162,8 @@ func all_seed_ids() -> Array:
 	return _seed_to_crop.keys()
 
 func display_name(item_id: String) -> String:
+	if item_id == RING_ID:
+		return RING_NAME
 	for src in [crops, fish, forage]:
 		if src.has(item_id):
 			return src[item_id].get("name", item_id)

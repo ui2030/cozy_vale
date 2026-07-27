@@ -2,7 +2,7 @@ extends Node
 # 세이브 (DESIGN 11.1). JSON 단일 파일, 원자적 교체, save_version 마이그레이션, bak 폴백.
 # 저장 요청은 큐잉 후 다음 프레임 처리 (신호 연결 순서 문제 회피 — Codex 지적).
 
-const VERSION := 4
+const VERSION := 5
 # 월드 레이아웃 판(마을 P1). 정적 지오메트리/충돌체가 바뀌면 범프 → 구세이브의 플레이어
 # 위치가 신규 충돌체 안에 박혔을 수 있으므로 로드 시 광장으로 폴백(신규 게임엔 영향 없음).
 const WORLD_VERSION := 2
@@ -33,6 +33,17 @@ var _migrations := {
 		var pl: Dictionary = d.get("player", {})  # player 없어도 생성 후 채움
 		pl["collection"] = pl.get("collection", [])
 		d["player"] = pl
+		return d,
+	4: func(d: Dictionary) -> Dictionary:  # v4 → v5 (연애·결혼)
+		var sys: Dictionary = d.get("systems", {})
+		var npc: Dictionary = sys.get("npc", {})
+		npc["spouse"] = npc.get("spouse", null)      # 배우자 npc_id 또는 null
+		npc["engaged"] = npc.get("engaged", null)    # {id, wedding_abs_day} 또는 null
+		for k in npc.keys():                          # 주민별 데이트 진행도(0~2)
+			if String(k).begins_with("npc.") and npc[k] is Dictionary:  # engaged 딕셔너리 제외
+				npc[k]["dates_seen"] = npc[k].get("dates_seen", 0)
+		sys["npc"] = npc
+		d["systems"] = sys
 		return d,
 }
 

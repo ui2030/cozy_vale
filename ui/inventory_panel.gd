@@ -57,6 +57,7 @@ func _rebuild() -> void:
 	_head("씨앗 (클릭 = 선택, Q = 순환)")
 	for sid in GameData.all_seed_ids():
 		_list.add_child(_seed_btn(p, sid))
+	_list.add_child(_ring_btn(p))
 	_head("소지품")
 	var any := false
 	for e in p.inventory:
@@ -72,6 +73,21 @@ func _rebuild() -> void:
 		empty.add_theme_font_size_override("font_size", 16)
 		empty.text = "(비어 있음)"
 		_list.add_child(empty)
+
+# 프러포즈 아이템 행. 미보유면 구매 버튼(상점 앞에서만 성사 — player.buy_ring이 판정),
+# 보유면 소지 표시. 씨앗 목록과 분리해 Q 순환 집합을 오염시키지 않는다.
+func _ring_btn(p: Node) -> Button:
+	var b := Button.new()
+	var owned: bool = p.count(GameData.RING_ID) > 0
+	b.text = "  %s   %s" % [
+		GameData.RING_NAME,
+		"x1 (후보에게 G = 청혼)" if owned else "%dG — 상점에서 구매" % GameData.RING_COST,
+	]
+	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	b.add_theme_font_size_override("font_size", 16)
+	b.disabled = owned  # 보유 중 = 표시 전용 행
+	b.pressed.connect(func(): p.buy_ring())
+	return b
 
 func _head(text: String) -> void:
 	var h := Label.new()

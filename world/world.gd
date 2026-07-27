@@ -81,6 +81,22 @@ func _ready() -> void:
 		var nsys := get_tree().get_first_node_in_group("npc_system")
 		if nsys != null and nsys.has_method("pose_for_shot"):
 			nsys.pose_for_shot()
+	if "wedding" in OS.get_cmdline_user_args():  # 검증용: 결혼식 광장 집합 (shot wedding)
+		SaveManager.set_process(false)   # 유저 세이브 보호
+		GameClock.game_min = 9 * 60       # 결혼식 시각(NpcSystem.WEDDING_HOUR)
+		for d in 28:  # 봄의 첫 맑은 평일(축제 아님) — 비 오는 결혼식 컷 방지
+			if not GameData.is_rainy(d) and GameData.festival_on("spring", GameClock.day_of_season_at(d)).is_empty():
+				GameClock.abs_day = d
+				break
+		var pwd := get_tree().get_first_node_in_group("player")
+		if pwd != null:  # 광장 집합 지점(0,-6) 남서 — 분수에 가리지 않게 비켜 섬
+			pwd.global_position = Vector3(-2.5, 2, -1.0)
+			pwd._face_dir(Vector3(0, 0, -1))  # 광장(북) 향해 = 배우자와 마주보기
+		var nwd := get_tree().get_first_node_in_group("npc_system")
+		if nwd != null:
+			nwd.engaged = {"id": "npc.mira", "wedding_abs_day": GameClock.abs_day}
+			nwd._check_wedding()         # 즉시 식 진행(주민 집합 + 배우자 마주보기)
+		SaveManager.set_process(false)   # _wed()의 request_save 취소 (가짜 결혼 세이브 방지)
 	if "collection" in OS.get_cmdline_user_args():  # 검증용: 도감 패널(일부 발견)
 		var pc := get_tree().get_first_node_in_group("player")
 		if pc != null:

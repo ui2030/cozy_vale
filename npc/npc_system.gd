@@ -57,6 +57,9 @@ const ANCHORS := {
 	"pond": Vector2(12, -3.5),      # 연못(10,0) 북동 물가
 	"bridge": Vector2(13, 6.2),     # 동 다리(17,7) 서쪽 발치
 	"windmill": Vector2(27, -12),   # 풍차 언덕 램프 발치 (강 건너 = 다리 경유)
+	# 배우자 전용(F단계): 플레이어 집(피벗 3,15 / 북향 문 z=12.45) 앞. keepout r3.5 밖(거리 4.5),
+	# 밭 REGION(x0..7, z2..5) 밖, 강 밖 — test_core 관통·도하 불변식이 지킴.
+	"player_home": Vector2(3, 10.5),
 }
 const ANCHOR_R_MIN := 1.5   # 장소 앵커 배회 반경 (집보다 좁게 = 모여 있는 그림)
 const ANCHOR_R_MAX := 3.0
@@ -68,8 +71,31 @@ const BLOCK_PAD := 0.3      # 구간이 장애물 원을 이만큼 침범하면 
 const DETOUR_PAD := 1.5     # 우회점을 원 밖 이만큼 띄움
 const DETOUR_MAX := 4       # 한 구간당 우회 삽입 상한
 
+# ── 연애·결혼 (DESIGN 6.5) ──────────────────────────────────────────
+# 청혼 조건 = ♥10(만렙) + 데이트 이벤트 2회 완주. 데이트는 하트가 열쇠를 주고(9칸·10칸),
+# 대화(E)가 방아쇠를 당기고, 도착 판정은 기존 스케줄 앵커 인프라를 그대로 쓴다.
+const PROPOSE_HEARTS := 10    # 청혼 가능 최소 하트 (= MAX_AFF/HEART 만렙)
+const DATES_REQUIRED := 2     # 청혼 전 완주해야 하는 데이트 횟수
+const DATE_HEARTS := [9, 10]  # 데이트 1·2가 열리는 최소 하트
+const DATE_PLACES := ["pond", "windmill"]  # 데이트 1=연못, 2=풍차 언덕(강 건너 = 다리 경유)
+const DATE_RADIUS := 3.0      # 플레이어가 앵커 이 거리 안에 오면 데이트 성사
+const DATE_BONUS := HEART / 2 # 데이트 완주 호감 보너스
+const DATE_LINE_SEC := 2.6    # 도착 대사 시퀀스 한 줄 노출(초)
+const PLACE_NAMES := {"pond": "연못", "windmill": "풍차 언덕", "plaza": "광장", "shop": "상점 앞", "player_home": "집 앞"}
+const ENGAGE_DAYS := 3        # 약혼 → 결혼식까지 일수
+const WEDDING_HOUR := 9       # 결혼식 시각(그 날 09시 도달 시)
+const WEDDING_WINDOW_H := 1   # 이 시간 안에 도달했을 때만 식 연출(지나쳤으면 즉시 완혼 폴백)
+const WEDDING_HOLD_MIN := 30  # 광장 집합 유지(게임분)
+const WEDDING_PLAZA := Vector2(0, -6)  # 광장 북측(분수 r2 밖) — 꽃축제와 같은 집합 지점
+const SPOUSE_MORNING_H := 6   # 배우자 아침 = 기상시각부터 플레이어 집 앞
+const SPOUSE_EVENING_H := 18  # 배우자 저녁 = 다시 플레이어 집 앞 (밤엔 그 자리 정지)
+
 # affection_points 0~250 저장, hearts는 파생 (Codex: F단계 청혼조건 재작업 방지)
-var state := {}         # npc_id → {affection_points, talked_today, gifted_today}
+var state := {}         # npc_id → {affection_points, talked_today, gifted_today, dates_seen}
+var spouse := ""        # 배우자 npc_id ("" = 미혼)
+var engaged := {}       # {} 또는 {id, wedding_abs_day}
+var _wedding_end := -1  # 결혼식 집합 종료 절대분(abs_day*1440+game_min). -1 = 진행중 아님
+var _date := {}         # 진행 중 데이트 {} 또는 {id, place, idx} — 저장 안 함(당일 한정 연출)
 var npc_nodes := {}     # npc_id → 스폰 root Node3D (축제 이동용, FestivalSystem이 호출)
 var _wander := {}       # npc_id → {target:Vector3, wait:float, anim:AnimationPlayer, cur:String}
 var _festival_active := false
@@ -80,7 +106,7 @@ func _ready() -> void:
 	add_to_group("npc_system")
 	_farm = get_tree().get_first_node_in_group("farm")
 	for id in GameData.npcs:
-		state[id] = {"affection_points": 0, "talked_today": false, "gifted_today": false}
+		state[id] = {"affection_points": 0, "talked_today": false, "gifted_today": false, "dates_seen": 0}
 		_spawn(id)
 	snap_to_schedule()  # 시작 시각의 장소에서 출발 (새 게임 06시면 전원 집)
 	if not GameClock.day_changed.is_connected(_on_day_changed):
@@ -162,6 +188,8 @@ func _fallback_capsule(tint: Color) -> Node3D:
 
 # ── 배회 (순수 보간, 경로탐색·충돌 없음 — DESIGN 11) ────────────────
 func _process(delta: float) -> void:
+	_check_wedding()  # 모든 early-return 앞 — 메뉴/밤/축제 중에도 예약된 결혼식은 진행돼야 한다
+	_check_date()     # 데이트 도착 판정·밤 중단도 배회 정지와 무관하게 돌아야 한다
 	if _shot_frozen or _festival_active or GameClock.state == GameClock.State.PAUSED or not _is_daytime():
 		for id in npc_nodes:  # 축제=광장 배치 유지, 그 외=idle
 			_set_walk(id, false)
@@ -357,8 +385,12 @@ static func _deck_y(p: Vector2) -> float:
 static func _v3(p: Vector2) -> Vector3:
 	return Vector3(p.x, 0, p.y)
 
+# 우선순위: 데이트 > 배우자 > npcs.json (축제·밤은 _process 단계에서 이 위에 얹힌다)
 func _schedule(id: String) -> Array:
-	return GameData.npcs[id].get("schedule", [])
+	if not _date.is_empty() and id == String(_date["id"]):
+		return [{"h": 0, "place": String(_date["place"])}]  # 하루 종일 그 앵커 = 데이트 장소로 직행
+	var base: Array = GameData.npcs[id].get("schedule", [])
+	return spouse_schedule(base) if id == spouse else base
 
 func _anchor_pos(id: String, place: String) -> Vector2:
 	if ANCHORS.has(place):
@@ -448,14 +480,29 @@ func talk(id: String) -> Dictionary:
 		gain *= FESTIVAL_MULT
 		extra = "  (축제 ×%d)" % FESTIVAL_MULT
 	_add(id, gain)
-	return {"ok": true, "msg": "%s: %s  H%d%s" % [nm, _dialogue_line(id), hearts(id), extra]}
+	# 데이트 이벤트 방아쇠 (하트 조건 충족 + 순서 = 이번 대화가 데이트 제안이 된다)
+	var di := date_index(id)
+	if di >= 0:
+		_start_date(id, di)
+		return {"ok": true, "msg": "%s: %s  (%s에서 만나요!)  ♥ %d/10" % [
+			nm, _pool_line(id, "date_invite"), PLACE_NAMES[DATE_PLACES[di]], hearts(id)]}
+	# 하트를 토스트 꼬리에 노출 = 청혼 진행 단계(♥9 데이트1 → ♥10 데이트2 → 청혼)를 스스로 발견
+	return {"ok": true, "msg": "%s: %s  ♥ %d/10%s" % [nm, _dialogue_line(id), hearts(id), extra]}
 
-# 아키타입별 대사 랜덤 1줄 (축제 중이면 축제 풀 우선). 계절·호감도 분기는 H단계 몫.
+# 아키타입별 대사 랜덤 1줄 (배우자면 부부 아침 인사 > 축제 > 평상). 계절·호감도 분기는 H단계 몫.
 func _dialogue_line(id: String) -> String:
-	var arche: String = GameData.npcs[id]["archetype"]
-	var pool: Dictionary = GameData.dialogues.get(arche, {})
+	if id == spouse:
+		var married := _pool_line(id, "married")  # 대화는 하루 1회 성사 = 하루 첫 대화
+		if married != "":
+			return married
+	var pool: Dictionary = GameData.dialogues.get(String(GameData.npcs[id]["archetype"]), {})
 	var fest: Array = pool.get("festival", [])
 	var lines: Array = fest if (_festival_active and not fest.is_empty()) else pool.get("normal", [])
+	return "" if lines.is_empty() else lines[randi() % lines.size()]
+
+# 아키타입 대사 풀 key에서 랜덤 1줄 (없으면 "")
+func _pool_line(id: String, key: String) -> String:
+	var lines: Array = GameData.dialogues.get(String(GameData.npcs[id]["archetype"]), {}).get(key, [])
 	return "" if lines.is_empty() else lines[randi() % lines.size()]
 
 # ── 축제 (FestivalSystem이 상태만 설정, 호감도·이동은 여기 소유) ──
@@ -472,6 +519,157 @@ func exit_festival() -> void:
 	_festival_active = false
 	snap_to_schedule()  # 그 시각 스케줄 장소로 복귀 (밤이면 집 — 데이터가 단일 출처)
 
+# ── 연애·결혼 (DESIGN 6.5) ──────────────────────────────────────
+func is_candidate(id: String) -> bool:
+	return bool(GameData.npcs.get(id, {}).get("candidate", false))
+
+# ── 데이트 이벤트 (청혼 전 필수 2회) ────────────────────────────
+# 트리거=대화(하루 1회 성사라 자동으로 하루 1회). NPC는 지정 앵커로 걸어가고(스케줄 오버라이드
+# = 축제 > 데이트 > 밤 > 스케줄), 플레이어가 그 앵커 근처에 오면 성사. 안 오면 밤에 중단(미소진).
+# 다음에 열리는 데이트 번호 (없으면 -1)
+func date_index(id: String) -> int:
+	if not is_candidate(id) or spouse != "" or not engaged.is_empty() or not _date.is_empty():
+		return -1
+	if not GameData.festival_on(GameData.season_id(GameClock.season()), GameClock.day_of_season()).is_empty():
+		return -1  # 축제일엔 시작 금지 (주민이 광장에 묶여 있다)
+	var seen := int(state[id]["dates_seen"])
+	if seen >= DATE_HEARTS.size():
+		return -1
+	return seen if hearts(id) >= int(DATE_HEARTS[seen]) else -1  # 순서 보장: seen번째만 열림
+
+func _start_date(id: String, idx: int) -> void:
+	_date = {"id": id, "place": String(DATE_PLACES[idx]), "idx": idx}
+	var st: Dictionary = _wander[id]
+	st["wait"] = 0.0  # 대사 후 곧바로 출발 (_face_player가 늘려둔 대기 해제)
+
+# 도착·중단 판정 (idempotent, 매 프레임)
+func _check_date() -> void:
+	if _date.is_empty():
+		return
+	var id := String(_date["id"])
+	if not _is_daytime():  # 밤 = 중단, 데이트는 소진되지 않음(다음에 다시 발생)
+		_date = {}
+		_toast("%s와의 약속은 다음 기회에..." % GameData.npcs[id]["name"])
+		return
+	if _festival_active:
+		return  # 축제 우선 — 주민이 광장에 있는 동안은 판정 정지
+	var a: Vector2 = ANCHORS[String(_date["place"])]
+	var node: Node3D = npc_nodes.get(id)
+	var player := get_tree().get_first_node_in_group("player") as Node3D
+	if node == null or player == null:
+		return
+	if Vector2(node.position.x, node.position.z).distance_to(a) > ANCHOR_R_MAX + 0.5:
+		return  # NPC가 아직 가는 중
+	if Vector2(player.global_position.x, player.global_position.z).distance_to(a) > DATE_RADIUS:
+		return  # 도착해서 기다리는 중
+	_finish_date(id, int(_date["idx"]))
+
+func _finish_date(id: String, idx: int) -> void:
+	_date = {}  # 오버라이드 해제 → _follow_schedule이 원래 장소로 다시 걸어감(순간이동 없음)
+	state[id]["dates_seen"] = maxi(int(state[id]["dates_seen"]), idx + 1)
+	_add(id, DATE_BONUS)
+	_face_player(id)
+	SaveManager.request_save("date")
+	_play_date_lines(id, "date%d" % (idx + 1))
+
+# 도착 특별 대사 시퀀스 (토스트 한 줄씩). 상태 변경은 위에서 이미 끝났다 = 여긴 연출만.
+func _play_date_lines(id: String, key: String) -> void:
+	var nm: String = GameData.npcs[id]["name"]
+	for line in GameData.dialogues.get(String(GameData.npcs[id]["archetype"]), {}).get(key, []):
+		_toast("%s: %s" % [nm, line])
+		Sfx.play("talk")
+		await get_tree().create_timer(DATE_LINE_SEC).timeout
+	_toast("%s와의 시간이 특별했어요.  ♥ %d/10" % [nm, hearts(id)])
+
+# 청혼(반지 소지 중 G). 수락(ok=true)일 때만 호출측이 반지를 소모한다 — 거절은 무소모.
+func propose(id: String) -> Dictionary:
+	_face_player(id)  # 대화·선물과 같은 상호작용
+	var nm: String = GameData.npcs[id]["name"]
+	if spouse != "" or not engaged.is_empty():
+		return {"ok": false, "msg": "%s: 당신에겐 이미 약속한 사람이 있잖아요." % nm}
+	if not is_candidate(id):
+		return {"ok": false, "msg": "%s: 마음은 고맙지만... 그런 사이는 아니에요." % nm}
+	# 거절 대사에 다음 단계 힌트를 붙인다 — 하트 부족과 데이트 미완주를 구분
+	if hearts(id) < PROPOSE_HEARTS:
+		return {"ok": false, "msg": "%s: %s  ♥ %d/%d" % [nm, _pool_line(id, "propose_reject"), hearts(id), PROPOSE_HEARTS]}
+	if int(state[id]["dates_seen"]) < DATES_REQUIRED:
+		return {"ok": false, "msg": "%s: %s  (함께한 데이트 %d/%d)" % [
+			nm, _pool_line(id, "propose_reject"), int(state[id]["dates_seen"]), DATES_REQUIRED]}
+	engaged = {"id": id, "wedding_abs_day": wedding_day_for(GameClock.abs_day + ENGAGE_DAYS)}
+	SaveManager.request_save("proposal")  # 데이트·결혼식과 같은 즉시 저장 정책
+	var days := int(engaged["wedding_abs_day"]) - GameClock.abs_day
+	return {"ok": true, "msg": "%s: %s  (%d일 뒤 아침 광장에서 결혼식!)" % [nm, _pool_line(id, "propose_accept"), days]}
+
+# 결혼식 날짜 — 축제날과 겹치면 하루 미룸(광장이 두 행사에 동시에 쓰이지 않게)
+func wedding_day_for(d: int) -> int:
+	for _i in 4:
+		if GameData.festival_on(GameData.season_id(GameClock.season_at(d)), GameClock.day_of_season_at(d)).is_empty():
+			return d
+		d += 1
+	return d
+
+# 절대분 = abs_day*1440 + game_min. 결혼식 집합 종료를 이걸로 재는 이유: game_min만 쓰면
+# 식 중 자정을 넘길 때(취침·로드) 비교가 뒤집혀 광장 집합이 풀리지 않는다 (Codex 지적).
+func _abs_min() -> int:
+	return GameClock.abs_day * GameClock.MINUTES_PER_DAY + GameClock.game_min
+
+# idempotent 체크(매 프레임): 집합 종료 → 예약된 결혼식 도달 판정.
+func _check_wedding() -> void:
+	if _wedding_end >= 0 and _abs_min() >= _wedding_end:
+		_wedding_end = -1
+		exit_festival()
+	if engaged.is_empty():
+		return
+	var wd := int(engaged["wedding_abs_day"])
+	if GameClock.abs_day > wd or (GameClock.abs_day == wd and GameClock.hour() >= WEDDING_HOUR):
+		_wed()
+
+func _wed() -> void:
+	var id := String(engaged["id"])
+	var wd := int(engaged["wedding_abs_day"])
+	spouse = id
+	engaged = {}
+	var nm: String = GameData.npcs[id]["name"]
+	if GameClock.abs_day == wd and GameClock.hour() < WEDDING_HOUR + WEDDING_WINDOW_H:
+		enter_festival(WEDDING_PLAZA)  # 주민 광장 집합 (축제 API 재활용)
+		_stand_with_player(id)
+		_wedding_end = _abs_min() + WEDDING_HOLD_MIN
+		_toast("%s와 결혼했습니다!  “%s”" % [nm, _pool_line(id, "wedding")])
+		Sfx.play("talk")
+	else:
+		# 취침·로드로 식 시간창을 지나침 → 연출 없이 즉시 완혼(상태 꼬임 방지 폴백)
+		_toast("%s와의 결혼식을 마쳤습니다." % nm)
+	SaveManager.request_save("wedding")
+
+# 식 연출: 배우자를 플레이어 앞에 세워 마주보게 (광장 링 배치 뒤에 덮어씀)
+func _stand_with_player(id: String) -> void:
+	var player := get_tree().get_first_node_in_group("player") as Node3D
+	var node: Node3D = npc_nodes.get(id)
+	if player == null or node == null:
+		return
+	var fwd := -player.global_transform.basis.z
+	fwd.y = 0.0
+	if fwd.length() < 0.01:
+		fwd = Vector3(0, 0, 1)
+	node.position = player.global_position + fwd.normalized() * 1.6
+	node.position.y = 0.0
+	_face_player(id)
+
+func _toast(msg: String) -> void:
+	get_tree().call_group("hud", "toast", msg)
+
+# 결혼 후 배우자 스케줄 오버라이드 (순수 함수). npcs.json 원본·home 좌표 불변 — 런타임 파생.
+# 아침(기상 06시~)·저녁(18시~) = 플레이어 집 앞, 낮 = 원래 자기 스케줄 유지
+# ("결혼하면 끝이 아니라 생활이 이어지는 느낌" — DESIGN 6.5).
+static func spouse_schedule(base: Array) -> Array:
+	var out: Array = [{"h": SPOUSE_MORNING_H, "place": "player_home"}]
+	for e in base:
+		var h := int(e["h"])
+		if h > SPOUSE_MORNING_H and h < SPOUSE_EVENING_H and String(e["place"]) != "home":
+			out.append({"h": h, "place": String(e["place"])})  # 새 딕셔너리 = 원본 불변
+	out.append({"h": SPOUSE_EVENING_H, "place": "player_home"})
+	return out
+
 # 선물: 하루 1회, 취향별 ±, 생일 ×8, 0~250 clamp
 func give(id: String, item_id: String) -> Dictionary:
 	_face_player(id)  # 선물도 같은 상호작용 — 플레이어를 향해 돎
@@ -486,7 +684,7 @@ func give(id: String, item_id: String) -> Dictionary:
 	s["gifted_today"] = true
 	_add(id, delta)
 	var react: String = {"loved": "기뻐함!", "liked": "좋아함", "neutral": "받음", "disliked": "싫어함.."}[pref]
-	return {"ok": true, "msg": "%s %s (%+d) H%d" % [nm, react, delta, hearts(id)]}
+	return {"ok": true, "msg": "%s %s (%+d) ♥ %d/10" % [nm, react, delta, hearts(id)]}
 
 func _preference(id: String, item_id: String) -> String:
 	var g: Dictionary = GameData.npcs[id]["gifts"]
@@ -509,8 +707,13 @@ func _on_day_changed(_prev: int, _abs_day: int) -> void:
 	snap_to_schedule()  # 취침으로 시각이 점프해도 아침엔 그 시각 장소에 이미 가 있게
 
 # ── 저장 ───────────────────────────────────────────────────────
+# npc_id 키(호감도) 옆에 결혼 상태를 평면 배치 (save_version 5). load_data는 state 키만 훑으므로
+# 추가 키가 섞여도 무해하고, npc_id는 "npc." 접두라 spouse/engaged와 충돌하지 않는다.
 func save_data() -> Dictionary:
-	return state.duplicate(true)
+	var d := state.duplicate(true)
+	d["spouse"] = spouse if spouse != "" else null
+	d["engaged"] = engaged.duplicate() if not engaged.is_empty() else null
+	return d
 
 func load_data(d: Dictionary) -> void:
 	# 세이브에 있는 NPC만 덮어쓰고, 없는 NPC는 _ready 기본값 유지 (Codex: 기본값 보강)
@@ -522,4 +725,14 @@ func load_data(d: Dictionary) -> void:
 			state[id]["affection_points"] = clampi(pts, 0, MAX_AFF)
 			state[id]["talked_today"] = bool(s.get("talked_today", false))
 			state[id]["gifted_today"] = bool(s.get("gifted_today", false))
+			state[id]["dates_seen"] = clampi(int(s.get("dates_seen", 0)), 0, DATE_HEARTS.size())
+	# 결혼 상태 복원. 없는 npc_id(데이터 삭제)면 미혼으로 되돌림 — 유령 배우자 방지.
+	var sp := String(d.get("spouse", "") if d.get("spouse") != null else "")
+	spouse = sp if state.has(sp) else ""
+	engaged = {}
+	var eng = d.get("engaged")
+	if eng is Dictionary and state.has(String(eng.get("id", ""))):
+		engaged = {"id": String(eng["id"]), "wedding_abs_day": int(eng.get("wedding_abs_day", 0))}
+	_wedding_end = -1  # 식 도중 저장/로드 → 연출은 재생 안 함(married 상태는 이미 확정)
+	_date = {}         # 데이트는 저장하지 않는다 — 로드하면 그날 다시 제안받는다(미소진)
 	snap_to_schedule()  # 위치는 저장 안 함 — 로드한 시각의 장소에서 시작(집→광장 단체 행군 방지)

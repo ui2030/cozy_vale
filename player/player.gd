@@ -261,21 +261,36 @@ func _pick_forage(area: Area3D) -> void:
 	Sfx.play("pickup")
 
 func _give() -> void:
-	var npc_area := _nearest_npc()
+	var npc_area := _near("npc")
 	if npc_area == null:
+		return
+	var npc_id: String = npc_area.get_meta("npc_id")
+	# 청혼: 반지 소지 + 결혼 후보에게 G. 거절이면 반지를 소모하지 않는다(_npcsys가 ok로 알려줌).
+	# 반지는 산출물이 아니라 아래 선물 루프에 애초에 걸리지 않는다 → 비후보에게 오소모 불가.
+	if count(GameData.RING_ID) > 0 and _npcsys.is_candidate(npc_id):
+		message.emit(propose_with_ring(npc_id)["msg"])
 		return
 	for e in inventory:
 		if GameData.is_produce(e["id"]):  # 산출물(작물·물고기·채집물) 선물
-			var r: Dictionary = _npcsys.give(npc_area.get_meta("npc_id"), e["id"])
+			var r: Dictionary = _npcsys.give(npc_id, e["id"])
 			if r["ok"]:
 				_remove_item(e["id"], 1)
 			message.emit(r["msg"])
 			return
 	message.emit("줄 것이 없어요")
 
-func _nearest_npc() -> Area3D:
+# 청혼 실행: 수락일 때만 반지 소모. Area3D 없이도 검증 가능하게 분리(test_core가 직접 호출).
+func propose_with_ring(npc_id: String) -> Dictionary:
+	var r: Dictionary = _npcsys.propose(npc_id)
+	if r["ok"]:
+		_remove_item(GameData.RING_ID, 1)
+		Sfx.play("talk")
+	return r
+
+# 겹친 상호작용 Area3D 중 그 그룹 첫 것 (npc·shop 공용)
+func _near(group: String) -> Area3D:
 	for a in _interact_area.get_overlapping_areas():
-		if a.is_in_group("npc"):
+		if a.is_in_group(group):
 			return a
 	return null
 
@@ -301,6 +316,26 @@ func _buy_seed() -> void:
 		message.emit("Bought " + GameData.display_name(GameData.crop_from_seed(selected_seed)) + " seed")
 	else:
 		message.emit("골드 부족")
+
+# 프러포즈 아이템 구매 (가방 패널 버튼 → 여기). 씨앗 구매와 같은 상점 규칙(휴무·골드).
+# 씨앗 순환·선택 집합엔 넣지 않는다 — 반지는 all_seed_ids 밖의 단일 아이템.
+func buy_ring() -> void:
+	if count(GameData.RING_ID) > 0:
+		message.emit("이미 " + GameData.RING_NAME + "을 가지고 있어요")
+		return
+	if _near("shop") == null:
+		message.emit(GameData.RING_NAME + "은 상점에서만 살 수 있어요")
+		return
+	if GameClock.weekday() == 6:  # 일요일 휴무 (씨앗 구매와 동일)
+		message.emit("Shop closed (Sun)")
+		return
+	if gold < GameData.RING_COST:
+		message.emit("골드 부족 (%dG 필요)" % GameData.RING_COST)
+		return
+	gold -= GameData.RING_COST
+	_add_item(GameData.RING_ID, 1)
+	Sfx.play("coin")
+	message.emit(GameData.RING_NAME + " 구매! 마음에 둔 사람에게 G")
 
 func _deposit_all() -> void:
 	var any := false
