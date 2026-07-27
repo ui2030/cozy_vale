@@ -234,7 +234,7 @@ func _try_interact() -> void:
 			if r["ok"]:  # 오늘 이미 대화한 상대는 무음 (대사만)
 				Sfx.play("talk")
 			message.emit(r["msg"])
-		"water": _start_fishing()
+		"water": _start_fishing(t["area"])
 		"forage": _pick_forage(t["area"])
 		"door": _use_door(t["area"])
 
@@ -245,14 +245,16 @@ func _use_door(area: Area3D) -> void:
 	_face_dir(area.get_meta("door_face", Vector3(0, 0, 1)))
 	Sfx.play("ui_open")
 
-func _start_fishing() -> void:
+# 낚시터(연못/바다)는 물가 Area3D의 메타 "spot"이 정한다 — 없으면 "pond"(기존 연못·강 그대로).
+func _start_fishing(area: Area3D = null) -> void:
 	if _fishing == null:
 		_fishing = get_tree().get_first_node_in_group("fishing")
 	var pool := GameData.season_filter(GameData.fish, GameData.season_id(GameClock.season()))
 	if _fishing == null or pool.is_empty():
 		message.emit("여긴 잡을 게 없네요")
 		return
-	var fid: String = GameData.pick_fish(GameData.fish, pool, randf(), GameClock.hour())
+	var spot := GameData.SPOT_POND if area == null else String(area.get_meta("spot", GameData.SPOT_POND))
+	var fid: String = GameData.pick_fish(GameData.fish, pool, randf(), GameClock.hour(), spot)
 	if fid == "":  # 시간대 필터로 후보 0 (밤물고기만 남는 낮 등)
 		message.emit("지금은 물릴 게 없네요")
 		return

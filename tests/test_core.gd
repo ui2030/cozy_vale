@@ -46,6 +46,7 @@ func _ready() -> void:
 	_test_ambience_curve()
 	_test_weather()
 	_test_interior()
+	_test_beach()
 	print("ALL CORE TESTS PASS")
 	get_tree().quit()
 
@@ -795,3 +796,107 @@ func _test_interior() -> void:
 	assert(not N.night_hidden(22, false, false, false), "집에서 멀면 안 숨김(길에 서 있는 그림 유지)")
 	assert(not N.night_hidden(22, true, true, false), "축제 중엔 강제 가시")
 	assert(not N.night_hidden(22, true, false, true), "실내 배치된 배우자는 예외")
+
+# 바닷가 존(H단계) 순수 로직: 낚시터 spot 필터 + 게이트 왕복 좌표 계약 + 존 격리 + 마을 간섭.
+func _test_beach() -> void:
+	var B := preload("res://world/beach.gd")
+	var I := preload("res://world/interior.gd")
+	var W := preload("res://world/world.gd")
+	var N := preload("res://npc/npc_system.gd")
+	var F := preload("res://farm/farm_system.gd")
+	const REACH := 2.0  # 프롬프트 사거리 = 문 DOOR_R(0.7) + player.tscn InteractArea(1.3)
+
+	# ── 1. spot 필터 (순수 함수). 기본값 미지정 = pond → 기존 호출부 무변경 호환.
+	var defs := {
+		"fish.p": {"weight": 10, "difficulty": 0.2},                     # spot 없음 = pond
+		"fish.s": {"weight": 10, "difficulty": 0.3, "spot": "sea"},
+		"fish.s2": {"weight": 10, "difficulty": 0.4, "spot": "sea", "hours": [18, 26]},
+	}
+	var all := ["fish.p", "fish.s", "fish.s2"]
+	assert(GameData.pick_fish(defs, all, 0.5, 12) == "fish.p", "spot 생략 = pond 기본값")
+	assert(GameData.pick_fish(defs, all, 0.99, 12, "pond") == "fish.p", "연못엔 바다 어종 안 나옴")
+	assert(GameData.pick_fish(defs, all, 0.5, 12, "sea") == "fish.s", "바다엔 바다 어종만(낮)")
+	assert(GameData.pick_fish(defs, ["fish.s"], 0.5, 12, "pond") == "", "바다 전용만 있는 연못 = 후보없음")
+	assert(GameData.pick_fish(defs, ["fish.p"], 0.5, 12, "sea") == "", "연못 전용만 있는 바다 = 후보없음")
+	# spot과 hours가 함께 걸린다(둘 다 통과해야 후보)
+	assert(GameData.pick_fish(defs, ["fish.s2"], 0.5, 12, "sea") == "", "바다 야간종은 낮에 안 나옴")
+	assert(GameData.pick_fish(defs, ["fish.s2"], 0.5, 20, "sea") == "fish.s2", "바다 야간종은 밤에 후보")
+
+	# ── 2. 실데이터: 낚시터별 풀이 서로 배타 + 양쪽 다 봄에 잡을 게 있다
+	var pool := GameData.season_filter(GameData.fish, "spring")
+	var sea_ids := []
+	var pond_ids := []
+	for fid in pool:
+		var sp := String(GameData.fish[fid].get("spot", GameData.SPOT_POND))
+		assert(sp in GameData.SPOT_IDS, "%s spot 잘못됨: %s" % [fid, sp])
+		if sp == GameData.SPOT_SEA:
+			sea_ids.append(fid)
+		else:
+			pond_ids.append(fid)
+	assert(sea_ids.size() == 3, "바다 어종 3종 (실제 %d)" % sea_ids.size())
+	assert(pond_ids.size() == 5, "기존 연못 어종 5종 유지 (실제 %d)" % pond_ids.size())
+	# 200회 뽑아 교차 오염이 없는지 (가중치 경로 전체를 훑는다)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 424242
+	for _i in 200:
+		var h := rng.randi_range(0, 23)
+		var sea_pick := GameData.pick_fish(GameData.fish, pool, rng.randf(), h, GameData.SPOT_SEA)
+		var pond_pick := GameData.pick_fish(GameData.fish, pool, rng.randf(), h, GameData.SPOT_POND)
+		assert(sea_pick == "" or sea_pick in sea_ids, "바다에서 연못 어종: %s" % sea_pick)
+		assert(pond_pick == "" or pond_pick in pond_ids, "연못에서 바다 어종: %s" % pond_pick)
+	# 바다는 하루 어느 시각이든 물릴 게 있다(시간창 없는 종이 남아 있어야 빈손 낚시가 안 생긴다)
+	for h in 24:
+		assert(GameData.pick_fish(GameData.fish, pool, 0.5, h, GameData.SPOT_SEA) != "", "바다 %d시 후보 0" % h)
+	# 판매가: 바다 최고가가 연못 최고가를 넘되 반지(1200) 경제를 깨지 않는다
+	assert(GameData.sell_price("fish.seabream") > GameData.sell_price("fish.catfish"), "바다 최고가 > 연못 최고가")
+	assert(GameData.RING_COST >= GameData.sell_price("fish.seabream") * 7, "반지값이 최고가 7배 이상 유지")
+	# 도감·판매·선물은 데이터 파생 — 신규 어종이 자동으로 산출물로 잡힌다
+	for fid in sea_ids:
+		assert(GameData.is_produce(fid), "%s 산출물(도감·판매 대상)" % fid)
+		assert(GameData.display_name(fid) != fid, "%s 표시 이름 있음" % fid)
+
+	# ── 3. 존 격리: 마을(|x|,|z|≤40)·실내(120,120)와 물리적으로 안 겹친다
+	assert(B.inside(B.B_SPAWN) and B.inside(B.B_GATE) and B.inside(B.H_DOOR), "해변 지점 = 해변 안")
+	assert(not B.inside(Vector3(0, 2, -3.5)) and not B.inside(B.V_GATE), "광장·마을 게이트 = 해변 밖")
+	assert(not B.inside(I.IN_SPAWN) and not I.inside(B.B_SPAWN), "해변과 실내는 서로 밖")
+	assert(absf(B.ORIGIN.x) - B.SEA_W * 0.5 > 40.0, "해변이 마을 지면(80×80) 밖")
+	assert(Vector2(B.ORIGIN.x, B.ORIGIN.z).distance_to(Vector2(I.ORIGIN.x, I.ORIGIN.z)) > 100.0, "해변↔실내 이격")
+
+	# ── 4. 문 왕복 계약: 도착점이 반대편 트리거 사거리 밖(E 연타 왕복 차단)
+	assert(B.B_SPAWN.distance_to(B.B_GATE) > REACH, "해변 도착점이 해변 게이트 밖")
+	assert(B.V_SPAWN.distance_to(B.V_GATE) > REACH, "마을 도착점이 마을 게이트 밖")
+	assert(B.B_SPAWN.distance_to(B.H_DOOR) > REACH, "해변 도착점이 오두막 문 밖")
+	assert(B.B_GATE.distance_to(B.H_DOOR) > REACH, "해변 게이트와 오두막 문 프롬프트 미간섭")
+	# 오두막 문 → 집 실내: 도착점은 실내이고 실내 문 트리거 밖(기존 실내 계약 재사용)
+	assert(I.inside(I.IN_SPAWN) and I.IN_SPAWN.distance_to(I.IN_DOOR) > REACH, "오두막→실내 도착점 계약")
+	# 순환이 닫힌다: 마을→해변→(오두막)→실내→(실내문)→마을 집 앞
+	assert(B.inside(B.B_SPAWN) and not I.inside(B.V_SPAWN), "마을 도착점은 실내가 아니다")
+	assert(not I.inside(I.OUT_SPAWN) and not B.inside(I.OUT_SPAWN), "실내 문 출구 = 마을")
+	# 걷는 판 안에 도착·게이트가 들어있다(허공 스폰 방지)
+	for p in [B.B_SPAWN, B.B_GATE, B.H_DOOR]:
+		assert(absf(p.x - B.ORIGIN.x) < B.WALK_HALF_X, "%s 모래사장 폭 안" % p)
+		assert(p.z - B.ORIGIN.z > B.SHORE_Z and p.z - B.ORIGIN.z < B.WALK_Z1, "%s 물가선~남단 사이" % p)
+	# 가시 판이 걷는 영역보다 넉넉히 넓다(프레임 구석에 존 밖 허공이 뚫리지 않게)
+	assert(B.SAND_W * 0.5 > B.WALK_HALF_X + 6.0, "모래 판이 걷는 폭보다 여유 있음")
+	assert(B.SAND_REL.z + B.SAND_D * 0.5 > B.WALK_Z1 + 6.0, "모래 판이 남단보다 여유 있음")
+
+	# ── 5. 마을 쪽 게이트가 기존 지형과 간섭하지 않는다 (남쪽 길 실측 계약)
+	var g2 := Vector2(B.V_GATE.x, B.V_GATE.z)
+	assert(absf(g2.x) < 40.0 and absf(g2.y) < 40.0, "마을 게이트가 Ground(80×80) 안")
+	for ko in N.BUILDING_KEEPOUT:
+		assert(g2.distance_to(ko[0]) > float(ko[1]), "마을 게이트가 건물 keepout 밖: %s" % str(ko[0]))
+	assert(not F.REGION.has_point(Vector2i(floori(g2.x), floori(g2.y))), "마을 게이트가 밭 밖")
+	# 강에서 충분히 떨어져 있다(강 폭3 + 양안 강둑 + 분절 충돌벽)
+	var near := INF
+	for i in W.RIVER_PTS.size() - 1:
+		var a: Vector2 = W.RIVER_PTS[i]
+		var b: Vector2 = W.RIVER_PTS[i + 1]
+		var ab := b - a
+		var t := clampf((g2 - a).dot(ab) / ab.length_squared(), 0.0, 1.0)
+		near = minf(near, g2.distance_to(a + ab * t))
+	assert(near > N.RIVER_AVOID, "마을 게이트가 강에서 이격 (%.2f)" % near)
+	# 마을 도착점도 같은 조건(강·건물 밖) — 게이트 바로 북쪽이라 짧게 확인
+	assert(Vector2(B.V_SPAWN.x, B.V_SPAWN.z).distance_to(Vector2(24, 20)) > 3.0, "마을 도착점이 집4 밖")
+	# 마을 쪽 신규물은 전부 무충돌(장식 길·표지판 + Area3D 게이트)이라 구세이브가 박힐 수 없다
+	# → WORLD_VERSION 유지. 이 단언이 무심코 범프하는 것을 잡는 트립와이어.
+	assert(SaveManager.WORLD_VERSION == 3, "해변 추가는 마을 충돌체 무변경 = WORLD_VERSION 유지")

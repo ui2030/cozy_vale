@@ -4,6 +4,12 @@ extends Node
 # 계절 canonical ID — 시즌 인덱스↔문자열의 단일 출처 (npc 생일·farm 고사·calendar 검증 공용)
 const SEASON_IDS := ["spring", "summer", "autumn", "winter"]
 
+# 낚시터 canonical ID. fish.json "spot" 필드와 물가 Area3D 메타 "spot"의 단일 출처.
+# 필드가 없는 기존 어종은 SPOT_POND — 데이터 마이그레이션 없이 기본값으로 흡수한다.
+const SPOT_POND := "pond"
+const SPOT_SEA := "sea"
+const SPOT_IDS := [SPOT_POND, SPOT_SEA]
+
 # 프러포즈 아이템 (DESIGN 6.5). 유일한 비산출물 아이템이라 json 파일 대신 여기 상수.
 # is_produce=false 로 두는 것이 계약: 판매상자·선물 취향 판정·도감·씨앗 순환에서 전부 자동 배제된다.
 # 가격 1200 근거: 시작 골드 500(1일차 구매 불가) + 최고가 산출물 catfish 150의 8배
@@ -53,6 +59,7 @@ func _validate() -> void:
 		var d: Dictionary = fish[fid]
 		for key in ["name", "sell_price", "seasons", "difficulty"]:
 			assert(d.has(key), "%s 에 %s 누락" % [fid, key])
+		assert(String(d.get("spot", SPOT_POND)) in SPOT_IDS, "%s spot 잘못됨: %s" % [fid, str(d.get("spot"))])
 		var diff := float(d["difficulty"])
 		assert(diff >= 0.0 and diff <= 1.0, "%s difficulty 0..1 벗어남: %f" % [fid, diff])
 		for s in d["seasons"]:
@@ -101,14 +108,19 @@ func has_item_id(item_id: String) -> bool:
 func is_produce(item_id: String) -> bool:
 	return crops.has(item_id) or fish.has(item_id) or forage.has(item_id)
 
-# 가중치·시간대 반영 물고기 선택 (순수 함수, test_core 단위검증).
-# defs=fish 정의 맵, pool=계절 통과 fish_id 목록, rng_value∈[0,1), hour=현재 시(0..23).
-# weight 없으면 1. hours([시작,끝]) 없으면 항상 후보. 후보 0이면 "".
-static func pick_fish(defs: Dictionary, pool: Array, rng_value: float, hour: int) -> String:
+# 가중치·시간대·낚시터 반영 물고기 선택 (순수 함수, test_core 단위검증).
+# defs=fish 정의 맵, pool=계절 통과 fish_id 목록, rng_value∈[0,1), hour=현재 시(0..23),
+# spot=낚시터("pond" 연못·강 / "sea" 바다).
+# weight 없으면 1. hours([시작,끝]) 없으면 항상 후보. spot 없으면 "pond"(기존 어종 마이그레이션 0).
+# 걸러내기를 호출부가 아니라 여기서 하는 이유: pool의 계약은 "계절 통과 목록"이고,
+# 낚시터 판정을 호출부마다 되풀이하면 새 물가를 놓치기 쉽다(단일 지점 필터).
+static func pick_fish(defs: Dictionary, pool: Array, rng_value: float, hour: int, spot := SPOT_POND) -> String:
 	var cands := []
 	var total := 0.0
 	for fid in pool:
 		var d: Dictionary = defs[fid]
+		if String(d.get("spot", SPOT_POND)) != spot:
+			continue
 		if not _hour_ok(d.get("hours", []), hour):
 			continue
 		var w := float(d.get("weight", 1.0))

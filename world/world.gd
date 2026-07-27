@@ -3,6 +3,7 @@ extends Node3D
 
 const ToonChar := preload("res://common/toon_character.gd")
 const Interior := preload("res://world/interior.gd")  # 실내 스폰·침대 좌표 단일 출처
+const Beach := preload("res://world/beach.gd")        # 해변 스폰·게이트 좌표 단일 출처
 const WATER_SHADER := preload("res://world/water.gdshader")
 const SKY_SHADER := preload("res://world/sky.gdshader")
 
@@ -134,6 +135,27 @@ func _ready() -> void:
 		if pin != null:
 			pin.global_position = (Interior.OUT_DOOR + Vector3(0, 0, 1.0)) if "door" in _args else Interior.IN_SPAWN
 			pin._face_dir(Interior.FACE_IN)  # 둘 다 북(집 문 / 방 안쪽)을 본다
+	# 해변 검증: -- beach [gate|hut] [hour N]. 기본은 해변 도착 지점(바다를 정면에).
+	# gate = 마을 남동 흙길 끝 게이트(마을 쪽), hut = 해변 오두막 문 앞. 둘 다 프롬프트 사거리 안.
+	if "beach" in _args:
+		SaveManager.suspended = true
+		var pbe := get_tree().get_first_node_in_group("player")
+		if pbe != null:
+			if "gate" in _args:
+				pbe.global_position = Beach.V_GATE + Vector3(0, 1.0, -1.6)  # 게이트 북쪽(마을에서 내려온 자리)
+				pbe._face_dir(Vector3(0, 0, 1))                             # 게이트·표지판을 마주본다
+			elif "hut" in _args:
+				pbe.global_position = Beach.H_DOOR + Vector3(0, 0.2, 1.4)   # 문 남쪽 = 오두막이 프레임 안
+				pbe._face_dir(Beach.FACE_N)
+			elif "edge" in _args:  # 존 남동 구석 — 프레임 구석에 존 밖 허공이 뚫리는지 확인용
+				pbe.global_position = Beach.ORIGIN + Vector3(Beach.WALK_HALF_X - 1.0, 1.2, Beach.WALK_Z1 - 1.0)
+				pbe._face_dir(Beach.FACE_N)
+			elif "shore" in _args:  # 물가(낚시 자리) — 바다가 프레임을 채우는지 확인용
+				pbe.global_position = Beach.ORIGIN + Vector3(-2.0, 1.2, Beach.SHORE_Z + 1.2)
+				pbe._face_dir(Beach.FACE_N)
+			else:
+				pbe.global_position = Beach.B_SPAWN
+				pbe._face_dir(Beach.FACE_N)
 	# 날씨 검증: -- weather rain|clear. 날씨는 abs_day 결정적이라 강제 스위치를 두는 대신
 	# 원하는 날씨의 첫 봄날로 시계를 옮긴다(실제 판정 함수를 그대로 통과 — 프로덕션 코드에 테스트 훅 0).
 	var _wi := _args.find("weather")
@@ -152,7 +174,7 @@ func _ready() -> void:
 		GameClock.game_min = int(_args[_hi + 1]) * 60
 		GameClock.state = GameClock.State.PAUSED
 		var ph := get_tree().get_first_node_in_group("player")
-		if ph != null and not "interior" in _args:  # 세이브 무관하게 광장 조망으로 고정
+		if ph != null and not "interior" in _args and not "beach" in _args:  # 세이브 무관하게 광장 조망으로 고정
 			ph.global_position = Vector3(0, 2, -3.5)
 		if "spouse" in _args:  # 시각 확정 뒤에 기혼화 — 배우자 실내 배치는 시각(place_at) 파생이다
 			var nsp := get_tree().get_first_node_in_group("npc_system")
@@ -232,6 +254,9 @@ func _shot() -> void:
 
 # 낮밤 조명 검증 캡처: PAUSED 유지(시계 N:00 고정), 조명 안정 후 1회 캡처. 세이브 미변경.
 func _shot_hour(hn: int) -> void:
+	# PAUSED라 GameClock.tick이 안 온다 → HUD 시각 라벨이 세이브 로드값에 멈춰 샷마다 엉뚱한
+	# 시각이 찍혔다(실측). 강제 시각을 적용한 뒤 한 번 갱신해 준다.
+	get_tree().call_group("hud", "_refresh")
 	await get_tree().create_timer(0.6).timeout  # 물리 착지 + day_night 파라미터 적용 대기
 	await RenderingServer.frame_post_draw
 	var img := get_viewport().get_texture().get_image()
@@ -241,6 +266,12 @@ func _shot_hour(hn: int) -> void:
 	if "interior" in args:  # 실내 샷은 별도 폴더로 (배우자·문 컷은 파일명 접두로 구분)
 		var pre := ("spouse_" if "spouse" in args else "") + ("door_" if "door" in args else "")
 		rel = "interior/%shour_%02d.png" % [pre, hn]
+	elif "beach" in args:   # 해변 샷 (게이트·오두막·구석·물가 컷은 파일명 접두로 구분)
+		var pre := ""
+		for k in ["gate", "hut", "edge", "shore"]:
+			if k in args:
+				pre = k + "_"
+		rel = "beach/%shour_%02d.png" % [pre, hn]
 	elif wi != -1 and wi + 1 < args.size():  # 날씨 강제 샷은 별도 폴더로
 		rel = "weather/%s_hour_%02d.png" % [args[wi + 1], hn]
 	DirAccess.make_dir_recursive_absolute("res://lookdev/shots/" + rel.get_base_dir())
