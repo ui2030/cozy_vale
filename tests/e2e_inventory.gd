@@ -21,8 +21,8 @@ func _run() -> void:
 	var seeds: Array = GameData.all_seed_ids()
 	var other: String = seeds[1] if seeds[0] == player.selected_seed else seeds[0]
 	var btns: Array = panel.find_children("", "Button", true, false)  # owned=false: 코드 생성 노드
-	assert(btns.size() == seeds.size(), "씨앗 버튼 %d개 (실제 %d)" % [seeds.size(), btns.size()])
-	btns[seeds.find(other)].pressed.emit()
+	assert(btns.size() == seeds.size() + 1, "씨앗 %d + 반지 1 버튼 (실제 %d)" % [seeds.size(), btns.size()])
+	btns[seeds.find(other)].pressed.emit()  # 반지 행은 씨앗 뒤에 붙어 인덱스 불변
 	await get_tree().process_frame
 	assert(player.selected_seed == other, "클릭 → 씨앗 교체: %s" % player.selected_seed)
 	_press(KEY_I)
