@@ -62,6 +62,8 @@ static func load_stream(path: String) -> AudioStream:
 func _ready() -> void:
 	silent = DisplayServer.get_name() == "headless"
 	for f in DirAccess.get_files_at(SFX_DIR):
+		if not (f.ends_with(".ogg") or f.ends_with(".mp3")):
+			continue  # 에디터가 만든 .import/.uid 부산물이 같은 폴더에 생긴다
 		var s := load_stream(SFX_DIR + "/" + f)
 		if s != null:
 			_clips[f.get_basename()] = s

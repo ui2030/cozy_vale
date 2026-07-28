@@ -5,8 +5,8 @@ extends Node3D
 const Toon := preload("res://common/toon_character.gd")  # class_name 아닌 preload 참조
 const TWOSIDED := preload("res://lookdev/toon_twosided.gdshader")  # 급회전 시 치마 안쪽 검게 뒤집힘 방지
 
-const GLB := "res://assets/nun_rigged.glb"
-const SHOT_DIR := "C:/Users/ui2030/Documents/cozy-vale/lookdev/shots/수녀님/renders/구조수정_v3/"
+const GLB := "res://assets/nun.glb"   # 게임이 쓰는 실물과 같은 파일로 검증
+const SHOT_DIR := "C:/Users/ui2030/Documents/cozy-vale/lookdev/shots/수녀님/renders/재조립_v2/pose/"
 var shot_prefix := ""  # "before_" / "after_" via 3rd cmdline user arg
 
 var model: Node3D
@@ -106,7 +106,7 @@ func _ready() -> void:
 	_environment(); _light()
 	model = Toon.load_glb(GLB, 0.004)
 	if model == null:
-		push_error("nun_rigged.glb 로드 실패"); return
+		push_error("nun.glb 로드 실패"); return
 	add_child(model)
 	_make_twosided(model)
 	skel = _find(model, Skeleton3D) as Skeleton3D

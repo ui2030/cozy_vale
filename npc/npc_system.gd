@@ -135,6 +135,7 @@ func _spawn(id: String) -> void:
 	area.position = Vector3(0, 1.0, 0)
 	root.add_child(area)
 	add_child(root)
+	_attach_springs(vis)   # 트리에 붙은 뒤에 — 스켈레톤이 준비돼야 본 이름 조회가 된다
 	npc_nodes[id] = root
 	_wander[id] = {
 		"target": root.position, "wait": randf_range(0.0, WAIT_MAX),
@@ -179,6 +180,21 @@ func _make_visual(id: String, ndef: Dictionary) -> Node3D:
 		if anim.has_animation("idle"):
 			anim.play("idle")
 	return cat
+
+# 옷 물리(베일·치마·펜던트) — 모델에 물리본이 있는 NPC만. 없으면 아무것도 안 한다.
+# 셋업은 lookdev/nun_physics.gd 의 검증된 static 을 그대로 재사용.
+const NunPhysics := preload("res://lookdev/nun_physics.gd")
+
+func _attach_springs(vis: Node3D) -> void:
+	if vis == null:
+		return
+	var sk := NunPhysics._find(vis, Skeleton3D) as Skeleton3D
+	if sk == null or sk.has_node("NunSprings"):
+		return
+	for b in ["veil_BC_01", "skirt_F_01", "pendant_01"]:
+		if sk.find_bone(b) < 0:
+			return
+	NunPhysics.setup_springs(sk)
 
 func _fallback_capsule(tint: Color) -> Node3D:
 	var mesh := MeshInstance3D.new()

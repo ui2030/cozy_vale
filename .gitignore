@@ -16,3 +16,5 @@
 /assets/cat_rigged*
 /assets/cat_tripo_raw.glb
 /GOAL_CHARACTER.md
+*.uid
+*.import
