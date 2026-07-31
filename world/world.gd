@@ -8,8 +8,12 @@ const Decor := preload("res://world/decor.gd")        # P3 드레싱(소품·꽃
 const WATER_SHADER := preload("res://world/water.gdshader")
 const SKY_SHADER := preload("res://world/sky.gdshader")
 const PLAZA_SHADER := preload("res://world/plaza.gdshader")
+const GROUND_SHADER := preload("res://world/ground.gdshader")
+const ROAD_SHADER := preload("res://world/road.gdshader")
 
 @onready var _sun: DirectionalLight3D = $Sun
+
+var _vp_pinned := false  # 조망 시점(v_*) 하네스가 플레이어를 잡아 뒀다 = hour 하네스가 덮어쓰지 않는다
 
 # 바람의 지휘봉풍 애니메이션 물 머티리얼(연못·강·분수 공용, base=C_WATER 기본값).
 func _water_mat() -> ShaderMaterial:
@@ -22,6 +26,7 @@ func _ready() -> void:
 	_add_env()
 	_build_village()        # 마을 P1 컬러박스 (임시 지오메트리, make_solid=곡면 툰)
 	_convert_statics(self)  # tscn 정적 물체(바닥·기능물)를 곡면 툰으로 통일
+	_ground_shader()        # 초지 바닥만 절차 풀 패턴으로 교체(_convert_statics의 단색 툰 위에)
 	_water_audio()          # 물가 3D 앰비언스 (연못·분수·강)
 	GameClock.season_changed.connect(func(_prev: int, sea: int) -> void: _apply_season(sea))
 	if not SaveManager.load_game():
@@ -80,6 +85,7 @@ func _ready() -> void:
 			var pv := get_tree().get_first_node_in_group("player")
 			if pv != null:
 				pv.global_position = _vp[_k]
+				_vp_pinned = true  # `-- hour N`이 뒤에서 광장으로 되돌리지 않게(조망+시각 조합 컷)
 	# 여백 체감 샷: 광장 중심에서 4방(주거/정자/강·풍차/생활) — 게임 카메라 각도(피치·거리) 유지한 채
 	# 카메라를 4 방위로 오빗(추종 스크립트 정지 후 수동 배치). 구역 간 트임을 한 컷에 담기 위함.
 	var _open := {
@@ -229,7 +235,7 @@ func _ready() -> void:
 		GameClock.game_min = int(_args[_hi + 1]) * 60
 		GameClock.state = GameClock.State.PAUSED
 		var ph := get_tree().get_first_node_in_group("player")
-		if ph != null and not "interior" in _args and not "beach" in _args and not "forage" in _args:  # 세이브 무관하게 광장 조망으로 고정
+		if ph != null and not _vp_pinned and not "interior" in _args and not "beach" in _args and not "forage" in _args:  # 세이브 무관하게 광장 조망으로 고정
 			ph.global_position = Vector3(0, 2, -3.5)
 		if "spouse" in _args:  # 시각 확정 뒤에 기혼화 — 배우자 실내 배치는 시각(place_at) 파생이다
 			var nsp := get_tree().get_first_node_in_group("npc_system")
@@ -283,6 +289,15 @@ func _convert_statics(node: Node) -> void:
 				node.material_override = ToonChar.make_solid(m.albedo_color, 0.0)
 	for c in node.get_children():
 		_convert_statics(c)
+
+# 초지 바닥(world.tscn Ground/GroundMesh) → 절차 풀 패턴 셰이더. albedo는 _apply_season이 구동한다.
+func _ground_shader() -> void:
+	var gm := get_node_or_null("Ground/GroundMesh") as MeshInstance3D
+	if gm == null:
+		return
+	var m := ShaderMaterial.new()
+	m.shader = GROUND_SHADER
+	gm.material_override = m
 
 func _shot() -> void:
 	# 플레이어 착지 + 시계 진행 후 촬영
@@ -370,16 +385,24 @@ func _add_env() -> void:
 # 임시 지오메트리로 전체 레이아웃 + 구역 팔레트 단색(SPEC §2 낮 기준). make_solid이 곡면 툰
 # (월드 곡률) 셰이더를 이미 적용하므로 _convert_statics 불필요. 각 건물에 P2 Tripo 교체용
 # footprint/피벗(바닥중심)/전고 주석. 좌표: x=동+, z=남+, 북=-z. 지면충돌 40×40(x,z∈[-20,20]).
-const C_ROOF  := Color(0.42, 0.31, 0.56)  # 보라 진 — 지붕 기와(마을 아이덴티티)
-const C_ROOF2 := Color(0.56, 0.43, 0.69)  # 보라 중 — 지붕 밝은면
-const C_WALL  := Color(0.90, 0.85, 0.76)  # 크림 — 벽토/석재
-const C_WOOD  := Color(0.54, 0.40, 0.25)  # 브라운 — 목재/흙길
-const C_STONE := Color(0.72, 0.70, 0.66)  # 석재 회 — 다리/계단/분수
-const C_GREEN := Color(0.58, 0.66, 0.36)  # 그린 — 언덕
-const C_WATER := Color(0.50, 0.72, 0.85)  # 물 — 강(연못과 통일)
-const C_WIST  := Color(0.62, 0.50, 0.74)  # 등나무 보라 — 퍼걸러
-# 지면(world.tscn Ground/GroundMesh) 계절색. 초록은 tscn 원본값과 같아야 한다(비겨울=무변경).
-const C_GRASS := Color(0.62, 0.80, 0.52)  # 초지 — world.tscn ground_mat albedo
+# 파스텔 시프트(소프트닝 v1): 채도 −15%p(단, 이미 옅은 색은 ×0.55까지만) · 명도 +5%p 상한 0.88.
+# 색상(hue)은 전부 보존 — 특히 지붕 보라는 마을 아이덴티티다. 예외(불변): 물·눈·하늘·조명·판석.
+const C_ROOF  := Color(0.509, 0.429, 0.610)  # 보라 진 — 지붕 기와(마을 아이덴티티)
+const C_ROOF2 := Color(0.656, 0.572, 0.740)  # 보라 중 — 지붕 밝은면
+# 크림 벽토는 채도를 규칙대로(0.16→0.09) 깎으면 정오 직광면에서 B채널까지 255로 포화해
+# 건물이 순백 덩어리가 된다(실측). 0.12까지만 깎아 포화해도 따뜻한 크림으로 읽히게 남긴다.
+const C_WALL  := Color(0.880, 0.844, 0.774)  # 크림 — 벽토/석재
+const C_WOOD  := Color(0.590, 0.480, 0.362)  # 브라운 — 목재
+const C_ROAD  := Color(0.700, 0.619, 0.476)  # 흙길 — 파스텔 모래빛
+const C_ROAD_E := Color(0.720, 0.673, 0.590)  # 길 가장자리 — 풀로 옅어지는 톤(같은 hue, 채도만 낮춤)
+const C_STONE := Color(0.770, 0.758, 0.735)  # 석재 회 — 다리/계단/분수
+const C_GREEN := Color(0.652, 0.710, 0.494)  # 그린 — 언덕(수평면이라 0.72 이하로 묶는다)
+const C_WATER := Color(0.50, 0.72, 0.85)  # 물 — 강(연못과 통일). 승인 색 = 파스텔 시프트 예외.
+const C_WIST  := Color(0.720, 0.649, 0.790)  # 등나무 보라 — 퍼걸러
+# 지면(world.tscn Ground/GroundMesh) 계절색 = ground.gdshader의 albedo uniform을 구동한다.
+# 명도 0.80은 정오 수평면에서 G채널 255로 클리핑됐다(실측 (212,255,172)) — 패턴이 통째로 날아가는
+# 값이라 0.72로 내리고 채도도 0.35→0.20으로 낮췄다. 이제 (213,245,196)쯤 = 파스텔 초지.
+const C_GRASS := Color(0.627, 0.720, 0.576)  # 초지
 # 눈: 순백 금지. 툰 라이팅(태양1.0 + 환경광0.55)이 albedo를 ~3.3배로 올려 화면에 낸다 —
 # 실측(정오 초지 albedo 0.62 → 화면 212). albedo 0.76을 넘기면 지면이 255로 클리핑돼
 # 음영·곡률이 통째로 날아가고 크림색 하늘과 지평선에서 붙어버린다.
@@ -545,8 +568,16 @@ func _roads(parent: Node) -> void:
 		_road(parent, Vector3(r[0].x, 0.16, r[0].y), Vector3(ROAD_W, 0.05, r[1]), r[2])
 
 func _road(parent: Node, center: Vector3, size: Vector3, rot_deg: float) -> void:
-	var mi := _box(parent, center, size, C_WOOD, 0.0)
+	var mi := _box(parent, center, size, C_ROAD, 0.0)
 	mi.rotation.y = deg_to_rad(rot_deg)
+	# 하드 엣지 제거: 전용 셰이더가 라운드 사각 SDF − 노이즈로 가장자리를 갉아낸다(discard).
+	# half_ext는 박스마다 다르므로 여기서 넣는다(셰이더 기본값은 폴백일 뿐).
+	var rm := ShaderMaterial.new()
+	rm.shader = ROAD_SHADER
+	rm.set_shader_parameter("albedo", C_ROAD)
+	rm.set_shader_parameter("edge_color", C_ROAD_E)  # 팔레트 단일 출처 = 셰이더 기본값에 안 맡긴다
+	rm.set_shader_parameter("half_ext", Vector2(size.x * 0.5, size.z * 0.5))
+	mi.material_override = rm
 	# 곡률 셰이더(v.y -= 0.006·z²)는 정점 단위 — 세분할 없는 긴 박스는 장축이 현(직선)으로
 	# 근사돼 가운데가 지면 아래로 잠긴다(N길 12u 실증, 처짐 0.0015·Δd²  vs 부상고 0.085).
 	# 장축을 ~1.5u 간격으로 쪼개면 지면(60분할 평면)과 같은 곡선을 탄다.
@@ -580,7 +611,7 @@ func _river_and_bridges(parent: Node) -> void:
 		var mid := (a + b) * 0.5
 		var span := (b - a).length()
 		var perp := Vector2((b - a).y, -(b - a).x).normalized()  # 강 수직(강둑 오프셋)
-		var floor_box := _box(parent, Vector3(mid.x, -0.02, mid.y), Vector3(3.2, 0.3, span + 0.4), Color(0.28, 0.5, 0.6), 0.0)
+		var floor_box := _box(parent, Vector3(mid.x, -0.02, mid.y), Vector3(3.2, 0.3, span + 0.4), Color(0.401, 0.572, 0.650), 0.0)
 		floor_box.rotation.y = ang  # 어두운 채널 바닥(깊이감)
 		var water := _box(parent, Vector3(mid.x, 0.16, mid.y), Vector3(3.0, 0.14, span + 0.4), C_WATER, 0.0)
 		water.rotation.y = ang      # 밝은 물면(강둑보다 낮게 inset), 폭3
@@ -668,13 +699,18 @@ const WINTER := 3
 static func ground_color(season: int) -> Color:
 	return C_SNOW if season == WINTER else C_GRASS
 
+# 지면 패턴 강도. 겨울엔 절반 — 풀 2톤이 아니라 설원 요철 정도로만 남는다.
+static func ground_pattern(season: int) -> float:
+	return 0.45 if season == WINTER else 1.0
+
 # 계절 상태 재적용. 신호가 없는 경로(세이브 로드·하네스의 시계 이동)에서도 한 번 명시 호출한다
 # — festival_system의 "로드 후 evaluate" 전례와 같은 규약.
 func _apply_season(sea: int) -> void:
 	var gm := get_node_or_null("Ground/GroundMesh") as MeshInstance3D
 	var m := (gm.material_override if gm != null else null) as ShaderMaterial
-	if m != null:  # _convert_statics가 tscn의 StandardMaterial3D를 툰 ShaderMaterial로 바꿔 둔 뒤
+	if m != null:  # _ground_shader()가 깔아 둔 ground.gdshader (albedo·pattern uniform 계약)
 		m.set_shader_parameter("albedo", ground_color(sea))
+		m.set_shader_parameter("pattern", ground_pattern(sea))
 	get_tree().call_group("decor", "apply_season", sea)
 
 # 마을 경계 숲 띠(|x| 또는 |z| ∈ [34,40])는 P3에서 실나무 GLB MultiMesh로 이관 — decor.gd _place_forest.

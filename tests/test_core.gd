@@ -920,6 +920,11 @@ func _test_winter_pass() -> void:
 	assert(W.C_SNOW.r < 1.0 and W.C_SNOW.b > W.C_SNOW.r, "눈 톤 = 순백 아닌 차가운 근백색")
 	for s in 3:
 		assert(W.ground_color(s) == W.C_GRASS, "계절 %d 지면 무변경(초지)" % s)
+	assert(W.ground_pattern(3) < W.ground_pattern(0), "겨울 지면 패턴은 약해진다(설원 요철 수준)")
+	# 정오 수평면은 albedo ~0.75 위에서 255로 포화한다(실측). 포화하면 풀 패턴·곡률 음영이
+	# 통째로 날아가므로 지면 계열 채널 상한을 테스트로 못박는다.
+	for gc in [W.C_GRASS, W.C_SNOW, W.C_ROAD, W.C_GREEN]:
+		assert(maxf(maxf(gc.r, gc.g), gc.b) <= 0.76, "지면/길 albedo가 정오 클리핑 한계 초과: %s" % gc)
 	for nm in ["Flora_flower_yellowA", "Flora_flower_purpleA"]:
 		assert(not D.flora_visible(nm, 3), "%s 겨울엔 숨김" % nm)
 		for s in 3:
@@ -928,14 +933,19 @@ func _test_winter_pass() -> void:
 		assert(D.flora_visible(nm, 3) and D.flora_frosted(nm, 3), "%s 겨울엔 서리톤으로 남음" % nm)
 		for s in 3:
 			assert(not D.flora_frosted(nm, s), "%s 계절 %d엔 원색" % [nm, s])
-	assert(not D.flora_frosted("Forest_tree_pineTallA", 3), "침엽수는 flora 규칙 밖")
+	assert(not D.flora_frosted("Forest_cone_tall", 3), "침엽수는 flora 규칙 밖")
 	# 활엽수 수관만 겨울 서리톤 — 침엽수는 초록 유지(겨울 실루엣 담당)
 	for nm in D.DECIDUOUS:
 		assert(D.tree_frosted(nm, 3), "%s 겨울엔 수관 서리톤" % nm)
 		for s in 3:
 			assert(not D.tree_frosted(nm, s), "%s 계절 %d엔 원색" % [nm, s])
-	for nm in ["Forest_tree_pineTallA", "Forest_tree_pineTallC"]:
-		assert(not D.tree_frosted(nm, 3), "%s 침엽수는 겨울에도 초록" % nm)
+	for nm in D.CONIFER:
+		assert(not D.tree_frosted("Forest_" + nm, 3), "%s 침엽수는 겨울에도 초록" % nm)
+	# 버킷 이름 정합: DECIDUOUS·CONIFER가 실제 절차 나무 종을 빠짐없이 덮는다(이름이 어긋나면
+	# 겨울 서리 스왑이 조용히 아무 나무에도 안 걸린다 — 이름 리네임 회귀 방지)
+	for nm in D.BLOB_KINDS:
+		var full: String = "Forest_" + nm
+		assert((full in D.DECIDUOUS) != (nm in D.CONIFER), "%s는 활엽/침엽 중 정확히 하나여야" % nm)
 	# 만개(화분·꽃수레 꽃, 등나무 드레이프)는 겨울만 숨김
 	assert(not D.bloom_visible(3), "겨울엔 만개 숨김")
 	for s in 3:

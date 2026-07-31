@@ -17,18 +17,19 @@ const OUTLINE := 0.006   # world.gd 정적물과 같은 연필선 두께
 const GROUND_Y := 0.10   # 지면 상면 (world.tscn Ground / beach.gd GROUND_Y와 동일)
 
 # ── 팔레트 (VILLAGE_SPEC §2, 낮 기준 — world.gd 상수와 같은 값) ──────
-const C_WOOD   := Color(0.54, 0.40, 0.25)  # 브라운 #8A6540
-const C_WOOD_D := Color(0.42, 0.30, 0.19)  # 목재 음영
-const C_STONE  := Color(0.72, 0.70, 0.66)
-const C_CREAM  := Color(0.90, 0.85, 0.76)  # 크림 #E6D9C3
-const C_ROOF   := Color(0.42, 0.31, 0.56)  # 보라 진
-const C_GREEN  := Color(0.58, 0.66, 0.36)  # 그린 #93A85B (풀·덤불)
-const C_LEAF   := Color(0.50, 0.60, 0.32)  # 활엽 수관 — 지면(0.62,0.80,0.52)보다 깊게
-const C_CONIF  := Color(0.42, 0.55, 0.32)  # 침엽수(어두운 그린)
-const C_YELLOW := Color(0.85, 0.72, 0.29)  # 개나리 #D9B84A
-const C_LAV    := Color(0.56, 0.43, 0.69)  # 라벤더/보라 중 #8E6DB0
-const C_LILAC  := Color(0.79, 0.65, 0.79)  # 라일락 #C9A6C9
-const C_WIST   := Color(0.62, 0.50, 0.74)  # 등나무 보라
+# 파스텔 시프트(소프트닝 v1) — world.gd와 같은 규칙·같은 값(채도 −15%p / ×0.55 하한, 명도 +5%p).
+const C_WOOD   := Color(0.590, 0.480, 0.362)  # 브라운
+const C_WOOD_D := Color(0.470, 0.372, 0.283)  # 목재 음영
+const C_STONE  := Color(0.770, 0.758, 0.735)
+const C_CREAM  := Color(0.880, 0.844, 0.774)  # 크림 (world.gd C_WALL과 같은 값)
+const C_ROOF   := Color(0.509, 0.429, 0.610)  # 보라 진
+const C_GREEN  := Color(0.652, 0.710, 0.494)  # 그린 (풀·덤불)
+const C_LEAF   := Color(0.576, 0.650, 0.444)  # 활엽 수관 — 지면(0.627,0.72,0.576)보다 깊게
+const C_CONIF  := Color(0.509, 0.600, 0.439)  # 침엽수(어두운 그린)
+const C_YELLOW := Color(0.880, 0.776, 0.432)  # 개나리
+const C_LAV    := Color(0.656, 0.572, 0.740)  # 라벤더/보라 중
+const C_LILAC  := Color(0.840, 0.758, 0.840)  # 라일락
+const C_WIST   := Color(0.720, 0.649, 0.790)  # 등나무 보라
 const C_GLASS  := Color(1.00, 0.90, 0.62)  # 가로등 유리(옐로 창불빛)
 # 서리 앉은 마른 풀. 눈 지면(world.gd C_SNOW 0.67~0.76)보다 확실히 아래여야 실루엣이 읽힌다 —
 # 비슷한 값으로 두면 흰 바탕에 흰 낙서가 되어 풀포기가 사라진다(실측).
@@ -490,7 +491,7 @@ func _add_flora(buckets: Dictionary, at: Vector2, rng: RandomNumberGenerator, ki
 # 내린다(줄기는 원색): 겨울 설원에 초록 수관이 떠 있으면 계절이 통째로 안 읽힌다(실측).
 const WINTER := 3
 const FLORA_HIDE_WINTER := ["Flora_flower_yellowA", "Flora_flower_purpleA"]
-const DECIDUOUS := ["Forest_tree_default", "Forest_tree_fat"]  # 킷 머티리얼 leafsGreen 계열
+const DECIDUOUS := ["Forest_blob_wide", "Forest_blob_round"]  # 절차 블롭 나무 중 활엽 버킷
 
 static func flora_visible(nm: String, season: int) -> bool:
 	return not (season == WINTER and nm in FLORA_HIDE_WINTER)
@@ -527,11 +528,71 @@ func apply_season(sea: int) -> void:
 	for b in _blooms:
 		b.visible = bloom_visible(sea)
 
-# ══ 숲 띠 (경계 |x| 또는 |z| ∈ [34,40] 저밀도, 실나무 GLB MultiMesh) ══
+# ══ 절차 블롭 나무 ═════════════════════════════════════════════════
+# 각진 로우폴리 수관 대신 둥근 뭉게 수관. 겹친 구 여러 개가 아니라 **로브로 부풀린 단일 폐곡면** —
+# 구를 겹치면 inverted-hull 외곽선이 교차 곡선을 따라 내부 헤일로를 그린다(Codex MUST-FIX 5).
+# 줄기는 별도 표면(별도 색)이지만 수관 안에 완전히 잠겨 있어 헐이 밖으로 새지 않는다.
+# 파라미터 [수관 반경, 수관 y중심, y스쿼시, 상단 테이퍼(1=구/0.25=침엽), 줄기 반경, 줄기 높이, 로브 세기]
+const BLOB_KINDS := {
+	"blob_wide":  [0.44, 0.62, 0.72, 0.92, 0.085, 0.38, 0.22],  # 낮고 넓은 활엽 (동숲 비율)
+	"blob_round": [0.36, 0.78, 0.94, 0.86, 0.070, 0.50, 0.26],  # 동글동글한 활엽
+	"cone_tall":  [0.38, 0.74, 1.50, 0.30, 0.078, 0.28, 0.15],  # 부드러운 원뿔 침엽
+	"cone_slim":  [0.32, 0.66, 1.70, 0.24, 0.066, 0.24, 0.13],  # 가는 침엽
+}
+const CONIFER := ["cone_tall", "cone_slim"]
+# 로브 방향 — 수관을 몇 방향으로만 부풀려 완벽한 구가 아닌 뭉게구름 실루엣을 만든다.
+const LOBES := [Vector3(1, 0.3, 0.4), Vector3(-0.8, 0.15, 0.6), Vector3(0.25, 0.55, -1), Vector3(-0.45, -0.15, -0.85)]
+
+func _blob_mesh(k: Array, leaf: Color) -> ArrayMesh:
+	var sm := SphereMesh.new()
+	sm.radius = 1.0
+	sm.height = 2.0
+	sm.radial_segments = 22
+	sm.rings = 12
+	var a := sm.surface_get_arrays(0)
+	var v: PackedVector3Array = a[Mesh.ARRAY_VERTEX]
+	for i in v.size():
+		var n := v[i].normalized()
+		var bulge := 1.0
+		for d in LOBES:
+			bulge += float(k[6]) * pow(maxf(n.dot((d as Vector3).normalized()), 0.0), 2.0)
+		var t := (n.y + 1.0) * 0.5                    # 0=아래 1=위
+		var taper: float = lerpf(1.0, float(k[3]), t * t)  # 위로 갈수록 좁아진다
+		v[i] = Vector3(n.x * taper, n.y * float(k[2]), n.z * taper) * (bulge * float(k[0]))
+		v[i].y += float(k[1])
+	var tmp := ArrayMesh.new()
+	var arr := []
+	arr.resize(Mesh.ARRAY_MAX)
+	arr[Mesh.ARRAY_VERTEX] = v
+	arr[Mesh.ARRAY_INDEX] = a[Mesh.ARRAY_INDEX]
+	tmp.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
+	# 정점을 옮겼으니 법선을 다시 만든다 — 인덱스 메시라 스무스 셰이딩(각진 면이 안 남는다).
+	var st := SurfaceTool.new()
+	st.create_from(tmp, 0)
+	st.generate_normals()
+	var out := st.commit() as ArrayMesh
+	# 통통한 줄기(아래가 넓은 원통). 수관 밑동에 파묻히게 배치.
+	var cm := CylinderMesh.new()
+	cm.top_radius = float(k[4]) * 0.8
+	cm.bottom_radius = float(k[4]) * 1.35
+	cm.height = float(k[5])
+	cm.radial_segments = 12
+	cm.rings = 1
+	var ca := cm.surface_get_arrays(0)
+	var cv: PackedVector3Array = ca[Mesh.ARRAY_VERTEX]
+	for i in cv.size():
+		cv[i].y += float(k[5]) * 0.5
+	ca[Mesh.ARRAY_VERTEX] = cv
+	out.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, ca)
+	out.surface_set_material(0, ToonChar.make_solid(leaf, OUTLINE))
+	out.surface_set_material(1, ToonChar.make_solid(C_WOOD, OUTLINE))
+	return out
+
+# ══ 숲 띠 (경계 |x| 또는 |z| ∈ [34,40] 저밀도, 절차 블롭 MultiMesh) ══
 func _place_forest() -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 20260724  # 컬러박스와 같은 시드 = 띠 실루엣 연속성
-	var kinds := ["tree_pineTallA", "tree_pineTallC", "tree_default", "tree_fat"]
+	var kinds := BLOB_KINDS.keys()
 	var buckets := {}
 	for k in kinds:
 		buckets[k] = []
@@ -557,14 +618,14 @@ func _place_forest() -> void:
 		if (buckets[nm] as Array).is_empty():
 			continue
 		var full: String = "Forest_" + nm
-		var summer := _mm_mesh(nm)
+		var kp: Array = BLOB_KINDS[nm]
+		var summer := _blob_mesh(kp, C_CONIF if nm in CONIFER else C_LEAF)
 		_multimesh(summer, buckets[nm], full)
 		_n_trees += (buckets[nm] as Array).size()
-		if summer != null and tree_frosted(full, WINTER):
+		if tree_frosted(full, WINTER):
 			# 겨울용 사본을 빌드 때 미리 뽑아 둔다. MultiMeshInstance3D엔 표면별 override가 없어
-			# material_override로 물들이면 줄기까지 서리색이 된다 — 수관 표면만 바꾼 Mesh를 스왑한다.
-			var winter := _mm_mesh(nm, {"leafsGreen": C_FROST_LEAF})
-			_tree_mesh[full] = [summer, summer if winter == null else winter]
+			# material_override로 물들이면 줄기까지 서리색이 된다 — 수관 색만 바꾼 Mesh를 스왑한다.
+			_tree_mesh[full] = [summer, _blob_mesh(kp, C_FROST_LEAF)]
 
 	# 강변 바위 몇 개 — 물길이 지형에 박혀 보이게(개별 노드, 무충돌)
 	var rocks := Node3D.new()

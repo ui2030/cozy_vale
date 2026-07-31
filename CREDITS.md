@@ -75,10 +75,6 @@ Kenney (Kenney Vleugels, kenney.nl) — [Nature Kit 2.1](https://kenney.nl/asset
 
 | 게임 내 파일 | 원본 파일명 | 용도 |
 |---|---|---|
-| `tree_pineTallA.glb` | `tree_pineTallA.glb` | 숲 띠 — 침엽수 A (MultiMesh) |
-| `tree_pineTallC.glb` | `tree_pineTallC.glb` | 숲 띠 — 침엽수 B (MultiMesh) |
-| `tree_default.glb` | `tree_default.glb` | 숲 띠 — 활엽수 A (MultiMesh) |
-| `tree_fat.glb` | `tree_fat.glb` | 숲 띠 — 활엽수 B (MultiMesh) |
 | `flower_yellowA.glb` | `flower_yellowA.glb` | 개나리 꽃 덤불 (MultiMesh) + 화분·꽃수레 |
 | `flower_purpleA.glb` | `flower_purpleA.glb` | 라벤더 꽃 덤불 (MultiMesh) + 화분·꽃수레 |
 | `plant_bushSmall.glb` | `plant_bushSmall.glb` | 덤불 (MultiMesh) |
@@ -87,6 +83,9 @@ Kenney (Kenney Vleugels, kenney.nl) — [Nature Kit 2.1](https://kenney.nl/asset
 | `sign.glb` | `sign.glb` | 길목 표지판 |
 | `rock_smallA.glb` | `rock_smallA.glb` | 강변 바위 |
 | `rock_smallB.glb` | `rock_smallB.glb` | 강변 바위 |
+
+숲 띠 나무는 킷 GLB를 쓰지 않는다 — 각진 로우폴리 수관이 그림체와 어긋나 절차 블롭 메시로
+교체했다(`world/decor.gd` `_blob_mesh`, 소프트닝 v1). 킷의 나무 4종 파일은 그때 삭제했다.
 
 가로등·벤치·화분·꽃수레·등나무 처마는 에셋이 아니라 코드 지오메트리다(`world/decor.gd`) —
 Fantasy Town Kit은 외부 텍스처 아틀라스 참조 + 사실적 텍스처 그림체라 툰 룩과 어긋나 탈락시켰다.
