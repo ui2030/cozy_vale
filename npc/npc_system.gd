@@ -17,7 +17,6 @@ const KID_IDS := ["npc.momo", "npc.pip"]       # 꼬마(동물 종족) — 작�
 const NPC_SCALE := 2.1        # 플레이어와 동일
 const KID_MULT := 0.8         # 꼬마 축소
 const NPC_Y := 0.05           # 발 접지 오프셋 (플레이어 기준, 스크린샷 튜닝)
-const OUTLINE_W := 0.004
 # 배회 파라미터
 const WANDER_SPEED := 1.6     # 플레이어 5.0보다 느리게
 const WANDER_R_MIN := 4.0
@@ -152,24 +151,26 @@ const MODEL_TARGET_H := 2.1    # 실물 GLB NPC 목표 월드 높이 (성인 기
 func _make_visual(id: String, ndef: Dictionary) -> Node3D:
 	var model_path := String(ndef.get("model", ""))
 	if model_path != "":
-		var m: Node3D = ToonChar.load_glb(model_path, OUTLINE_W)  # tint=흰=원본색
+		var m: Node3D = ToonChar.load_glb(model_path, ToonChar.OUTLINE_WORLD)  # tint=흰=원본색
 		if m != null:
 			var box := ToonChar.aabb_of(m)
 			var ms := 1.0
 			if box.size.y > 0.001:
 				ms = MODEL_TARGET_H / box.size.y * (KID_MULT if id in KID_IDS else 1.0)
 			m.scale = Vector3(ms, ms, ms)
+			ToonChar.set_outline_width(m, ToonChar.OUTLINE_WORLD / ms)  # 오브젝트→월드 굵기 보정
 			m.position.y = NPC_Y - box.position.y * ms  # 모델 발바닥(AABB 최저점)을 접지
 			m.rotation.y = PI  # 앞=+Z → look_at(-Z) 보정 (cat과 동일)
 			return m
 		# 로드 실패 시 아래 고양이 색조 폴백으로 진행
 	var c: Array = ndef["color"]
 	var tint := Color(c[0], c[1], c[2])
-	var cat: Node3D = ToonChar.load_glb(CAT_GLB, OUTLINE_W, tint)
+	var cat: Node3D = ToonChar.load_glb(CAT_GLB, ToonChar.OUTLINE_WORLD, tint)
 	if cat == null:
 		return _fallback_capsule(tint)  # 폴백: 색상 캡슐
 	var s := NPC_SCALE * (KID_MULT if id in KID_IDS else 1.0)
 	cat.scale = Vector3(s, s, s)
+	ToonChar.set_outline_width(cat, ToonChar.OUTLINE_WORLD / s)  # 오브젝트→월드 굵기 보정
 	cat.position.y = NPC_Y
 	cat.rotation.y = PI  # 앞=+Z, look_at은 -Z 기준 → 180° 보정 (player와 동일)
 	var anim := ToonChar.find_anim(cat)

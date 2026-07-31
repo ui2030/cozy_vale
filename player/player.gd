@@ -34,11 +34,12 @@ var _step_t := 0.0  # 발소리 간격 누적 (걷는 동안만)
 const STEP_INTERVAL := 0.42  # 발소리 주기(초) — walk 클립 보속에 맞춘 실측 절충값
 
 func _setup_visual() -> void:
-	var cat: Node3D = ToonChar.load_glb(CAT_GLB, 0.004)
+	var cat: Node3D = ToonChar.load_glb(CAT_GLB, ToonChar.OUTLINE_WORLD)
 	if cat == null:
 		return  # 폴백: 기본 캡슐 유지
 	$Mesh.visible = false
 	cat.scale = Vector3(visual_scale, visual_scale, visual_scale)
+	ToonChar.set_outline_width(cat, ToonChar.OUTLINE_WORLD / visual_scale)  # 오브젝트→월드 굵기 보정
 	cat.position.y = visual_y
 	cat.rotation.y = PI  # 앞=+Z, Godot look_at은 -Z 기준 → 180° 보정 (실측 확정)
 	add_child(cat)
