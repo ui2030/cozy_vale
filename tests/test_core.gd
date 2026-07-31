@@ -425,6 +425,14 @@ func _test_npc_schedule() -> void:
 	# ── 데크 높이 리프트 (다리 위에서만 들림 = 발이 물에 안 잠김)
 	assert(absf(N._deck_y(BR[0]) - N.DECK_Y) < 0.001, "다리 중심 = 데크 높이")
 	assert(N._deck_y(BR[0] + Vector2(10, 0)) == 0.0, "다리 밖 = 지면")
+	# ── 휜 데크(캠버) = NPC 발높이 곡선과 동일식 (어긋나면 건너는 동안 발이 돌에 파묻히거나 뜬다)
+	var W2 := preload("res://world/world.gd")
+	for i in 13:
+		var dx := -3.0 + i * 0.5
+		assert(absf(W2.deck_top(dx) - N._deck_y(BR[0] + Vector2(dx, 0))) < 0.001,
+			"데크 상면 x=%.1f (%.3f) ≠ NPC 발높이 (%.3f)" % [dx, W2.deck_top(dx), N._deck_y(BR[0] + Vector2(dx, 0))])
+	assert(W2.deck_top(0.0) == N.DECK_Y, "관정 = DECK_Y")
+	assert(absf(W2.deck_top(3.0) - 0.1) < 0.05, "데크 끝이 지면 상면(0.1)과 턱 없이 물림")
 	# ── 로드/취침 점프: 그 시각 장소에 이미 배치 (단체 행군 방지)
 	GameClock.game_min = 13 * 60
 	_npcsys.snap_to_schedule()

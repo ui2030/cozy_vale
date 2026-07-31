@@ -23,9 +23,10 @@ func _water_mat() -> ShaderMaterial:
 	return m
 
 # 돌다리 석조(벽돌 켜 쌓기) 머티리얼. 외곽선은 make_solid과 같은 next_pass 방식.
-func _bridge_mat() -> ShaderMaterial:
+func _bridge_mat(uv_shift := 0.0) -> ShaderMaterial:
 	var m := ShaderMaterial.new()
 	m.shader = BRIDGE_SHADER
+	m.set_shader_parameter("uv_shift", Vector2(uv_shift, 0.0))  # 휜 데크 세그먼트의 벽돌 켜 이어붙이기
 	var o := ShaderMaterial.new()
 	o.shader = ToonChar.OUTLINE
 	o.set_shader_parameter("width", 0.004)
@@ -682,22 +683,65 @@ func _river_dir_at(p: Vector2) -> float:
 # 로컬 프레임(holder에 rotation.y=ang): +X = 강을 가로지름, +Z = 흐름 방향, 원점 = 다리 중심.
 #
 # 통행 계약 불변:
-#  · 데크 박스(6×0.3×3, 중심 y=0.75 → 상면 0.9)는 값까지 그대로다 — npc_system.DECK_Y=0.9 파생.
+#  · 데크 상면은 관정(x=0)에서 y=0.9 — npc_system.DECK_Y=0.9 파생. 아래 deck_top()이 그 단일 출처다.
 #  · 중앙 통로 z∈(-1.3,1.3)엔 아무것도 새로 넣지 않는다. 다리엔 충돌이 없어 플레이어·NPC는
 #    데크 아래 지면 높이로 지나간다 — 아치 구조를 통로에 채우면 캐릭터가 돌 속에 파묻힌다.
 #    그래서 아치는 양 측벽(스팬드럴)에만 뚫고, 가운데는 예전처럼 비워 둔다.
 #  · 충돌체 0 유지(CSGShape3D.use_collision 기본 false).
 const ARCH_R := 3.5     # 아치 원 반지름 — 크면 완만한 세그먼트 아치. 데크 밑(0.6) 안에 들어가야 한다.
-const ARCH_CY := -2.90  # 아치 원 중심 y (관정 = ARCH_CY + ARCH_R = 0.60 = 데크 밑면, 스프링 = 지면 y0)
+const ARCH_CY := -2.90  # 아치 원 중심 y (관정 = ARCH_CY + ARCH_R = 0.60 = 관정의 데크 밑면, 스프링 = 지면 y0)
 const ARCH_N := 11      # 홍예석(voussoir) 개수 — 아치 곡선을 두르는 다듬돌
+
+# ── 캠버(둥근 등마루) ────────────────────────────────────────────────
+# 데크 상면 높이 = npc_system._deck_y 와 **같은 식**이다. NPC는 데크 축(로컬 z=0) 위를 걷고
+# 경유 웨이포인트도 축 위라 반경거리 d = |x| — 두 식이 같은 곡선을 그린다. 그래서 건너는 동안
+# 발이 데크에 파묻히거나 뜨지 않는다(세그먼트 현 처짐 ≤0.047만 남는다).
+# 끝(|x|=3)은 0.103 ≈ 지면 상면 0.1이라 턱 없이 물린다. 최대 경사 35.4°로, 셰이더가 투영축을
+# 뒤집는 45°보다 낮아 벽돌 패턴이 경사면에서 꺾이지 않는다.
+const DECK_Y := 0.9        # 관정 높이 = npc_system.DECK_Y
+const DECK_RISE0 := 3.4    # 여기서 지면(= npc_system.DECK_HALF)
+const DECK_RISE1 := 1.5    # 여기부터 관정 평탄(= DECK_HALF - 1.9)
+const DECK_HALF_X := 3.0   # 경간 6의 절반
+const DECK_SEG := 12       # 곡선을 나눈 판석 수 (현 곡률에서 현 처짐 ≤0.047)
+
+static func deck_top(x: float) -> float:
+	return DECK_Y * smoothstep(DECK_RISE0, DECK_RISE1, absf(x))
 
 func _arch_bridge(parent: Node, at: Vector2, ang: float) -> void:
 	var h := Node3D.new()
 	h.position = Vector3(at.x, 0, at.y)
 	h.rotation.y = ang
 	parent.add_child(h)
-	# 데크(보도) — 위치·크기 불변, 재질만 석조 벽돌 패턴으로.
-	_box(h, Vector3(0, 0.75, 0), Vector3(6, 0.3, 3), C_STONE, 0.0).material_override = _bridge_mat()
+	# 데크·난간·갓돌을 deck_top() 곡선 위 세그먼트로 깐다(= 휜 데크). 세그먼트 상면이 현(chord)에
+	# 놓이도록 로컬 수직으로 두께의 절반만큼 내린다. 길이는 dx가 아니라 현 길이여야 한다 —
+	# 경사 35°에서 dx만 쓰면 조각 사이가 벌어진다.
+	var s_run := 0.0  # 누적 호길이 → 셰이더 uv_shift(조각마다 벽돌 켜가 리셋되지 않게)
+	for i in DECK_SEG:
+		var x0 := lerpf(-DECK_HALF_X, DECK_HALF_X, i / float(DECK_SEG))
+		var x1 := lerpf(-DECK_HALF_X, DECK_HALF_X, (i + 1) / float(DECK_SEG))
+		var y0 := deck_top(x0)
+		var y1 := deck_top(x1)
+		var th := atan2(y1 - y0, x1 - x0)
+		var chord := Vector2(x1 - x0, y1 - y0).length()
+		var mid := Vector3((x0 + x1) * 0.5, (y0 + y1) * 0.5, 0)
+		var up := Vector3(-sin(th), cos(th), 0)  # 세그먼트 로컬 수직
+		var shift := s_run + chord * 0.5         # BoxMesh는 중심이 원점 → 중심까지의 호길이
+		s_run += chord
+		var deck := _box(h, mid - up * 0.15, Vector3(chord * 1.06, 0.3, 3), C_STONE, 0.0)
+		deck.rotation.z = th
+		deck.material_override = _bridge_mat(shift)
+		for s in [1.0, -1.0]:
+			# 난간(파라펫) — 데크 상면에서 0.27, 갓돌 상단은 그 위 0.13(평평했을 때의 0.90/1.035/1.30과
+			# 같은 상대 배치). ponytail: decor.gd 등나무 앵커는 y=1.32 상수라 |x|=2.2에선 난간 위
+			# 0.30에 뜬다 — decor.gd가 이 함수(deck_top)를 쓰도록 고치는 건 별도 카드.
+			var rail := _box(h, mid + up * 0.135 + Vector3(0, 0, 1.5 * s), Vector3(chord * 1.06, 0.27, 0.20), C_STONE, 0.0)
+			rail.rotation.z = th
+			rail.material_override = _bridge_mat(shift)
+			# 갓돌·이맛돌은 벽돌 패턴 없는 다듬돌(민면). C_STONE 그대로면 정오 직광에서 흰색으로
+			# 포화해 벽돌면과 붙는다(실측) — 한 단 낮춰야 매끈한 돌로 읽힌다.
+			# 조각을 15% 겹쳐 꺾인 이음매를 메운다(민면이라 겹침이 안 보인다).
+			var cap := _cyl(h, mid + up * 0.27 + Vector3(0, 0, 1.5 * s), 0.13, chord * 1.15, C_DRESSED, 0.004)
+			cap.rotation.z = PI * 0.5 + th
 	# 아치 측벽 2장 − 원기둥 = 단경간 세그먼트 아치(관정 y=0.60 = 데크 밑면, 스프링 ±1.96).
 	# 수면(폭3.0·상면0.23) 위로 3.13 트인다. 벽 밑(-0.1)은 지면에 묻혀 접지로 읽힌다.
 	var arch := CSGCombiner3D.new()
@@ -706,6 +750,17 @@ func _arch_bridge(parent: Node, at: Vector2, ang: float) -> void:
 		w.size = Vector3(6, 1.0, 0.25)
 		w.position = Vector3(0, 0.4, 1.425 * s)
 		arch.add_child(w)
+	# 벽 윗변을 휜 데크 밑으로 깎는다. 지켜야 할 통로: deck_top(x)-0.3 ≤ 벽 윗변 ≤ deck_top(x)
+	# (관정에선 데크 밑면과 맞물려 틈이 안 보이고, 강둑 쪽에선 보도 위로 벽이 솟지 않는다).
+	# 컷 = 스무스스텝의 현((1.5,0.9)→(3.4,0))을 0.15 내린 직선. 스무스스텝은 제 현과 최대 0.085
+	# 차이라 0.3 통로 안에 여유 0.065로 들어간다 — 곡선용 커스텀 메시 없이 박스 2장으로 끝난다.
+	for s in [1.0, -1.0]:
+		var ramp := CSGBox3D.new()
+		ramp.size = Vector3(8, 4, 3.4)  # 로컬 (-4,-2) 모서리가 (±1.5, 0.75)에 오도록 배치
+		ramp.position = Vector3(5.973 * s, 0.845, 0)
+		ramp.rotation.z = -0.4423 if s > 0.0 else PI + 0.4423  # 박스는 중심대칭 → 반대편은 180° 돌려 반사
+		ramp.operation = CSGShape3D.OPERATION_SUBTRACTION
+		arch.add_child(ramp)
 	var cut := CSGCylinder3D.new()
 	cut.radius = ARCH_R
 	cut.height = 3.4          # 측벽 두 장을 한 번에 관통
@@ -717,13 +772,6 @@ func _arch_bridge(parent: Node, at: Vector2, ang: float) -> void:
 	arch.material_override = _bridge_mat()
 	h.add_child(arch)
 	for s in [1.0, -1.0]:
-		# 난간(파라펫) — 예전 난간(z 1.40~1.60, 상단 1.30)과 발자국이 같다: 데크 상면을 더
-		# 잠식하지 않고, decor.gd 등나무 앵커(z=±1.5, y=1.32)도 그대로 난간 위에 얹힌다.
-		_box(h, Vector3(0, 1.035, 1.5 * s), Vector3(6, 0.27, 0.20), C_STONE, 0.0).material_override = _bridge_mat()
-		# 갓돌·이맛돌은 벽돌 패턴 없는 다듬돌(민면). C_STONE 그대로면 정오 직광에서 흰색으로
-		# 포화해 벽돌면과 붙는다(실측) — 한 단 낮춰야 매끈한 돌로 읽힌다.
-		var cap := _cyl(h, Vector3(0, 1.17, 1.5 * s), 0.13, 6.1, C_DRESSED, 0.004)  # 둥근 갓돌(상단 1.30)
-		cap.rotation.z = PI * 0.5
 		# 홍예석(voussoir) 링 — 아치 곡선을 다듬돌로 두른다. 개구부가 낮고 넓어(수면 위 높이 0.37)
 		# 곡선만으론 슬릿처럼 읽혔다(실측) — 컨셉아트 "강가 다리"처럼 링이 있어야 아치로 보인다.
 		# 통로(z<1.3) 침범 금지 — 측벽 두께 안에만 두고 바깥으로 0.05 튀어나온다.

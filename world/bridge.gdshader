@@ -13,6 +13,9 @@ uniform float brick = 0.62;    // 벽돌 한 장 길이
 uniform float joint = 0.05;    // 줄눈 두께(모델 단위)
 uniform float tone_var = 0.05; // 돌마다 명도 변주(수제 석재 느낌)
 uniform float curve_strength = 0.006;  // toon.gdshader와 동일 월드 곡률
+// 휜 데크·난간은 세그먼트 박스로 쪼개져 있어 모델좌표가 조각마다 0에서 다시 시작한다.
+// 조각 중심까지의 누적 호길이를 넣어 주면 벽돌 켜가 리셋되지 않고 이어진다(0 = 통짜 지오메트리).
+uniform vec2 uv_shift = vec2(0.0);
 
 // toon.gdshader와 같은 수채 단조 파라미터
 uniform float shadow_level : hint_range(0.0, 1.0) = 0.55;
@@ -48,6 +51,7 @@ void fragment() {
 	} else {
 		uv = vec2(mpos.x, mpos.y);
 	}
+	uv += uv_shift;
 	float rowf = uv.y / course;
 	float row = floor(rowf);
 	float u = uv.x / brick + mod(row, 2.0) * 0.5;  // 켜마다 반 장 어긋남(벽돌 쌓기)
