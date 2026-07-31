@@ -65,3 +65,28 @@ Kenney (Kenney Vleugels, kenney.nl) — [Furniture Kit 2.0](https://kenney.nl/as
 | `kitchenStove.glb` | 부엌 — 레인지 |
 | `kitchenSink.glb` | 부엌 — 싱크대 |
 | `kitchenFridge.glb` | 부엌 — 냉장고 |
+
+## 마을 소품·식생 — `assets/props/`
+
+Kenney (Kenney Vleugels, kenney.nl) — [Nature Kit 2.1](https://kenney.nl/assets/nature-kit), CC0 1.0.
+원본 배포판 `Models/GLTF format/` 안에서 **실제로 쓰는 조각만** 골라 복사했다(파일명·바이트 무변경).
+런타임 `GLTFDocument` 로드(`world/decor.gd`) + 툰 셰이더. 킷 원본 머티리얼 색은 마을 팔레트
+(VILLAGE_SPEC §2)로 다시 칠한다 — 파일 자체는 손대지 않는다.
+
+| 게임 내 파일 | 원본 파일명 | 용도 |
+|---|---|---|
+| `tree_pineTallA.glb` | `tree_pineTallA.glb` | 숲 띠 — 침엽수 A (MultiMesh) |
+| `tree_pineTallC.glb` | `tree_pineTallC.glb` | 숲 띠 — 침엽수 B (MultiMesh) |
+| `tree_default.glb` | `tree_default.glb` | 숲 띠 — 활엽수 A (MultiMesh) |
+| `tree_fat.glb` | `tree_fat.glb` | 숲 띠 — 활엽수 B (MultiMesh) |
+| `flower_yellowA.glb` | `flower_yellowA.glb` | 개나리 꽃 덤불 (MultiMesh) + 화분·꽃수레 |
+| `flower_purpleA.glb` | `flower_purpleA.glb` | 라벤더 꽃 덤불 (MultiMesh) + 화분·꽃수레 |
+| `plant_bushSmall.glb` | `plant_bushSmall.glb` | 덤불 (MultiMesh) |
+| `grass.glb` | `grass.glb` | 풀포기 (MultiMesh) |
+| `fence_simple.glb` | `fence_simple.glb` | 나무 울타리 (밭·집 앞마당·강변·다리 진입부) |
+| `sign.glb` | `sign.glb` | 길목 표지판 |
+| `rock_smallA.glb` | `rock_smallA.glb` | 강변 바위 |
+| `rock_smallB.glb` | `rock_smallB.glb` | 강변 바위 |
+
+가로등·벤치·화분·꽃수레·등나무 처마는 에셋이 아니라 코드 지오메트리다(`world/decor.gd`) —
+Fantasy Town Kit은 외부 텍스처 아틀라스 참조 + 사실적 텍스처 그림체라 툰 룩과 어긋나 탈락시켰다.

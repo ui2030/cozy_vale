@@ -4,8 +4,10 @@ extends Node3D
 const ToonChar := preload("res://common/toon_character.gd")
 const Interior := preload("res://world/interior.gd")  # 실내 스폰·침대 좌표 단일 출처
 const Beach := preload("res://world/beach.gd")        # 해변 스폰·게이트 좌표 단일 출처
+const Decor := preload("res://world/decor.gd")        # P3 드레싱(소품·꽃·숲) — 전부 무충돌
 const WATER_SHADER := preload("res://world/water.gdshader")
 const SKY_SHADER := preload("res://world/sky.gdshader")
+const PLAZA_SHADER := preload("res://world/plaza.gdshader")
 
 @onready var _sun: DirectionalLight3D = $Sun
 
@@ -47,6 +49,7 @@ func _ready() -> void:
 		"v_houses":    Vector3(-20, 2, -6),   # 주민 집1(북서 -20,-14)
 		"v_pavilion":  Vector3(-26, 2, 20),   # 정자(서 -26,14)
 		"v_hall":      Vector3(0, 2, -11),    # 시계탑 회관(0,-18) 근접(고정카메라라 첨탑 상단은 프레임 위)
+		"v_forest":    Vector3(-30, 2, 26),   # 남서 숲 띠 경계(P3 드레싱 검증)
 	}
 	for _k in _vp:
 		if _k in OS.get_cmdline_user_args():
@@ -349,7 +352,12 @@ func _build_village() -> void:
 	_pavilion(v, Vector3(-26, 0, 14))
 	_river_and_bridges(v)
 	_windmill_hill(v)
-	_forest_belt(v)
+	# 드레싱: 소품·꽃 덤불·숲 띠(원통+구 나무를 대체). 자체 툰 변환 + 무충돌 감사를 하므로
+	# _convert_statics 이전/이후 어느 쪽이든 안전하지만, 규약대로 이전에 트리에 넣는다.
+	var decor := Decor.new()
+	decor.name = "Decor"
+	v.add_child(decor)
+	decor.build(RIVER_PTS, BRIDGES, ROADS)
 
 # 박스 메시(툰 단색). center=박스 중심.
 func _box(parent: Node, center: Vector3, size: Vector3, color: Color, outline := 0.006) -> MeshInstance3D:
@@ -441,23 +449,33 @@ func _fountain(parent: Node, at: Vector3) -> void:
 	parent.add_child(sb)
 
 func _plaza(parent: Node) -> void:
-	_cyl(parent, Vector3(0, 0.08, 0), 6.0, 0.12, C_WALL, 0.0)  # 크림 판석 원형 바닥 r6
+	# 크림 판석 원형 바닥 r6 — 시각 전용 교체(메시·좌표·높이·반경 불변, 충돌체 없음).
+	# 흰 디스크 → 절차 판석 패턴(world/plaza.gdshader, 텍스처 파일 0).
+	var mi := _cyl(parent, Vector3(0, 0.08, 0), 6.0, 0.12, C_WALL, 0.0)
+	var m := ShaderMaterial.new()
+	m.shader = PLAZA_SHADER
+	mi.material_override = m
+
+# 방사 6갈래 + 다리 연결로. [중심, 길이(로컬+Z), y회전(도)] — rot=atan2(dx,dz)로 장축을 방향에 정렬.
+# 지도 충실화(Fable 탑다운 대조 반영): 모든 다리는 길로 연결 + 동안(東岸) 경로.
+# decor.gd가 "길 위·길가 데코 금지" 판정에 이 배열을 그대로 읽는다(좌표 단일 출처).
+const ROAD_W := 2.4
+const ROADS := [
+	[Vector2(0, -12), 12.0, 0.0],           # N→회관(0,-18)
+	[Vector2(-12.5, -8.7), 18.0, -125.0],   # NW→House1(-20,-14)
+	[Vector2(-15.4, 4.9), 20.0, -72.0],     # W→정자·집2 방면(조준점 -25,8)
+	[Vector2(-8.6, 13.5), 20.0, -33.0],     # SW→House3(-14,22)
+	[Vector2(2.1, 9.2), 7.0, 11.0],         # S→플레이어집(3,15)
+	[Vector2(11.3, 4.6), 12.0, 68.0],       # E→동 다리(17,7)
+	[Vector2(12.6, -10.1), 20.5, 125.0],    # NE→북동 다리(23,-16)
+	[Vector2(-2.5, 17.25), 23.0, -5.0],     # S외곽→남서 다리(-3.5,30)
+	[Vector2(27.45, -14.8), 3.2, 79.0],     # 동안 북: 북동 다리 동단→풍차 램프 발치(강둑·대지 회피)
+	[Vector2(22, 12.75), 10.3, 23.0],       # 동안 남: 동 다리→집4(24,20)
+]
 
 func _roads(parent: Node) -> void:
-	# 방사 6갈래(폭 2.4, 흙길 브라운). 광장 림(r6)→각 구역까지 길게 뻗어 여백 연출.
-	# center=림~구역 중점, rot=atan2(dx,dz)(박스 장축 z를 방향에 정렬). 방향은 스샷 튜닝 대상.
-	var y := 0.16
-	_road(parent, Vector3(0, y, -12), Vector3(2.4, 0.05, 12), 0)          # N→회관(0,-18)
-	_road(parent, Vector3(-12.5, y, -8.7), Vector3(2.4, 0.05, 18), -125)  # NW→House1(-20,-14)
-	_road(parent, Vector3(-15.4, y, 4.9), Vector3(2.4, 0.05, 20), -72)    # W→정자·집2 방면(조준점 -25,8)
-	_road(parent, Vector3(-8.6, y, 13.5), Vector3(2.4, 0.05, 20), -33)    # SW→House3(-14,22)
-	_road(parent, Vector3(2.1, y, 9.2), Vector3(2.4, 0.05, 7), 11)        # S→플레이어집(3,15)
-	_road(parent, Vector3(11.3, y, 4.6), Vector3(2.4, 0.05, 12), 68)      # E→동 다리(17,7)
-	# 지도 충실화(Fable 탑다운 대조 반영): 모든 다리는 길로 연결 + 동안(東岸) 경로.
-	_road(parent, Vector3(12.6, y, -10.1), Vector3(2.4, 0.05, 20.5), 125)  # NE→북동 다리(23,-16)
-	_road(parent, Vector3(-2.5, y, 17.25), Vector3(2.4, 0.05, 23), -5)     # S외곽→남서 다리(-3.5,30)
-	_road(parent, Vector3(27.45, y, -14.8), Vector3(2.4, 0.05, 3.2), 79)   # 동안 북: 북동 다리 동단→풍차 램프 발치(강둑·대지 회피, Codex MUST-FIX)
-	_road(parent, Vector3(22, y, 12.75), Vector3(2.4, 0.05, 10.3), 23)     # 동안 남: 동 다리→집4(24,20)
+	for r in ROADS:
+		_road(parent, Vector3(r[0].x, 0.16, r[0].y), Vector3(ROAD_W, 0.05, r[1]), r[2])
 
 func _road(parent: Node, center: Vector3, size: Vector3, rot_deg: float) -> void:
 	var mi := _box(parent, center, size, C_WOOD, 0.0)
@@ -570,42 +588,4 @@ func _windmill_hill(parent: Node) -> void:
 	_box(parent, Vector3(px, top + 2.6, pz - 1.2), Vector3(0.4, 4.0, 0.35), C_WOOD, 0.004)  # 날개 세로
 	_box(parent, Vector3(px, top + 2.6, pz - 1.2), Vector3(4.0, 0.4, 0.35), C_WOOD, 0.004)  # 날개 가로
 
-# 마을 경계 숲 띠: |x| 또는 |z| ∈ [34,40] 저밀도 나무(원통 줄기 + 구/원뿔 수관). 무충돌.
-# 결정론적 시드로 배치(스샷 재현). 통행 방해 없음(무충돌·경계 바깥 띠).
-func _forest_belt(parent: Node) -> void:
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 20260724
-	for edge in 4:  # 0=북(-z) 1=남(+z) 2=서(-x) 3=동(+x)
-		for _i in 11:
-			var along := rng.randf_range(-38.0, 38.0)
-			var band := rng.randf_range(34.0, 39.0)
-			var pos: Vector2
-			match edge:
-				0: pos = Vector2(along, -band)
-				1: pos = Vector2(along, band)
-				2: pos = Vector2(-band, along)
-				_: pos = Vector2(band, along)
-			_tree(parent, pos, rng.randf_range(0.85, 1.35), rng.randf() < 0.5)
-
-func _tree(parent: Node, at: Vector2, s: float, coniferous: bool) -> void:
-	var green := Color(0.42, 0.55, 0.32) if coniferous else C_GREEN
-	_cyl(parent, Vector3(at.x, 0.9 * s, at.y), 0.22 * s, 1.8 * s, C_WOOD, 0.004)  # 줄기
-	if coniferous:  # 침엽수 = 원뿔 수관
-		var cone := MeshInstance3D.new()
-		var cm := CylinderMesh.new()
-		cm.top_radius = 0.0
-		cm.bottom_radius = 1.1 * s
-		cm.height = 2.6 * s
-		cone.mesh = cm
-		cone.material_override = ToonChar.make_solid(green, 0.006)
-		cone.position = Vector3(at.x, (1.8 + 1.3) * s, at.y)
-		parent.add_child(cone)
-	else:  # 활엽수 = 구 수관
-		var ball := MeshInstance3D.new()
-		var sm := SphereMesh.new()
-		sm.radius = 1.2 * s
-		sm.height = 2.4 * s
-		ball.mesh = sm
-		ball.material_override = ToonChar.make_solid(green, 0.006)
-		ball.position = Vector3(at.x, (1.8 + 0.9) * s, at.y)
-		parent.add_child(ball)
+# 마을 경계 숲 띠(|x| 또는 |z| ∈ [34,40])는 P3에서 실나무 GLB MultiMesh로 이관 — decor.gd _place_forest.
