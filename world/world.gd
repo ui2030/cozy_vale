@@ -593,6 +593,8 @@ const ROADS := [
 # 데크 리프트 소멸 지점(DECK_EDGE 3.4) + 0.2 — ROADS 데이터는 그대로 두고(decor 길가 판정 공유)
 # 빌드에서만 클립한다.
 const BRIDGE_TRIM := 3.6
+# 강둑을 비우는 다리 중심 반경. 둑 오프셋 2.05 기준 흐름 방향 ±2.2가 비어 파라펫(z±1.6)을 넉넉히 벗어난다.
+const BANK_GAP := 3.0
 
 func _roads(parent: Node) -> void:
 	for r in ROADS:
@@ -668,9 +670,21 @@ func _river_and_bridges(parent: Node) -> void:
 		water.rotation.y = ang      # 밝은 물면(강둑보다 낮게 inset), 폭3
 		water.material_override = _water_mat()  # 애니 물(연못과 통일)
 		for s in [1.0, -1.0]:       # 양안 강둑(브라운) — 물면보다 ~0.45 높아 파인 채널로 읽힘
-			var bc: Vector2 = mid + perp * (2.05 * s)
-			var bank := _box(parent, Vector3(bc.x, 0.35, bc.y), Vector3(1.0, 0.7, span + 0.4), C_WOOD, 0.004)
-			bank.rotation.y = ang
+			# 다리 근처는 비운다(충돌벽과 같은 분절 방식) — 둑(높이 0.7)이 아치 발치(데크 끝
+			# 높이 ~0.55)보다 높아 다리 끝이 흙에 먹힌 그림이 된다(유저 실플레이 지적).
+			var bsteps := maxi(1, int(ceil(span / 1.4)))
+			var bstep := (b - a) / bsteps
+			for k in bsteps:
+				var bc: Vector2 = a + bstep * (k + 0.5) + perp * (2.05 * s)
+				var near_bridge := false
+				for br in BRIDGES:
+					if bc.distance_to(br) < BANK_GAP:
+						near_bridge = true
+						break
+				if near_bridge:
+					continue
+				var bank := _box(parent, Vector3(bc.x, 0.35, bc.y), Vector3(1.0, 0.7, bstep.length() + 0.1), C_WOOD, 0.004)
+				bank.rotation.y = ang
 		_river_wall_seg(parent, a, b, ang)  # 분절 충돌벽(다리 gap 제외)
 	for br in BRIDGES:
 		_arch_bridge(parent, br, _river_dir_at(br))
