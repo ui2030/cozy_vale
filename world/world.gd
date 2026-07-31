@@ -10,6 +10,7 @@ const SKY_SHADER := preload("res://world/sky.gdshader")
 const PLAZA_SHADER := preload("res://world/plaza.gdshader")
 const GROUND_SHADER := preload("res://world/ground.gdshader")
 const ROAD_SHADER := preload("res://world/road.gdshader")
+const BRIDGE_SHADER := preload("res://world/bridge.gdshader")
 
 @onready var _sun: DirectionalLight3D = $Sun
 
@@ -19,6 +20,16 @@ var _vp_pinned := false  # 조망 시점(v_*) 하네스가 플레이어를 잡�
 func _water_mat() -> ShaderMaterial:
 	var m := ShaderMaterial.new()
 	m.shader = WATER_SHADER
+	return m
+
+# 돌다리 석조(벽돌 켜 쌓기) 머티리얼. 외곽선은 make_solid과 같은 next_pass 방식.
+func _bridge_mat() -> ShaderMaterial:
+	var m := ShaderMaterial.new()
+	m.shader = BRIDGE_SHADER
+	var o := ShaderMaterial.new()
+	o.shader = ToonChar.OUTLINE
+	o.set_shader_parameter("width", 0.004)
+	m.next_pass = o
 	return m
 
 func _ready() -> void:
@@ -86,6 +97,14 @@ func _ready() -> void:
 			if pv != null:
 				pv.global_position = _vp[_k]
 				_vp_pinned = true  # `-- hour N`이 뒤에서 광장으로 되돌리지 않게(조망+시각 조합 컷)
+	# 아치 개구부 컷: `-- shot v_arch` — 북동 다리를 하류(남서)에서 수면 높이로 마주본다.
+	# 고정 추종 카메라(북향·높이6.5)로는 아치가 데크·플레이어에 가려 안 잡힌다.
+	if "v_arch" in OS.get_cmdline_user_args():
+		var ca := $Camera as Camera3D
+		ca.set_process(false)
+		ca.global_position = Vector3(21.1, 0.75, -10.3)  # 강 중심선 하류 6
+		ca.look_at(Vector3(23, 0.45, -16), Vector3.UP)   # 다리 아래 개구부
+		_vp_pinned = true
 	# 여백 체감 샷: 광장 중심에서 4방(주거/정자/강·풍차/생활) — 게임 카메라 각도(피치·거리) 유지한 채
 	# 카메라를 4 방위로 오빗(추종 스크립트 정지 후 수동 배치). 구역 간 트임을 한 컷에 담기 위함.
 	var _open := {
@@ -400,6 +419,7 @@ const C_WOOD  := Color(0.590, 0.480, 0.362)  # 브라운 — 목재
 const C_ROAD  := Color(0.700, 0.619, 0.476)  # 흙길 — 파스텔 모래빛
 const C_ROAD_E := Color(0.720, 0.673, 0.590)  # 길 가장자리 — 풀로 옅어지는 톤(같은 hue, 채도만 낮춤)
 const C_STONE := Color(0.770, 0.758, 0.735)  # 석재 회 — 다리/계단/분수
+const C_DRESSED := Color(0.700, 0.688, 0.667)  # 다듬돌(갓돌·이맛돌) — 같은 hue 한 단 아래
 const C_GREEN := Color(0.652, 0.710, 0.494)  # 그린 — 언덕(수평면이라 0.72 이하로 묶는다)
 const C_WATER := Color(0.50, 0.72, 0.85)  # 물 — 강(연못과 통일). 승인 색 = 파스텔 시프트 예외.
 const C_WIST  := Color(0.720, 0.649, 0.790)  # 등나무 보라 — 퍼걸러
@@ -658,20 +678,63 @@ func _river_dir_at(p: Vector2) -> float:
 			best = atan2(ab.x, ab.y)
 	return best
 
-# 석조 아치 다리: 강 수직(perp)으로 데크가 채널을 가로지름. 데크·난간·교각 무충돌(통행=벽 gap).
+# 석조 아치 다리: 강 수직으로 데크가 채널을 가로지름. 전부 무충돌(통행 = 강 충돌벽의 다리 gap).
+# 로컬 프레임(holder에 rotation.y=ang): +X = 강을 가로지름, +Z = 흐름 방향, 원점 = 다리 중심.
+#
+# 통행 계약 불변:
+#  · 데크 박스(6×0.3×3, 중심 y=0.75 → 상면 0.9)는 값까지 그대로다 — npc_system.DECK_Y=0.9 파생.
+#  · 중앙 통로 z∈(-1.3,1.3)엔 아무것도 새로 넣지 않는다. 다리엔 충돌이 없어 플레이어·NPC는
+#    데크 아래 지면 높이로 지나간다 — 아치 구조를 통로에 채우면 캐릭터가 돌 속에 파묻힌다.
+#    그래서 아치는 양 측벽(스팬드럴)에만 뚫고, 가운데는 예전처럼 비워 둔다.
+#  · 충돌체 0 유지(CSGShape3D.use_collision 기본 false).
+const ARCH_R := 3.5     # 아치 원 반지름 — 크면 완만한 세그먼트 아치. 데크 밑(0.6) 안에 들어가야 한다.
+const ARCH_CY := -2.90  # 아치 원 중심 y (관정 = ARCH_CY + ARCH_R = 0.60 = 데크 밑면, 스프링 = 지면 y0)
+const ARCH_N := 11      # 홍예석(voussoir) 개수 — 아치 곡선을 두르는 다듬돌
+
 func _arch_bridge(parent: Node, at: Vector2, ang: float) -> void:
-	var flow := Vector2(sin(ang), cos(ang))       # 강 흐름 방향(로컬+Z)
-	var perp := Vector2(cos(ang), -sin(ang))      # 가로지르는 방향(로컬+X)
-	var deck := _box(parent, Vector3(at.x, 0.75, at.y), Vector3(6, 0.3, 3), C_STONE, 0.004)
-	deck.rotation.y = ang                          # X=6 가로지름(폭 확보), Z=3 보도폭
-	for s in [1.0, -1.0]:                           # 난간(흐름 방향 양측)
-		var rc: Vector2 = at + flow * (1.5 * s)
-		var rail := _box(parent, Vector3(rc.x, 1.05, rc.y), Vector3(6, 0.5, 0.2), C_STONE, 0.004)
-		rail.rotation.y = ang
-	for s in [1.0, -1.0]:                           # 교각(가로 양끝)
-		var pc: Vector2 = at + perp * 3.0 * s
-		var pier := _box(parent, Vector3(pc.x, 0.4, pc.y), Vector3(1.2, 0.8, 3), C_STONE, 0.004)
-		pier.rotation.y = ang
+	var h := Node3D.new()
+	h.position = Vector3(at.x, 0, at.y)
+	h.rotation.y = ang
+	parent.add_child(h)
+	# 데크(보도) — 위치·크기 불변, 재질만 석조 벽돌 패턴으로.
+	_box(h, Vector3(0, 0.75, 0), Vector3(6, 0.3, 3), C_STONE, 0.0).material_override = _bridge_mat()
+	# 아치 측벽 2장 − 원기둥 = 단경간 세그먼트 아치(관정 y=0.60 = 데크 밑면, 스프링 ±1.96).
+	# 수면(폭3.0·상면0.23) 위로 3.13 트인다. 벽 밑(-0.1)은 지면에 묻혀 접지로 읽힌다.
+	var arch := CSGCombiner3D.new()
+	for s in [1.0, -1.0]:
+		var w := CSGBox3D.new()
+		w.size = Vector3(6, 1.0, 0.25)
+		w.position = Vector3(0, 0.4, 1.425 * s)
+		arch.add_child(w)
+	var cut := CSGCylinder3D.new()
+	cut.radius = ARCH_R
+	cut.height = 3.4          # 측벽 두 장을 한 번에 관통
+	cut.sides = 64            # 곡선이 각지지 않게
+	cut.rotation.x = PI * 0.5  # 축을 흐름 방향으로 = 아치가 강을 가로질러 뚫린다
+	cut.position = Vector3(0, ARCH_CY, 0)
+	cut.operation = CSGShape3D.OPERATION_SUBTRACTION
+	arch.add_child(cut)
+	arch.material_override = _bridge_mat()
+	h.add_child(arch)
+	for s in [1.0, -1.0]:
+		# 난간(파라펫) — 예전 난간(z 1.40~1.60, 상단 1.30)과 발자국이 같다: 데크 상면을 더
+		# 잠식하지 않고, decor.gd 등나무 앵커(z=±1.5, y=1.32)도 그대로 난간 위에 얹힌다.
+		_box(h, Vector3(0, 1.035, 1.5 * s), Vector3(6, 0.27, 0.20), C_STONE, 0.0).material_override = _bridge_mat()
+		# 갓돌·이맛돌은 벽돌 패턴 없는 다듬돌(민면). C_STONE 그대로면 정오 직광에서 흰색으로
+		# 포화해 벽돌면과 붙는다(실측) — 한 단 낮춰야 매끈한 돌로 읽힌다.
+		var cap := _cyl(h, Vector3(0, 1.17, 1.5 * s), 0.13, 6.1, C_DRESSED, 0.004)  # 둥근 갓돌(상단 1.30)
+		cap.rotation.z = PI * 0.5
+		# 홍예석(voussoir) 링 — 아치 곡선을 다듬돌로 두른다. 개구부가 낮고 넓어(수면 위 높이 0.37)
+		# 곡선만으론 슬릿처럼 읽혔다(실측) — 컨셉아트 "강가 다리"처럼 링이 있어야 아치로 보인다.
+		# 통로(z<1.3) 침범 금지 — 측벽 두께 안에만 두고 바깥으로 0.05 튀어나온다.
+		# 링은 채널(강둑 사이 |x|<1.6)까지만 — 그 밖은 강둑(높이 0.7)에 묻혀 떠 있는 돌로 보인다(실측).
+		var th_max := asin(1.6 / (ARCH_R + 0.1))
+		for i in ARCH_N:
+			var th := lerpf(-th_max, th_max, i / float(ARCH_N - 1))
+			var key := i == ARCH_N / 2  # 가운데 = 이맛돌(키스톤), 한 단 크게
+			var v := _box(h, Vector3(sin(th) * (ARCH_R + 0.1), ARCH_CY + cos(th) * (ARCH_R + 0.1), 1.45 * s),
+				Vector3(0.36, 0.30 if key else 0.20, 0.30), C_DRESSED, 0.004)
+			v.rotation.z = -th  # 로컬 +Y가 원 중심 반대 방향(=반경 방향)을 향하게
 
 func _windmill_hill(parent: Node) -> void:
 	# 풍차 언덕(북동, 강 건너 — 북동 다리로 접근): 대지 4×4 피벗(29,-24) 전고2.5 + 램프(~17°) + 풍차.
