@@ -30,6 +30,9 @@ const C_LAV    := Color(0.56, 0.43, 0.69)  # 라벤더/보라 중 #8E6DB0
 const C_LILAC  := Color(0.79, 0.65, 0.79)  # 라일락 #C9A6C9
 const C_WIST   := Color(0.62, 0.50, 0.74)  # 등나무 보라
 const C_GLASS  := Color(1.00, 0.90, 0.62)  # 가로등 유리(옐로 창불빛)
+# 서리 앉은 마른 풀. 눈 지면(world.gd C_SNOW 0.67~0.76)보다 확실히 아래여야 실루엣이 읽힌다 —
+# 비슷한 값으로 두면 흰 바탕에 흰 낙서가 되어 풀포기가 사라진다(실측).
+const C_FROST  := Color(0.48, 0.54, 0.56)
 
 # Kenney 머티리얼 이름 → 마을 팔레트. 없는 이름은 원본색 유지 + 로그로 알린다.
 const MAT_COLORS := {
@@ -144,6 +147,7 @@ var _bridges: Array[Vector2] = []
 var _roads: Array = []  # [Vector2 a, Vector2 b]
 
 func build(river_pts: Array, bridges: Array, roads: Array) -> void:
+	add_to_group("decor")  # world.gd _apply_season이 계절 전환·로드 때 호출
 	for p in river_pts:
 		_river.append(p)
 	for b in bridges:
@@ -468,6 +472,35 @@ func _add_flora(buckets: Dictionary, at: Vector2, rng: RandomNumberGenerator, ki
 		t = t.rotated(Vector3.UP, rng.randf() * TAU)
 		t.origin = Vector3(p.x, GROUND_Y, p.y)
 		(buckets[nm] as Array).append(t)
+
+# ══ 겨울 식생 (계절 파생 — 저장 없음, transform 재빌드 없음) ═══════
+# 꽃(개나리·라벤더)은 겨울에 숨긴다: 눈 지면 위에 만개한 꽃이 계절 감각을 통째로 깬다.
+# 풀·덤불은 숨기는 대신 서리톤으로 남긴다 — 통째로 지우면 마을이 민짜 눈판이 되고
+# 길가 띠·광장 화단 링·강변의 밀도와 실루엣이 같이 사라진다(꽃만 빼도 계절은 읽힌다).
+# 나무(Forest_*)는 손대지 않는다 — 침엽수가 겨울 실루엣을 이미 지고 있다.
+const WINTER := 3
+const FLORA_HIDE_WINTER := ["Flora_flower_yellowA", "Flora_flower_purpleA"]
+
+static func flora_visible(nm: String, season: int) -> bool:
+	return not (season == WINTER and nm in FLORA_HIDE_WINTER)
+
+static func flora_frosted(nm: String, season: int) -> bool:
+	return season == WINTER and nm.begins_with("Flora_") and flora_visible(nm, season)
+
+# world.gd _apply_season이 계절 전환 신호 + 로드 직후에 부른다(축제 evaluate와 같은 규약).
+func apply_season(sea: int) -> void:
+	for c in get_children():
+		var mmi := c as MultiMeshInstance3D
+		if mmi == null:
+			continue
+		var nm := String(mmi.name)
+		if not nm.begins_with("Flora_"):
+			continue
+		mmi.visible = flora_visible(nm, sea)
+		# 색은 MultiMeshInstance3D의 material_override로만 바꾼다. MultiMesh의 Mesh 표면
+		# 머티리얼을 고쳐 쓰면 같은 GLB를 쓰는 개별 소품(화분 꽃·꽃수레)과 리소스를 공유할
+		# 위험 + 원색 복구용 백업 보관까지 딸려온다. override는 null로 지우면 원색이 돌아온다.
+		mmi.material_override = ToonChar.make_solid(C_FROST, OUTLINE) if flora_frosted(nm, sea) else null
 
 # ══ 숲 띠 (경계 |x| 또는 |z| ∈ [34,40] 저밀도, 실나무 GLB MultiMesh) ══
 func _place_forest() -> void:

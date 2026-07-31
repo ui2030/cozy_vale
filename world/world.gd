@@ -23,6 +23,7 @@ func _ready() -> void:
 	_build_village()        # 마을 P1 컬러박스 (임시 지오메트리, make_solid=곡면 툰)
 	_convert_statics(self)  # tscn 정적 물체(바닥·기능물)를 곡면 툰으로 통일
 	_water_audio()          # 물가 3D 앰비언스 (연못·분수·강)
+	GameClock.season_changed.connect(func(_prev: int, sea: int) -> void: _apply_season(sea))
 	if not SaveManager.load_game():
 		print("새 게임 시작")
 	# 스크린샷 검증용 강제 축제: `-- festival [계절]` (계절 생략 = spring, 기존 호출 그대로).
@@ -182,17 +183,45 @@ func _ready() -> void:
 			else:
 				pbe.global_position = Beach.B_SPAWN
 				pbe._face_dir(Beach.FACE_N)
-	# 날씨 검증: -- weather rain|clear. 날씨는 abs_day 결정적이라 강제 스위치를 두는 대신
-	# 원하는 날씨의 첫 봄날로 시계를 옮긴다(실제 판정 함수를 그대로 통과 — 프로덕션 코드에 테스트 훅 0).
+	# 날씨 검증: -- weather rain|snow|clear. 날씨는 abs_day 결정적이라 강제 스위치를 두는 대신
+	# 원하는 날씨의 첫 날로 시계를 옮긴다(실제 판정 함수를 그대로 통과 — 프로덕션 코드에 테스트 훅 0).
+	# snow = 같은 강수 판정을 겨울에서 찾는다(weather.gd가 겨울이면 눈으로 그린다).
 	var _wi := _args.find("weather")
 	if _wi != -1 and _wi + 1 < _args.size():
 		SaveManager.set_process(false)  # 세이브 미변경
-		var want: bool = _args[_wi + 1] == "rain"
-		for d in 28:  # 봄 안에서 (계절 고사·채집 풀 영향 없이)
-			if GameData.is_rainy(d) == want:
-				GameClock.abs_day = d
+		var wv: String = _args[_wi + 1]
+		if not wv in ["rain", "snow", "clear"]:  # 오타가 조용히 "강수"로 새면 엉뚱한 컷이 찍힌다
+			push_warning("weather 하네스: 모르는 값 '%s' — rain|snow|clear" % wv)
+		var want: bool = wv != "clear"
+		var base: int = WINTER * GameClock.DAYS_PER_SEASON if wv == "snow" else 0
+		for d in GameClock.DAYS_PER_SEASON:  # 한 계절 안에서 (rain/clear는 기존대로 봄)
+			if GameData.is_rainy(base + d) == want:
+				GameClock.abs_day = base + d
 				break
 		print("weather shot: abs_day=", GameClock.abs_day, " rainy=", GameData.is_rainy(GameClock.abs_day))
+	# 계절 검증: -- season <계절>. 그 계절의 첫 "맑고 축제 아닌" 날로 옮긴다(지면·식생만 보이게).
+	var _si := _args.find("season")
+	if _si != -1 and _si + 1 < _args.size() and _args[_si + 1] in GameData.SEASON_IDS:
+		SaveManager.suspended = true  # 시계를 옮기므로 유저 세이브 보호(festival 하네스와 같은 정책)
+		var sid: String = _args[_si + 1]
+		var sb: int = GameData.SEASON_IDS.find(sid) * GameClock.DAYS_PER_SEASON
+		for d in GameClock.DAYS_PER_SEASON:
+			if not GameData.is_rainy(sb + d) and GameData.festival_on(sid, d + 1).is_empty():
+				GameClock.abs_day = sb + d
+				break
+		print("season shot: ", sid, " abs_day=", GameClock.abs_day)
+	# 시계를 옮기는 하네스(festival·wedding·weather·season)와 세이브 로드를 전부 지난 뒤 1회 —
+	# from_dict는 신호를 안 쏘므로 여기서 계절 표현(지면 눈 톤·식생)을 명시 재평가한다.
+	_apply_season(GameClock.season())
+	# 채집물 검증: -- forage. 좌표를 복제하지 않고 실제로 스폰된 첫 채집물 옆에 선다.
+	if "forage" in _args:
+		await get_tree().process_frame  # forage_system의 _respawn.call_deferred 완료 대기
+		var fa := get_tree().get_first_node_in_group("forage") as Area3D
+		var pfo := get_tree().get_first_node_in_group("player")
+		if fa != null and pfo != null:
+			# 남동쪽으로 비켜 선다 — 정남에 서면 채집물이 캐릭터 몸통에 완전히 가린다(실측).
+			pfo.global_position = fa.global_position + Vector3(1.0, 0.6, 1.0)
+			pfo._face_dir(Vector3(-1, 0, -1))
 	# 낮밤 검증: -- hour N (시계를 N시로 강제, PAUSED 고정 → FAST shot 흐름과 분리). 세이브 미변경.
 	var _hi := _args.find("hour")
 	if _hi != -1 and _hi + 1 < _args.size():
@@ -200,7 +229,7 @@ func _ready() -> void:
 		GameClock.game_min = int(_args[_hi + 1]) * 60
 		GameClock.state = GameClock.State.PAUSED
 		var ph := get_tree().get_first_node_in_group("player")
-		if ph != null and not "interior" in _args and not "beach" in _args:  # 세이브 무관하게 광장 조망으로 고정
+		if ph != null and not "interior" in _args and not "beach" in _args and not "forage" in _args:  # 세이브 무관하게 광장 조망으로 고정
 			ph.global_position = Vector3(0, 2, -3.5)
 		if "spouse" in _args:  # 시각 확정 뒤에 기혼화 — 배우자 실내 배치는 시각(place_at) 파생이다
 			var nsp := get_tree().get_first_node_in_group("npc_system")
@@ -288,8 +317,11 @@ func _shot_hour(hn: int) -> void:
 	var img := get_viewport().get_texture().get_image()
 	var args := OS.get_cmdline_user_args()
 	var wi := args.find("weather")
+	var oi := args.find("out")
 	var rel := "daynight/hour_%02d.png" % hn
-	if "interior" in args:  # 실내 샷은 별도 폴더로 (배우자·문 컷은 파일명 접두로 구분)
+	if oi != -1 and oi + 1 < args.size():  # -- out <상대경로>가 있으면 최우선 (_shot 전례)
+		rel = args[oi + 1]
+	elif "interior" in args:  # 실내 샷은 별도 폴더로 (배우자·문 컷은 파일명 접두로 구분)
 		var pre := ("spouse_" if "spouse" in args else "") + ("door_" if "door" in args else "")
 		rel = "interior/%shour_%02d.png" % [pre, hn]
 	elif "beach" in args:   # 해변 샷 (게이트·오두막·구석·물가 컷은 파일명 접두로 구분)
@@ -346,6 +378,14 @@ const C_STONE := Color(0.72, 0.70, 0.66)  # 석재 회 — 다리/계단/분수
 const C_GREEN := Color(0.58, 0.66, 0.36)  # 그린 — 언덕
 const C_WATER := Color(0.50, 0.72, 0.85)  # 물 — 강(연못과 통일)
 const C_WIST  := Color(0.62, 0.50, 0.74)  # 등나무 보라 — 퍼걸러
+# 지면(world.tscn Ground/GroundMesh) 계절색. 초록은 tscn 원본값과 같아야 한다(비겨울=무변경).
+const C_GRASS := Color(0.62, 0.80, 0.52)  # 초지 — world.tscn ground_mat albedo
+# 눈: 순백 금지. 툰 라이팅(태양1.0 + 환경광0.55)이 albedo를 ~3.3배로 올려 화면에 낸다 —
+# 실측(정오 초지 albedo 0.62 → 화면 212). albedo 0.76을 넘기면 지면이 255로 클리핑돼
+# 음영·곡률이 통째로 날아가고 크림색 하늘과 지평선에서 붙어버린다.
+# 0.71/0.73/0.76 → 화면 ~(238,244,254): 밝되 클리핑 직전, 청기가 남아 설원으로 읽힌다.
+# (청기를 더 주면 설원이 아니라 언 호수로 보인다 — R/G/B 간격을 좁게 유지할 것.)
+const C_SNOW  := Color(0.71, 0.73, 0.76)
 
 func _build_village() -> void:
 	var v := Node3D.new()
@@ -610,5 +650,23 @@ func _windmill_hill(parent: Node) -> void:
 	_box(parent, Vector3(px, top + 3.9, pz), Vector3(2.6, 0.5, 2.6), C_ROOF)
 	_box(parent, Vector3(px, top + 2.6, pz - 1.2), Vector3(0.4, 4.0, 0.35), C_WOOD, 0.004)  # 날개 세로
 	_box(parent, Vector3(px, top + 2.6, pz - 1.2), Vector3(4.0, 0.4, 0.35), C_WOOD, 0.004)  # 날개 가로
+
+# ══ 계절 표현 (지면 톤 + 식생) ═════════════════════════════════════
+# 조명(day_night.gd 키프레임)은 건드리지 않는다 — 승인된 룩. 계절은 지면색과 식생으로만 읽힌다.
+# 광장 판석은 석재로 둔다(쓸어놓은 광장 = 축제 바닥이 계속 읽힌다), 해변 모래도 무변경.
+const WINTER := 3
+
+# 순수 함수: 계절 인덱스 → 지면 albedo (test_core 단위검증, 노드 불필요)
+static func ground_color(season: int) -> Color:
+	return C_SNOW if season == WINTER else C_GRASS
+
+# 계절 상태 재적용. 신호가 없는 경로(세이브 로드·하네스의 시계 이동)에서도 한 번 명시 호출한다
+# — festival_system의 "로드 후 evaluate" 전례와 같은 규약.
+func _apply_season(sea: int) -> void:
+	var gm := get_node_or_null("Ground/GroundMesh") as MeshInstance3D
+	var m := (gm.material_override if gm != null else null) as ShaderMaterial
+	if m != null:  # _convert_statics가 tscn의 StandardMaterial3D를 툰 ShaderMaterial로 바꿔 둔 뒤
+		m.set_shader_parameter("albedo", ground_color(sea))
+	get_tree().call_group("decor", "apply_season", sea)
 
 # 마을 경계 숲 띠(|x| 또는 |z| ∈ [34,40])는 P3에서 실나무 GLB MultiMesh로 이관 — decor.gd _place_forest.

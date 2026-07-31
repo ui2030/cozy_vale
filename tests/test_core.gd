@@ -42,6 +42,7 @@ func _ready() -> void:
 	_test_fishing_judge()
 	_test_pick_fish()
 	_test_forage_rare()
+	_test_winter_pass()
 	_test_collection_roundtrip()
 	_test_daynight()
 	_test_ambience_curve()
@@ -879,6 +880,64 @@ func _test_forage_rare() -> void:
 	# 원거리지만 밴드 밖: (9500/100)%100=95 → 일반
 	assert(FS.pick_rare(true, 9500, ["forage.morel"]) == "", "원거리라도 밴드밖 → 일반")
 	assert(GameData.forage["forage.morel"].get("rare", false), "morel = 희귀 플래그")
+
+# ── 겨울 표현 패스: 채집물 2종 + 지면/식생 계절 파생 ────────────────
+func _test_winter_pass() -> void:
+	# ── 겨울 채집물 2종: 겨울에 작물이 0인 계절이라 요리 재료 접근을 이쪽이 연다.
+	var win := GameData.season_filter(GameData.forage, "winter")
+	assert(win.size() == 2, "겨울 채집물 2종 (실제 %d: %s)" % [win.size(), str(win)])
+	for fid in win:
+		var d: Dictionary = GameData.forage[fid]
+		assert(d["seasons"] == ["winter"], "%s 겨울 전용 (실제 %s)" % [fid, str(d["seasons"])])
+		assert(GameData.is_collectible(fid), "%s 도감·판매 대상" % fid)
+		# 기존 봄 채집물 대역(20~90) 안 — 겨울 유일 산출이라 봄 하위종보단 비싸게
+		var sp := GameData.sell_price(fid)
+		assert(sp >= 35 and sp <= 90, "%s 판매가 대역 밖: %d" % [fid, sp])
+		assert(not d.get("rare", false), "%s — 겨울 풀엔 희귀 없음(원거리도 일반 스폰)" % fid)
+	# 다른 계절 오염 없음 (봄 4종 유지 / 여름·가을은 채집물 없음 = 기존 동작)
+	assert(GameData.season_filter(GameData.forage, "spring").size() == 4, "봄 채집물 4종 유지")
+	for s in ["summer", "autumn"]:
+		assert(GameData.season_filter(GameData.forage, s).is_empty(), "%s 채집물 무변경(0종)" % s)
+
+	# ── 리스폰 결정성: 같은 겨울날 두 번 = 같은 배치 (씬 트리 없이 _respawn 직접 호출)
+	var fs: Node = preload("res://forage/forage_system.gd").new()
+	GameClock.abs_day = 3 * GameClock.DAYS_PER_SEASON + 5  # 겨울 6일차
+	assert(GameData.season_id(GameClock.season()) == "winter", "전제: 겨울")
+	fs._respawn()
+	var snap_a := _forage_snapshot(fs)
+	fs._respawn()
+	var snap_b := _forage_snapshot(fs)
+	assert(not snap_a.is_empty(), "겨울날에 채집물이 실제로 스폰 (%d)" % snap_a.size())
+	assert(snap_a == snap_b, "겨울 채집 배치 비결정적\n  %s\n  %s" % [str(snap_a), str(snap_b)])
+	for e in snap_a:
+		assert(e[1] in win, "겨울에 비겨울 채집물 스폰: %s" % str(e[1]))
+	fs.free()
+
+	# ── 지면·식생 계절 파생 (순수 함수 — 노드·렌더 없이 검증)
+	var W := preload("res://world/world.gd")
+	var D := preload("res://world/decor.gd")
+	assert(W.ground_color(3) == W.C_SNOW, "겨울 지면 = 눈 톤")
+	assert(W.C_SNOW.r < 1.0 and W.C_SNOW.b > W.C_SNOW.r, "눈 톤 = 순백 아닌 차가운 근백색")
+	for s in 3:
+		assert(W.ground_color(s) == W.C_GRASS, "계절 %d 지면 무변경(초지)" % s)
+	for nm in ["Flora_flower_yellowA", "Flora_flower_purpleA"]:
+		assert(not D.flora_visible(nm, 3), "%s 겨울엔 숨김" % nm)
+		for s in 3:
+			assert(D.flora_visible(nm, s), "%s 계절 %d엔 보임" % [nm, s])
+	for nm in ["Flora_grass", "Flora_plant_bushSmall"]:
+		assert(D.flora_visible(nm, 3) and D.flora_frosted(nm, 3), "%s 겨울엔 서리톤으로 남음" % nm)
+		for s in 3:
+			assert(not D.flora_frosted(nm, s), "%s 계절 %d엔 원색" % [nm, s])
+	assert(not D.flora_frosted("Forest_tree_pineTallA", 3), "나무는 겨울에도 무변경(침엽 실루엣)")
+
+# 채집 배치 스냅샷 [위치, forage_id] — _clear()가 queue_free 하므로 다음 _respawn 전에 뜬다.
+func _forage_snapshot(fs: Node) -> Array:
+	var out := []
+	for r in fs._roots:
+		for c in r.get_children():
+			if c is Area3D:
+				out.append([(r as Node3D).position, String(c.get_meta("forage_id"))])
+	return out
 
 func _test_collection_roundtrip() -> void:
 	# 실제 player 스크립트로 도감 발견 → 저장 → 로드 유지 (스텁엔 도감 없음).

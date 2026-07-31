@@ -10,5 +10,11 @@
 	},
 	"forage.morel": {
 		"name": "Morel", "seasons": ["spring"], "sell_price": 90, "rare": true
+	},
+	"forage.winter_root": {
+		"name": "Winter Root", "seasons": ["winter"], "sell_price": 40
+	},
+	"forage.snow_berry": {
+		"name": "Snow Berry", "seasons": ["winter"], "sell_price": 50
 	}
 }
