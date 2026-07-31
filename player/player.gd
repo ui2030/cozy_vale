@@ -177,10 +177,13 @@ func _use_tool() -> void:
 			Sfx.play("water")
 		return
 	if not t.is_empty() and t.get("crop_id", "") == "":
-		if selected_seed != "" and count(selected_seed) > 0:  # 갈아엎음 + 씨앗 → 심기
-			if _farm.plant(cell, selected_seed):
-				_remove_item(selected_seed, 1)
+		var sid := active_seed()
+		if sid != "" and count(sid) > 0:  # 갈아엎음 + 씨앗 → 심기
+			if _farm.plant(cell, sid):
+				_remove_item(sid, 1)
 				Sfx.play("plant")
+			else:  # 빈 타일이 확인된 뒤라 실패 사유는 계절뿐 (씨앗은 소모되지 않음)
+				message.emit("지금 계절엔 심을 수 없어요")
 		return
 	if _farm.till(cell):  # 맨땅 → 괭이질
 		Sfx.play("hoe")
@@ -315,19 +318,25 @@ func _sleep() -> void:
 		SaveManager.request_save("sleep")
 
 func _buy_seed() -> void:
-	if selected_seed == "":
-		return
 	if GameClock.weekday() == 6:  # 일요일 휴무
 		message.emit("Shop closed (Sun)")
 		return
-	var cost := GameData.seed_cost(selected_seed)
-	if gold >= cost:
-		gold -= cost
-		_add_item(selected_seed, 1)
-		Sfx.play("coin")
-		message.emit("Bought " + GameData.display_name(GameData.crop_from_seed(selected_seed)) + " seed")
-	else:
+	var stock := GameData.season_seed_ids(GameData.season_id(GameClock.season()))
+	if stock.is_empty():  # 겨울 = 씨앗 재고 0 (설계상 낚시·채집의 계절)
+		message.emit("이번 계절엔 씨앗을 팔지 않아요")
+		return
+	var sid := active_seed()
+	if not sid in stock:  # 철 지난 보유 씨앗을 든 채 상점에 온 경우
+		message.emit("이번 계절 씨앗만 팔아요 (Q로 전환)")
+		return
+	var cost := GameData.seed_cost(sid)
+	if gold < cost:
 		message.emit("골드 부족")
+		return
+	gold -= cost
+	_add_item(sid, 1)
+	Sfx.play("coin")
+	message.emit("Bought " + GameData.display_name(GameData.crop_from_seed(sid)) + " seed")
 
 # 프러포즈 아이템 구매 (가방 패널 버튼 → 여기). 씨앗 구매와 같은 상점 규칙(휴무·골드).
 # 씨앗 순환·선택 집합엔 넣지 않는다 — 반지는 all_seed_ids 밖의 단일 아이템.
@@ -402,16 +411,35 @@ func select_seed(id: String) -> void:
 	selected_seed = id
 	stats_changed.emit()
 
+# Q 순환·가방 패널 공용 집합: 보유(>0) 씨앗 ∪ 이번 계절 상점 재고.
+# 12종을 통째로 돌리면 소음이라 "지금 쓸 수 있는 것"만 남긴다. 철 지난 보유 씨앗은
+# 재고엔 없어도 남아 있으니 순환·패널 양쪽에 계속 보인다(재고 확인 가능).
+func cycle_seeds() -> Array:
+	var stock := GameData.season_seed_ids(GameData.season_id(GameClock.season()))
+	var out := []
+	for sid in GameData.all_seed_ids():  # 정렬 단일 출처
+		if sid in stock or count(sid) > 0:
+			out.append(sid)
+	return out
+
+# 실제로 적용되는 선택 씨앗. 계절이 바뀌어 선택이 순환 집합 밖으로 밀리면 첫 후보로 스냅해서
+# 읽는 쪽(HUD·상점·심기·패널 강조)을 통일한다 — selected_seed(저장 표면)는 건드리지 않는다.
+func active_seed() -> String:
+	var seeds := cycle_seeds()
+	if seeds.is_empty():  # 겨울 무보유 = 고를 씨앗 자체가 없음
+		return ""
+	return selected_seed if selected_seed in seeds else seeds[0]
+
 func _select_first_seed() -> void:
-	var seeds := GameData.all_seed_ids()
+	var seeds := cycle_seeds()
 	if seeds.size() > 0:
 		selected_seed = seeds[0]
 
 func _cycle_seed() -> void:
-	var seeds := GameData.all_seed_ids()
+	var seeds := cycle_seeds()
 	if seeds.is_empty():
 		return
-	var i := seeds.find(selected_seed)
+	var i := seeds.find(active_seed())  # 스냅된 자리 다음으로 — 계절 바뀐 뒤 첫 Q가 제자리 걸음 안 함
 	selected_seed = seeds[(i + 1) % seeds.size()]
 	stats_changed.emit()
 

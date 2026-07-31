@@ -45,7 +45,8 @@ func plant(cell: Vector2i, seed_id: String) -> bool:
 	if t.is_empty() or t.get("crop_id", "") != "":
 		return false
 	var cid := GameData.crop_from_seed(seed_id)
-	if cid == "":
+	# 철 지난 씨앗은 심는 순간 막는다 — 심으면 다음 아침 _season_deaths가 조용히 없애 씨앗만 증발한다.
+	if cid == "" or not GameData.crop_in_season(cid, GameData.season_id(GameClock.season())):
 		return false
 	t["crop_id"] = cid
 	t["planted_abs_day"] = GameClock.abs_day
@@ -118,13 +119,19 @@ func _season_deaths() -> void:
 	for cell in tiles:
 		var t: Dictionary = tiles[cell]
 		if t.get("crop_id", "") != "":
-			var seasons: Array = GameData.crops[t["crop_id"]].get("seasons", [])
-			if not seasons.has(sn):
+			if not GameData.crop_in_season(t["crop_id"], sn):
 				t["crop_id"] = ""
 				t["watered_growth_days"] = 0
 				t["planted_abs_day"] = -1
 
 # ── 시각화 ─────────────────────────────────────────────────────
+const SPROUT := Color(0.35, 0.62, 0.28)   # 새싹 = 전 작물 공통 출발색
+const RIPE_FALLBACK := Color(0.85, 0.75, 0.25)  # color 필드 없는 작물(구데이터) 기본 열매색
+
+func crop_color(crop_id: String) -> Color:
+	var c: Array = GameData.crops.get(crop_id, {}).get("color", [])
+	return Color(c[0], c[1], c[2]) if c.size() == 3 else RIPE_FALLBACK
+
 func _refresh(cell: Vector2i) -> void:
 	var t: Dictionary = tiles.get(cell, {})
 	if t.is_empty():
@@ -150,7 +157,8 @@ func _refresh(cell: Vector2i) -> void:
 		crop.scale = Vector3(1, frac, 1)
 		crop.position = _center(cell) + Vector3(0, 0.11 + 0.35 * frac, 0)  # 밑면 접지
 		var cm: ShaderMaterial = crop.material_override
-		cm.set_shader_parameter("albedo", Color(0.85, 0.75, 0.25) if is_mature_at(cell) else Color(0.35, 0.62, 0.28))
+		var ripe := crop_color(cid)  # 다 자란 색은 작물별(crops.json) — 12종을 밭에서 구분
+		cm.set_shader_parameter("albedo", ripe if is_mature_at(cell) else SPROUT.lerp(ripe, frac))
 
 func _make_nodes(cell: Vector2i) -> Dictionary:
 	var soil := MeshInstance3D.new()

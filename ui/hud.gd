@@ -55,6 +55,9 @@ func _refresh() -> void:
 		WD_EN[c.weekday()], c.hour(), c.minute(),
 	]
 	if _player != null:
-		var seed_name := GameData.display_name(GameData.crop_from_seed(_player.selected_seed))
-		line += "    Gold: %d    Seed: %s x%d" % [_player.gold, seed_name, _player.count(_player.selected_seed)]
+		var sid: String = _player.active_seed()  # 계절 밖 선택은 스냅된 값으로 표시
+		var seed_txt := "-" if sid == "" else "%s x%d" % [
+			GameData.display_name(GameData.crop_from_seed(sid)), _player.count(sid),
+		]
+		line += "    Gold: %d    Seed: %s" % [_player.gold, seed_txt]
 	_label.text = line

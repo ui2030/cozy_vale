@@ -23,6 +23,7 @@ func _ready() -> void:
 	_test_bak_fallback()
 	_test_migration_v1_v2()
 	_test_farm_loop()
+	_test_crops_h1()
 	_test_npc()
 	_test_npc_roster()
 	_test_wander()
@@ -120,6 +121,7 @@ func _clear_run(n: int) -> int:
 func _test_farm_loop() -> void:
 	GameClock.abs_day = _clear_run(6)  # 이 테스트는 수동 물주기 경로 — 맑은 구간에서만 유효
 	assert(GameClock.abs_day >= 0, "봄에 맑은 6일 연속 구간이 없음 (RAIN_PCT 재조정 필요)")
+	assert(GameData.season_id(GameClock.season()) == "spring", "전제: 봄(계절 밖 씨앗은 심기가 거부됨)")
 	GameClock.game_min = 360
 	var cell := Vector2i(1, 3)
 	assert(_farm.till(cell), "괭이질")
@@ -142,6 +144,136 @@ func _test_farm_loop() -> void:
 	var before := int(_farm.get_tile(c2)["watered_growth_days"])
 	GameClock.sleep_to_morning()  # 물 안 줌
 	assert(int(_farm.get_tile(c2)["watered_growth_days"]) == before, "물 안 주면 성장 정지")
+
+# ── H-1: 작물 12종 (봄4·여름4·가을4·겨울0) ──────────────────────
+# 28일 계절에 밭 한 칸이 내는 gold/day. 단발 작물은 즉시 재파종, 재수확 작물은 regrow 주기로 계산.
+# 밸런스 대역이 데이터로만 유지되도록 게임 코드가 아니라 테스트에 둔다(런타임은 이 값을 안 쓴다).
+func _gold_per_day(d: Dictionary) -> float:
+	var season := GameClock.DAYS_PER_SEASON
+	var grow := int(d["grow_days"])
+	var regrow := int(d.get("regrow_days", 0))
+	var sell := int(d["sell_price"])
+	var cost := int(d["seed_cost"])
+	if regrow > 0:
+		var harvests := 1 + maxi(0, (season - grow) / regrow)
+		return float(harvests * sell - cost) / float(season)
+	var cycles := season / grow
+	return float(cycles * (sell - cost)) / float(season)
+
+func _test_crops_h1() -> void:
+	# ── 데이터 정합: 종수·계절 분포·겨울 공백(설계)·색 구분
+	assert(GameData.crops.size() == 12, "작물 12종 (실제 %d)" % GameData.crops.size())
+	assert(GameData.season_seed_ids("spring").size() == 4, "봄 씨앗 4종")
+	assert(GameData.season_seed_ids("summer").size() == 4, "여름 씨앗 4종")
+	assert(GameData.season_seed_ids("autumn").size() == 5, "가을 씨앗 5종(가을 전용 4 + 두 계절 corn)")
+	assert(GameData.season_seed_ids("winter").is_empty(), "겨울 = 씨앗 없음(설계: 낚시·채집의 계절)")
+	assert(GameData.crop_in_season("crop.corn", "summer") and GameData.crop_in_season("crop.corn", "autumn"),
+		"corn = 여름·가을 두 계절 작물")
+	var colors := {}
+	for cid in GameData.crops:
+		var c: Array = GameData.crops[cid].get("color", [])
+		assert(c.size() == 3, "%s color 없음(밭에서 구분 불가)" % cid)
+		var key := "%.2f,%.2f,%.2f" % [c[0], c[1], c[2]]
+		assert(not colors.has(key), "성장 단계 색 중복: %s ↔ %s" % [cid, str(colors.get(key))])
+		colors[key] = cid
+		# 씨앗 ↔ 작물 왕복 (참조 무결성은 GameData._validate가 보지만 신규 8종 매핑을 명시 확인)
+		assert(GameData.crop_from_seed(GameData.crops[cid]["seed_id"]) == cid, "%s 씨앗 매핑" % cid)
+	# 밭 시각화가 실제로 데이터 색을 쓴다(하드코딩 회귀 방지)
+	assert(_farm.crop_color("crop.pumpkin") != _farm.crop_color("crop.eggplant"), "작물별 색 반영")
+	assert(_farm.crop_color("crop.unknown") == _farm.RIPE_FALLBACK, "color 없는 id = 기본 열매색")
+
+	# ── 밸런스 대역: 계절 안에서 한 작물이 압도하지 않는다
+	var per_season := {}
+	for cid in GameData.crops:
+		var gpd := _gold_per_day(GameData.crops[cid])
+		assert(gpd >= 8.0 and gpd <= 26.0, "%s gold/day 대역(8~26) 밖: %.2f" % [cid, gpd])
+		for s in GameData.crops[cid]["seasons"]:
+			if not per_season.has(s):
+				per_season[s] = []
+			per_season[s].append(gpd)
+	for s in per_season:
+		var lo: float = per_season[s].min()
+		var hi: float = per_season[s].max()
+		assert(hi / lo <= 3.0, "%s 계절 내 수익 격차 %.2f배 (상한 3배)" % [s, hi / lo])
+
+	# ── 여름 재배 루프 (재수확 작물 tomato: 7일 성숙 → 수확 → 3일 재성숙)
+	GameClock.abs_day = 28  # 여름 D1
+	GameClock.game_min = 360
+	assert(GameData.season_id(GameClock.season()) == "summer" and GameClock.day_of_season() == 1, "전제: 여름 D1")
+	var cell := Vector2i(6, 3)
+	assert(_farm.till(cell), "여름 괭이질")
+	assert(not _farm.plant(cell, "seed.turnip"), "철 지난 봄 씨앗은 심기 거부(다음 아침 증발 방지)")
+	assert(_farm.plant(cell, "seed.tomato"), "여름 씨앗 심기")
+	for _i in 7:
+		_farm.water(cell)  # 비 오는 날은 이미 젖어 false — 결과는 보지 않는다
+		GameClock.sleep_to_morning()
+	assert(_farm.is_mature_at(cell), "tomato 7일 = 성숙")
+	assert(_farm.harvest(cell) == "crop.tomato", "여름 수확")
+	assert(_farm.get_tile(cell)["crop_id"] == "crop.tomato" and not _farm.is_mature_at(cell), "재수확 작물 = 그루 유지")
+	for _j in 3:
+		_farm.water(cell)
+		GameClock.sleep_to_morning()
+	assert(_farm.is_mature_at(cell), "regrow 3일 = 재성숙")
+	assert(_farm.harvest(cell) == "crop.tomato", "재수확")
+
+	# ── 계절 경계 고사: 여름 막날 심은 여름 작물은 죽고, 두 계절 작물(corn)은 산다
+	GameClock.abs_day = 55  # 여름 D28
+	assert(GameClock.day_of_season() == 28, "전제: 여름 마지막 날")
+	var c_die := Vector2i(6, 4)
+	var c_live := Vector2i(7, 4)
+	assert(_farm.till(c_die) and _farm.till(c_live), "막날 괭이질")
+	assert(_farm.plant(c_die, "seed.tomato") and _farm.plant(c_live, "seed.corn"), "막날 심기")
+	GameClock.sleep_to_morning()  # → 가을 D1
+	assert(GameData.season_id(GameClock.season()) == "autumn", "가을 진입")
+	assert(_farm.get_tile(c_die)["crop_id"] == "", "철 지난 작물 고사")
+	assert(_farm.get_tile(c_live)["crop_id"] == "crop.corn", "여름·가을 작물은 계절 경계 생존")
+	GameClock.abs_day = 83  # 가을 D28
+	GameClock.sleep_to_morning()  # → 겨울 D1
+	assert(GameData.season_id(GameClock.season()) == "winter", "겨울 진입")
+	assert(_farm.get_tile(c_live)["crop_id"] == "", "겨울엔 corn도 고사")
+	var c_win := Vector2i(5, 5)
+	assert(_farm.till(c_win) and not _farm.plant(c_win, "seed.carrot"), "겨울엔 어떤 씨앗도 못 심음")
+
+	# ── 상점 계절 재고 + 씨앗 순환 집합 (씬 트리 없이 순수 로직)
+	var p: Node = preload("res://player/player.gd").new()
+	p.gold = 1000
+	GameClock.abs_day = 28  # 여름 D1 (월요일 = 영업일)
+	assert(GameClock.weekday() != 6, "전제: 상점 영업일")
+	p.selected_seed = "seed.turnip"  # 봄 씨앗을 든 채 여름 상점 앞
+	assert(p.cycle_seeds() == GameData.season_seed_ids("summer"), "무보유 = 순환 집합이 이번 계절 재고와 동일")
+	assert(p.active_seed() == "seed.pepper", "계절 밖 선택 → 첫 후보로 스냅: %s" % p.active_seed())
+	assert(p.selected_seed == "seed.turnip", "스냅은 표시용 — 저장 표면(selected_seed)은 불변")
+	p._buy_seed()
+	assert(p.count("seed.pepper") == 1 and p.gold == 960, "여름 상점 = 여름 씨앗 구매 (gold %d)" % p.gold)
+	# 보유한 철 지난 씨앗: 순환·패널엔 남지만 상점은 거부
+	p._add_item("seed.turnip", 1)
+	assert("seed.turnip" in p.cycle_seeds(), "보유 중인 철 지난 씨앗도 순환 집합에 보임")
+	assert(p.active_seed() == "seed.turnip", "보유하면 그 선택이 다시 유효")
+	var g0: int = p.gold
+	p._buy_seed()
+	assert(p.gold == g0 and p.count("seed.turnip") == 1, "철 지난 씨앗은 상점이 거부(골드·수량 무변경)")
+	# Q 순환은 집합 안에서만 돌고, 스냅 자리에서 제자리걸음하지 않는다
+	var set0: Array = p.cycle_seeds()
+	p._cycle_seed()
+	assert(p.selected_seed in set0 and p.selected_seed != "seed.turnip", "Q = 집합 내 다음 항목: %s" % p.selected_seed)
+	# 겨울: 재고 0 → 구매 불가, 순환은 보유분만
+	GameClock.abs_day = 84  # 겨울 D1
+	assert(GameData.season_id(GameClock.season()) == "winter" and GameClock.weekday() != 6, "전제: 겨울 영업일")
+	var gw: int = p.gold
+	p._buy_seed()
+	assert(p.gold == gw, "겨울엔 씨앗 구매 불가(재고 0)")
+	assert(p.cycle_seeds() == ["seed.turnip", "seed.pepper"], "겨울 순환 = 보유분만: %s" % str(p.cycle_seeds()))
+	p._remove_item("seed.turnip", 1)
+	p._remove_item("seed.pepper", 1)
+	assert(p.cycle_seeds().is_empty() and p.active_seed() == "", "겨울 무보유 = 고를 씨앗 없음(HUD '-')")
+	p._cycle_seed()  # 빈 집합에서도 크래시 없이 무동작
+	assert(p.active_seed() == "", "빈 집합 Q 무동작")
+	p.free()
+
+	# ── 세이브 표면: 작물 id 추가는 포맷 무변경 (무심코 범프하는 것을 잡는 트립와이어)
+	assert(SaveManager.VERSION == 5, "작물 추가 = 세이브 포맷 무변경 (VERSION 5 유지)")
+	GameClock.abs_day = 0  # 뒤 테스트를 위해 봄으로 원복
+	GameClock.game_min = 360
 
 func _test_npc() -> void:
 	GameClock.abs_day = 0  # spring D1, 생일 아님
@@ -726,6 +858,7 @@ func _test_weather() -> void:
 	assert(rd > 0 and cd > rd, "봄에 비/맑음 검증일 확보 (rd=%d cd=%d)" % [rd, cd])
 	GameClock.abs_day = rd - 1
 	GameClock.game_min = 1300
+	assert(GameData.season_id(GameClock.season()) == "spring", "전제: 봄(계절 밖 씨앗은 심기가 거부됨)")
 	var cell := Vector2i(4, 4)
 	assert(_farm.till(cell) and _farm.plant(cell, "seed.turnip"), "검증용 심기")
 	GameClock.sleep_to_morning()   # → rd (비)

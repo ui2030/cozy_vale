@@ -50,10 +50,18 @@ func _validate() -> void:
 	var seeds := {}
 	for cid in crops:
 		var c: Dictionary = crops[cid]
-		for key in ["name", "seed_id", "grow_days", "sell_price", "seed_cost", "stages"]:
+		for key in ["name", "seed_id", "seasons", "grow_days", "sell_price", "seed_cost", "stages"]:
 			assert(c.has(key), "%s 에 %s 누락" % [cid, key])
 		assert(not seeds.has(c["seed_id"]), "seed_id 중복: " + c["seed_id"])
 		seeds[c["seed_id"]] = true
+		assert(not c["seasons"].is_empty(), "%s 계절 비어있음(어디서도 못 심음)" % cid)
+		for s in c["seasons"]:
+			assert(s in SEASON_IDS, "%s 계절 잘못됨: %s" % [cid, str(s)])
+		# color(성장 단계 색)는 선택 필드 — 있으면 [r,g,b] 0..1. 없으면 런타임 기본값.
+		var col: Array = c.get("color", [])
+		assert(col.is_empty() or col.size() == 3, "%s color = [r,g,b] 아님" % cid)
+		for v in col:
+			assert(float(v) >= 0.0 and float(v) <= 1.0, "%s color 0..1 벗어남: %s" % [cid, str(v)])
 	# 물고기·채집물 필수 필드 + 계절 유효 + difficulty(낚시 판정폭) 범위
 	for fid in fish:
 		var d: Dictionary = fish[fid]
@@ -153,6 +161,19 @@ func season_filter(source: Dictionary, sid: String) -> Array:
 
 func crop_from_seed(seed_id: String) -> String:
 	return _seed_to_crop.get(seed_id, "")
+
+# 그 계절에 심을 수 있는 작물인가 — 상점 재고·심기 차단·계절 고사가 전부 이 한 판정을 쓴다.
+func crop_in_season(crop_id: String, sid: String) -> bool:
+	return sid in crops.get(crop_id, {}).get("seasons", [])
+
+# 그 계절 상점 재고(= 심을 수 있는 씨앗). 정렬은 all_seed_ids 순서 단일 출처라
+# 상점·Q순환·가방 패널의 순서가 어긋날 수 없다. 겨울은 빈 배열(설계: 낚시·채집의 계절).
+func season_seed_ids(sid: String) -> Array:
+	var out := []
+	for seed_id in all_seed_ids():
+		if crop_in_season(_seed_to_crop[seed_id], sid):
+			out.append(seed_id)
+	return out
 
 func sell_price(item_id: String) -> int:
 	for src in [crops, fish, forage]:

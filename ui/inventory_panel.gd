@@ -23,6 +23,8 @@ func _ready() -> void:
 	var p := get_tree().get_first_node_in_group("player")
 	if p != null:  # 열려 있는 동안 수확·판매·씨앗변경 반영 (닫혀 있으면 열 때 어차피 다시 그림)
 		p.stats_changed.connect(func(): if visible: _rebuild())
+	# 계절이 바뀌면 씨앗 목록(= 이번 계절 재고 ∪ 보유)이 통째로 달라진다
+	GameClock.day_changed.connect(func(_p, _a): if visible: _rebuild())
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("inventory"):
@@ -55,7 +57,13 @@ func _rebuild() -> void:
 	gold.text = "Gold: %d" % p.gold
 	_list.add_child(gold)
 	_head("씨앗 (클릭 = 선택, Q = 순환)")
-	for sid in GameData.all_seed_ids():
+	var seeds: Array = p.cycle_seeds()
+	if seeds.is_empty():  # 겨울 + 보유 0 = 고를 씨앗 없음 (빈 목록을 그대로 두지 않는다)
+		var none := Label.new()
+		none.add_theme_font_size_override("font_size", 16)
+		none.text = "  (이번 계절엔 씨앗이 없어요)"
+		_list.add_child(none)
+	for sid in seeds:
 		_list.add_child(_seed_btn(p, sid))
 	_list.add_child(_ring_btn(p))
 	_head("소지품")
@@ -98,7 +106,7 @@ func _head(text: String) -> void:
 # 씨앗 ID는 display_name 소스(작물·물고기·채집물)에 없다 — 작물 이름으로 되짚어 표기.
 func _seed_btn(p: Node, sid: String) -> Button:
 	var b := Button.new()
-	var sel: bool = sid == p.selected_seed
+	var sel: bool = sid == p.active_seed()
 	b.text = "%s %s Seed   x%d" % [
 		"▶" if sel else "  ", GameData.display_name(GameData.crop_from_seed(sid)), p.count(sid),
 	]

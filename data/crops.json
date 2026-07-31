@@ -1,18 +1,62 @@
 {
 	"crop.turnip": {
 		"name": "Turnip", "seed_id": "seed.turnip", "seasons": ["spring"],
-		"grow_days": 4, "regrow_days": 0, "sell_price": 60, "seed_cost": 20, "stages": 3
+		"grow_days": 4, "regrow_days": 0, "sell_price": 60, "seed_cost": 20, "stages": 3,
+		"color": [0.93, 0.91, 0.85]
 	},
 	"crop.potato": {
 		"name": "Potato", "seed_id": "seed.potato", "seasons": ["spring"],
-		"grow_days": 6, "regrow_days": 0, "sell_price": 90, "seed_cost": 30, "stages": 3
+		"grow_days": 6, "regrow_days": 0, "sell_price": 90, "seed_cost": 30, "stages": 3,
+		"color": [0.70, 0.52, 0.32]
 	},
 	"crop.cabbage": {
 		"name": "Cabbage", "seed_id": "seed.cabbage", "seasons": ["spring"],
-		"grow_days": 5, "regrow_days": 0, "sell_price": 100, "seed_cost": 40, "stages": 3
+		"grow_days": 5, "regrow_days": 0, "sell_price": 100, "seed_cost": 40, "stages": 3,
+		"color": [0.60, 0.82, 0.50]
 	},
 	"crop.strawberry": {
 		"name": "Strawberry", "seed_id": "seed.strawberry", "seasons": ["spring"],
-		"grow_days": 8, "regrow_days": 4, "sell_price": 120, "seed_cost": 50, "stages": 4
+		"grow_days": 8, "regrow_days": 4, "sell_price": 120, "seed_cost": 50, "stages": 4,
+		"color": [0.87, 0.20, 0.30]
+	},
+	"crop.pepper": {
+		"name": "Pepper", "seed_id": "seed.pepper", "seasons": ["summer"],
+		"grow_days": 5, "regrow_days": 2, "sell_price": 50, "seed_cost": 40, "stages": 3,
+		"color": [0.97, 0.80, 0.18]
+	},
+	"crop.tomato": {
+		"name": "Tomato", "seed_id": "seed.tomato", "seasons": ["summer"],
+		"grow_days": 7, "regrow_days": 3, "sell_price": 90, "seed_cost": 60, "stages": 4,
+		"color": [0.95, 0.40, 0.22]
+	},
+	"crop.corn": {
+		"name": "Corn", "seed_id": "seed.corn", "seasons": ["summer", "autumn"],
+		"grow_days": 9, "regrow_days": 0, "sell_price": 170, "seed_cost": 70, "stages": 4,
+		"color": [0.88, 0.80, 0.35]
+	},
+	"crop.watermelon": {
+		"name": "Watermelon", "seed_id": "seed.watermelon", "seasons": ["summer"],
+		"grow_days": 12, "regrow_days": 0, "sell_price": 350, "seed_cost": 120, "stages": 4,
+		"color": [0.16, 0.50, 0.34]
+	},
+	"crop.carrot": {
+		"name": "Carrot", "seed_id": "seed.carrot", "seasons": ["autumn"],
+		"grow_days": 4, "regrow_days": 0, "sell_price": 70, "seed_cost": 25, "stages": 3,
+		"color": [0.98, 0.68, 0.25]
+	},
+	"crop.eggplant": {
+		"name": "Eggplant", "seed_id": "seed.eggplant", "seasons": ["autumn"],
+		"grow_days": 6, "regrow_days": 3, "sell_price": 80, "seed_cost": 50, "stages": 4,
+		"color": [0.45, 0.25, 0.60]
+	},
+	"crop.cranberry": {
+		"name": "Cranberry", "seed_id": "seed.cranberry", "seasons": ["autumn"],
+		"grow_days": 9, "regrow_days": 5, "sell_price": 180, "seed_cost": 100, "stages": 4,
+		"color": [0.75, 0.12, 0.25]
+	},
+	"crop.pumpkin": {
+		"name": "Pumpkin", "seed_id": "seed.pumpkin", "seasons": ["autumn"],
+		"grow_days": 13, "regrow_days": 0, "sell_price": 400, "seed_cost": 130, "stages": 4,
+		"color": [0.88, 0.42, 0.08]
 	}
 }

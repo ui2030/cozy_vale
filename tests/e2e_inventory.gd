@@ -18,8 +18,9 @@ func _run() -> void:
 	assert(panel.visible, "I → 열림")
 	# 씨앗 버튼 클릭 = selected_seed 교체 (Q 순환과 같은 집합)
 	var player: Node = get_tree().get_first_node_in_group("player")
-	var seeds: Array = GameData.all_seed_ids()
-	var other: String = seeds[1] if seeds[0] == player.selected_seed else seeds[0]
+	var seeds: Array = player.cycle_seeds()  # 패널 목록 = Q 순환 집합(이번 계절 재고 ∪ 보유)
+	assert(seeds.size() >= 2, "봄 시작 = 고를 씨앗 2종 이상 (실제 %d)" % seeds.size())
+	var other: String = seeds[1] if seeds[0] == player.active_seed() else seeds[0]
 	var btns: Array = panel.find_children("", "Button", true, false)  # owned=false: 코드 생성 노드
 	assert(btns.size() == seeds.size() + 1, "씨앗 %d + 반지 1 버튼 (실제 %d)" % [seeds.size(), btns.size()])
 	btns[seeds.find(other)].pressed.emit()  # 반지 행은 씨앗 뒤에 붙어 인덱스 불변
