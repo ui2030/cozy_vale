@@ -588,9 +588,35 @@ const ROADS := [
 	[Vector2(1.23, 20.34), 5.57, 85.0],
 ]
 
+# 길 끝단이 다리 데크에 겹치지 않게 조립 때 잘라내는 반경. 평판 다리 시절엔 색·높이가 같아
+# 안 보였지만, 풀 아치 돌다리에선 길 박스가 "일자 목재"처럼 아치에 겹쳐 보인다(유저 실플레이 지적).
+# 데크 리프트 소멸 지점(DECK_EDGE 3.4) + 0.2 — ROADS 데이터는 그대로 두고(decor 길가 판정 공유)
+# 빌드에서만 클립한다.
+const BRIDGE_TRIM := 3.6
+
 func _roads(parent: Node) -> void:
 	for r in ROADS:
-		_road(parent, Vector3(r[0].x, 0.16, r[0].y), Vector3(ROAD_W, 0.05, r[1]), r[2])
+		var u := Vector2(sin(deg_to_rad(r[2])), cos(deg_to_rad(r[2])))
+		var a: Vector2 = r[0] - u * (float(r[1]) * 0.5)
+		var b: Vector2 = r[0] + u * (float(r[1]) * 0.5)
+		for br in BRIDGES:
+			a = _trim_to_bridge(a, b, br)
+			b = _trim_to_bridge(b, a, br)
+		var seg_len := (b - a).length()
+		if seg_len < 0.5:
+			continue  # 통째로 다리 밑이면 생략
+		var c := (a + b) * 0.5
+		_road(parent, Vector3(c.x, 0.16, c.y), Vector3(ROAD_W, 0.05, seg_len), r[2])
+
+# 끝점 p가 다리 원(BRIDGE_TRIM) 안이면 q 방향으로 물러나 원 경계에 놓는다(원-직선 교점 근).
+static func _trim_to_bridge(p: Vector2, q: Vector2, br: Vector2) -> Vector2:
+	if p.distance_to(br) >= BRIDGE_TRIM:
+		return p
+	var u := (q - p).normalized()
+	var f := p - br
+	var fu := f.dot(u)
+	var disc := fu * fu - (f.length_squared() - BRIDGE_TRIM * BRIDGE_TRIM)
+	return p + u * (-fu + sqrt(disc))  # 안쪽이면 disc>0·해>0 보장
 
 func _road(parent: Node, center: Vector3, size: Vector3, rot_deg: float) -> void:
 	var mi := _box(parent, center, size, C_ROAD, 0.0)
