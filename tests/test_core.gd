@@ -463,6 +463,37 @@ func _test_calendar() -> void:
 	assert(GameData.festival_on("spring", 14).is_empty(), "축제 없는 날")
 	assert("Mira" in GameData.birthdays_on("spring", 12), "Mira 생일 조회")
 	assert(GameData.season_id(GameClock.season()) is String, "season_id 반환")
+	# H-2: 4계절 전부 축제 1개씩 (달력 패널·기상 토스트가 자동으로 4개를 집는 근거)
+	assert(GameData.calendar.size() == 4, "축제 4종")
+	var by_season := {}
+	for fid in GameData.calendar:
+		var f: Dictionary = GameData.calendar[fid]
+		assert(not by_season.has(f["season"]), "계절당 축제 1개: %s 중복" % str(f["season"]))
+		by_season[f["season"]] = fid
+		# 시간창은 하루(0~1440) 안에 닫힌다 — 자정 넘김은 _festival_now()의 단순 비교가 못 다룬다
+		assert(int(f["start_min"]) >= 0 and int(f["end_min"]) <= GameClock.MINUTES_PER_DAY, "%s 시간창 하루 안" % fid)
+	for s in GameData.SEASON_IDS:
+		assert(by_season.has(s), "%s 축제 있음" % s)
+	assert(by_season["spring"] == "festival.flower" and int(GameData.calendar["festival.flower"]["day"]) == 15, "봄 D15 꽃축제")
+	assert(by_season["summer"] == "festival.star" and int(GameData.calendar["festival.star"]["day"]) == 15, "여름 D15 별빛축제")
+	assert(by_season["autumn"] == "festival.harvest" and int(GameData.calendar["festival.harvest"]["day"]) == 15, "가을 D15 수확제")
+	assert(by_season["winter"] == "festival.lantern" and int(GameData.calendar["festival.lantern"]["day"]) == 10, "겨울 D10 등불축제")
+	# 축제일 파생 + 강제 맑음 (축제는 abs_day 파생이라 세이브에 아무것도 안 남는다)
+	for d in GameClock.DAYS_PER_SEASON * 4:
+		var sid: String = GameData.SEASON_IDS[GameClock.season_at(d)]
+		var is_fest := not GameData.festival_on(sid, GameClock.day_of_season_at(d)).is_empty()
+		if is_fest:
+			assert(not GameData.is_rainy(d), "축제일 abs_day %d 강제 맑음" % d)
+	assert(not GameData.festival_on("summer", 15).is_empty(), "여름 D15 파생")   # abs_day 42
+	assert(not GameData.festival_on("autumn", 15).is_empty(), "가을 D15 파생")   # abs_day 70
+	assert(not GameData.festival_on("winter", 10).is_empty(), "겨울 D10 파생")   # abs_day 93
+	assert(GameData.festival_on("winter", 15).is_empty(), "겨울 D15는 축제 아님")
+	# 축제별 대사: 아키타입 × 축제 전부 2줄 (개수는 데이터에서 세고, 하드코딩하지 않는다)
+	for arche in GameData.dialogues:
+		for fid in GameData.calendar:
+			var pool: Array = GameData.dialogues[arche].get(fid, [])
+			assert(pool.size() == 2, "%s / %s 축제 대사 2줄 (지금 %d)" % [arche, fid, pool.size()])
+		assert(GameData.dialogues[arche].get("festival", []).size() == 2, "%s 축제 공용 대사 2줄(결혼식 폴백)" % arche)
 
 func _test_festival() -> void:
 	var fest := preload("res://festival/festival_system.gd").new()
@@ -486,6 +517,86 @@ func _test_festival() -> void:
 	fest.evaluate()
 	assert(not _npcsys._festival_active, "축제 종료")
 	assert(_npcsys.npc_nodes[id].position.distance_to(home_pos) < 0.01, "집 복귀")
+	assert(fest._decor == null, "축제 종료 = 장식 해제")
+
+	# ── H-2: 저녁 축제(여름 별빛제 20:00~23:00). DAY_END=20 이후 집합이므로
+	# "축제 > 밤" 우선순위가 실제로 성립하는지가 핵심 위험이었다.
+	GameClock.abs_day = 42     # summer D15 (28 + 14)
+	GameClock.game_min = 1230  # 20:30 = DAY_END(20시) 넘긴 시각
+	fest.evaluate()
+	assert(_npcsys._festival_active, "저녁 축제 활성(DAY_END 이후)")
+	assert(_npcsys._festival_id == "festival.star", "축제 id 전달")
+	assert(_npcsys.npc_nodes[id].position.distance_to(home_pos) > 1.0, "밤에도 광장 집합")
+	assert(fest._decor == null, "별빛제는 장식 없음(하늘·상시 가로등이 그림)")
+	# 밤 귀가 숨김이 축제에 양보하는지 — 매 프레임 도는 판정을 직접 돌려 확인
+	_npcsys._update_home_hide()
+	for nid in _npcsys.npc_nodes:
+		assert(not bool(_npcsys._wander[nid]["hidden"]), "%s 밤 축제 중 가시" % nid)
+	# 순수 판정으로도 고정 (h=20,21,22 전부 축제면 안 숨김)
+	for h in [20, 21, 22]:
+		assert(not _npcsys.night_hidden(h, true, true, false), "h=%d 축제면 미숨김" % h)
+		assert(_npcsys.night_hidden(h, true, false, false), "h=%d 축제 아니면 숨김" % h)
+	# 축제 중엔 축제별 대사 풀을 쓴다 (공용 festival 풀이 아니라)
+	var star_pool: Array = GameData.dialogues[String(GameData.npcs[id]["archetype"])]["festival.star"]
+	assert(_npcsys._dialogue_line(id) in star_pool, "별빛제 전용 대사")
+	# 23:00 종료 → 집 복귀 + 그제서야 숨김(숨김은 exit가 아니라 다음 _update_home_hide가 한다)
+	GameClock.game_min = 1380  # 23:00 = end_min
+	fest.evaluate()
+	assert(not _npcsys._festival_active, "23시 축제 종료")
+	assert(_npcsys._festival_id == "", "종료 시 축제 id 해제")
+	assert(_npcsys.npc_nodes[id].position.distance_to(home_pos) < 0.01, "종료 후 집 복귀(한밤 행군 없음)")
+	_npcsys._update_home_hide()
+	assert(bool(_npcsys._wander[id]["hidden"]), "종료 후 밤 숨김 재개")
+	assert(_npcsys._dialogue_line(id) in GameData.dialogues[String(GameData.npcs[id]["archetype"])]["normal"], "축제 밖 = 평상 대사")
+
+	# ── H-2: 겨울 등불 축제(D10 19:00~22:00) + 장식 생성
+	GameClock.abs_day = 93     # winter D10 (84 + 9)
+	GameClock.game_min = 1170  # 19:30
+	fest.evaluate()
+	assert(_npcsys._festival_active and _npcsys._festival_id == "festival.lantern", "등불 축제 활성")
+	assert(fest._decor != null and fest._decor.get_child_count() == 8, "등불 장식 8기둥")
+	GameClock.game_min = 1320  # 22:00 = end_min
+	fest.evaluate()
+	assert(not _npcsys._festival_active, "등불 축제 종료")
+
+	# ── 가을 수확제(D15 낮) + 수확 장식
+	GameClock.abs_day = 70     # autumn D15 (56 + 14)
+	GameClock.game_min = 720
+	fest.evaluate()
+	assert(_npcsys._festival_active and _npcsys._festival_id == "festival.harvest", "수확제 활성")
+	assert(fest._decor != null and fest._decor.get_child_count() == 8, "수확 장식 8궤짝")
+
+	# ── 시간창 경계 (start_min 직전=밖, start_min=안, end_min 직전=안, end_min=밖)
+	for fid in GameData.calendar:
+		var f: Dictionary = GameData.calendar[fid]
+		GameClock.abs_day = GameData.SEASON_IDS.find(String(f["season"])) * GameClock.DAYS_PER_SEASON + int(f["day"]) - 1
+		GameClock.game_min = int(f["start_min"]) - 1
+		assert(fest._festival_now() == "", "%s 시작 1분 전 = 창 밖" % fid)
+		GameClock.game_min = int(f["start_min"])
+		assert(fest._festival_now() == fid, "%s 시작 시각 = 창 안" % fid)
+		GameClock.game_min = int(f["end_min"]) - 1
+		assert(fest._festival_now() == fid, "%s 종료 1분 전 = 창 안" % fid)
+		GameClock.game_min = int(f["end_min"])
+		assert(fest._festival_now() == "", "%s 종료 시각 = 창 밖" % fid)
+		# 하루 전날은 같은 시각이어도 축제 아님 (날짜 파생 확인)
+		GameClock.abs_day -= 1
+		GameClock.game_min = int(f["start_min"])
+		assert(fest._festival_now() == "", "%s 전날은 축제 아님" % fid)
+
+	# ── 결혼식 회피: 4개 축제일 전부에서 하루 미룸 (광장 이중 예약 방지)
+	for fid in GameData.calendar:
+		var f: Dictionary = GameData.calendar[fid]
+		var fd := GameData.SEASON_IDS.find(String(f["season"])) * GameClock.DAYS_PER_SEASON + int(f["day"]) - 1
+		var moved: int = _npcsys.wedding_day_for(fd)
+		assert(moved != fd, "%s 축제일 결혼식 회피" % fid)
+		assert(GameData.festival_on(GameData.SEASON_IDS[GameClock.season_at(moved)], GameClock.day_of_season_at(moved)).is_empty(), "%s 회피한 날도 축제 아님" % fid)
+		assert(_npcsys.wedding_day_for(fd - 1) == fd - 1, "%s 전날은 그대로" % fid)
+
+	# 후속 테스트를 위해 시계를 원래 종료 상태(봄 D15 22:00)로 되돌린다
+	GameClock.abs_day = 14
+	GameClock.game_min = 1320
+	fest.evaluate()
+	_npcsys.snap_to_schedule()
 
 # ── F단계: 연애·결혼 (DESIGN 6.5) ───────────────────────────────
 func _test_ring_item() -> void:

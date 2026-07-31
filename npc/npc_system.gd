@@ -100,6 +100,7 @@ var _date := {}         # 진행 중 데이트 {} 또는 {id, place, idx} — �
 var npc_nodes := {}     # npc_id → 스폰 root Node3D (축제 이동용, FestivalSystem이 호출)
 var _wander := {}       # npc_id → {target:Vector3, wait:float, anim:AnimationPlayer, cur:String}
 var _festival_active := false
+var _festival_id := ""     # 진행 중 축제 id (대사 풀 선택용). 결혼식은 ""=축제 공용 대사
 var _shot_frozen := false  # 스크린샷 배치 시 배회 정지
 var _spouse_indoor := false  # 배우자가 지금 실내(플레이어 집 안)에 배치돼 있는가
 var _farm: Node
@@ -590,15 +591,23 @@ func talk(id: String) -> Dictionary:
 	# 하트를 토스트 꼬리에 노출 = 청혼 진행 단계(♥9 데이트1 → ♥10 데이트2 → 청혼)를 스스로 발견
 	return {"ok": true, "msg": "%s: %s  ♥ %d/10%s" % [nm, _dialogue_line(id), hearts(id), extra]}
 
-# 아키타입별 대사 랜덤 1줄 (배우자면 부부 아침 인사 > 축제 > 평상). 계절·호감도 분기는 H단계 몫.
+# 아키타입별 대사 랜덤 1줄 (배우자면 부부 아침 인사 > 축제별 > 축제 공용 > 평상).
+# 축제별 풀 key = 축제 id 그대로 = calendar.json이 단일 출처(중간 매핑표 없음). 결혼식은
+# _festival_id가 ""라 공용 "festival" 풀로 떨어진다(기존 동작 그대로).
 func _dialogue_line(id: String) -> String:
 	if id == spouse:
 		var married := _pool_line(id, "married")  # 대화는 하루 1회 성사 = 하루 첫 대화
 		if married != "":
 			return married
 	var pool: Dictionary = GameData.dialogues.get(String(GameData.npcs[id]["archetype"]), {})
-	var fest: Array = pool.get("festival", [])
-	var lines: Array = fest if (_festival_active and not fest.is_empty()) else pool.get("normal", [])
+	var lines: Array = pool.get("normal", [])
+	if _festival_active:
+		var per_fest: Array = pool.get(_festival_id, [])
+		var fest: Array = pool.get("festival", [])
+		if not per_fest.is_empty():
+			lines = per_fest
+		elif not fest.is_empty():
+			lines = fest
 	return "" if lines.is_empty() else lines[randi() % lines.size()]
 
 # 아키타입 대사 풀 key에서 랜덤 1줄 (없으면 "")
@@ -607,8 +616,9 @@ func _pool_line(id: String, key: String) -> String:
 	return "" if lines.is_empty() else lines[randi() % lines.size()]
 
 # ── 축제 (FestivalSystem이 상태만 설정, 호감도·이동은 여기 소유) ──
-func enter_festival(plaza: Vector2) -> void:
+func enter_festival(plaza: Vector2, fid := "") -> void:
 	_festival_active = true
+	_festival_id = fid
 	_spouse_indoor = false  # 축제 > 실내 동거 (배우자도 광장으로)
 	var ids := npc_nodes.keys()
 	var n := ids.size()
@@ -620,6 +630,7 @@ func enter_festival(plaza: Vector2) -> void:
 
 func exit_festival() -> void:
 	_festival_active = false
+	_festival_id = ""
 	snap_to_schedule()  # 그 시각 스케줄 장소로 복귀 (밤이면 집 — 데이터가 단일 출처)
 
 # ── 연애·결혼 (DESIGN 6.5) ──────────────────────────────────────

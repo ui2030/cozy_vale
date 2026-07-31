@@ -90,6 +90,9 @@ func _validate() -> void:
 			for item_id in g.get(tier, []):
 				assert(has_item_id(item_id), "%s 선물 %s: 없는 아이템 %s" % [nid, tier, item_id])
 	# 축제 선언 검증: 필수 필드 + 계절 유효 + 날짜 1..28 + 시간창 정합
+	# (계절,일) 유일성도 계약이다: festival_on()이 먼저 걸린 하나만 돌려주므로 같은 날 두 축제를
+	# 선언하면 나머지가 조용히 사라진다(달력 패널·기상 토스트·결혼식 회피가 전부 어긋난다).
+	var fest_days := {}
 	for fid in calendar:
 		var f: Dictionary = calendar[fid]
 		for key in ["name", "season", "day", "start_min", "end_min", "plaza"]:
@@ -98,6 +101,11 @@ func _validate() -> void:
 		assert(int(f["day"]) >= 1 and int(f["day"]) <= GameClock.DAYS_PER_SEASON, "%s day 범위 밖: %d" % [fid, int(f["day"])])
 		assert(int(f["start_min"]) < int(f["end_min"]), "%s start_min < end_min 위반" % fid)
 		assert(f["plaza"] is Array and f["plaza"].size() == 2, "%s plaza = [x,z] 아님" % fid)
+		# decor 오타는 조용히 "장식 없음"으로 지나가므로 여기서 잡는다 (festival_system _build_decor의 match와 동기화)
+		assert(String(f.get("decor", "")) in ["", "flower", "harvest", "lantern"], "%s decor 값 모름: %s" % [fid, str(f.get("decor", ""))])
+		var fday: String = "%s:%d" % [str(f["season"]), int(f["day"])]
+		assert(not fest_days.has(fday), "%s 축제일 중복: %s (이미 %s)" % [fid, fday, str(fest_days.get(fday, ""))])
+		fest_days[fday] = fid
 	# 대사 참조 무결성: 모든 NPC 아키타입에 대사 풀 존재 + normal 비어있지 않음
 	for nid in npcs:
 		var arche: String = npcs[nid].get("archetype", "")

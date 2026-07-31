@@ -25,13 +25,36 @@ func _ready() -> void:
 	_water_audio()          # 물가 3D 앰비언스 (연못·분수·강)
 	if not SaveManager.load_game():
 		print("새 게임 시작")
-	# from_dict는 신호를 안 쏘므로 로드된 시각으로 축제 배치를 즉시 재평가 (축제날 아침 로드 누락 방지)
-	if "festival" in OS.get_cmdline_user_args():  # 스크린샷 검증용 강제 축제
-		GameClock.abs_day = 14   # spring D15
-		GameClock.game_min = 720  # 12:00
+	# 스크린샷 검증용 강제 축제: `-- festival [계절]` (계절 생략 = spring, 기존 호출 그대로).
+	# 날짜·시각은 calendar.json에서 파생한다 — 하네스가 축제 데이터를 복제하지 않게(단일 출처).
+	if "festival" in OS.get_cmdline_user_args():
+		SaveManager.suspended = true  # 시계를 축제일로 옮기므로 유저 세이브 보호(interior/beach와 같은 정책)
+		var fargs := OS.get_cmdline_user_args()
+		var fsea := "spring"
+		var fai := fargs.find("festival")
+		if fai + 1 < fargs.size() and fargs[fai + 1] in GameData.SEASON_IDS:
+			fsea = fargs[fai + 1]
+		var found := false
+		for fid in GameData.calendar:
+			var f: Dictionary = GameData.calendar[fid]
+			if f["season"] == fsea:
+				GameClock.abs_day = GameData.SEASON_IDS.find(fsea) * GameClock.DAYS_PER_SEASON + int(f["day"]) - 1
+				# 시간창 진입 직후(조명·집합 안정 구간). 1시간 미만짜리 축제가 생겨도 창 밖으로 나가지 않게 clamp.
+				GameClock.game_min = mini(int(f["start_min"]) + 60, int(f["end_min"]) - 1)
+				found = true
+				print("festival shot: ", fid, " abs_day=", GameClock.abs_day, " ", GameClock.hour(), ":00")
+				break
+		if not found:
+			push_warning("festival 하네스: %s 계절에 축제 없음 — 시계 유지" % fsea)
 		var pl := get_tree().get_first_node_in_group("player")
 		if pl != null:  # 광장이 카메라에 잡히도록 플레이어를 광장 남쪽(분수·밭 밖)으로
 			pl.global_position = Vector3(0, 2, -3.5)
+		if "calendar" in fargs:  # `-- festival <계절> calendar` = 그 계절 달력 패널 컷
+			var cp := get_tree().get_first_node_in_group("calendar_panel")
+			if cp != null:
+				cp.visible = true
+				cp._rebuild()  # 시계를 옮긴 뒤라 그 계절 그리드로 다시 그린다
+	# from_dict는 신호를 안 쏘므로 로드된 시각으로 축제 배치를 즉시 재평가 (축제날 아침 로드 누락 방지)
 	get_tree().call_group("festival_system", "evaluate")
 	if "pausemenu" in OS.get_cmdline_user_args():  # 스크린샷 검증용 메뉴 열기
 		get_tree().call_group("pause_menu", "open_menu")
