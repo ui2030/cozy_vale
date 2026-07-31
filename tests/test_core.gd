@@ -928,7 +928,18 @@ func _test_winter_pass() -> void:
 		assert(D.flora_visible(nm, 3) and D.flora_frosted(nm, 3), "%s 겨울엔 서리톤으로 남음" % nm)
 		for s in 3:
 			assert(not D.flora_frosted(nm, s), "%s 계절 %d엔 원색" % [nm, s])
-	assert(not D.flora_frosted("Forest_tree_pineTallA", 3), "나무는 겨울에도 무변경(침엽 실루엣)")
+	assert(not D.flora_frosted("Forest_tree_pineTallA", 3), "침엽수는 flora 규칙 밖")
+	# 활엽수 수관만 겨울 서리톤 — 침엽수는 초록 유지(겨울 실루엣 담당)
+	for nm in D.DECIDUOUS:
+		assert(D.tree_frosted(nm, 3), "%s 겨울엔 수관 서리톤" % nm)
+		for s in 3:
+			assert(not D.tree_frosted(nm, s), "%s 계절 %d엔 원색" % [nm, s])
+	for nm in ["Forest_tree_pineTallA", "Forest_tree_pineTallC"]:
+		assert(not D.tree_frosted(nm, 3), "%s 침엽수는 겨울에도 초록" % nm)
+	# 만개(화분·꽃수레 꽃, 등나무 드레이프)는 겨울만 숨김
+	assert(not D.bloom_visible(3), "겨울엔 만개 숨김")
+	for s in 3:
+		assert(D.bloom_visible(s), "계절 %d엔 만개" % s)
 
 # 채집 배치 스냅샷 [위치, forage_id] — _clear()가 queue_free 하므로 다음 _respawn 전에 뜬다.
 func _forage_snapshot(fs: Node) -> Array:

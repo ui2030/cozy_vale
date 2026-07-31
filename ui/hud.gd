@@ -11,8 +11,15 @@ const WD_EN := ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
 var _player: Node
 
+# 흰 글자 + 검은 외곽선. 겨울 눈 지면(화면 ~248)·크림 하늘 위에서 순백 글자는 사라진다(실측).
+# world.tscn Label3D 마을 라벨과 같은 방식·같은 비율(font 96 / outline 24 = 0.25).
+const OUTLINE_PX := 6  # 폰트 22~24px 기준
+
 func _ready() -> void:
 	add_to_group("hud")  # sleep_screen 등이 토스트 호출
+	for l in [_label, _msg, _prompt]:
+		l.add_theme_color_override("font_outline_color", Color.BLACK)
+		l.add_theme_constant_override("outline_size", OUTLINE_PX)
 	GameClock.tick.connect(func(_a, _m): _refresh())
 	GameClock.day_changed.connect(func(_p, _a): _refresh(); _event_toast())
 	_player = get_tree().get_first_node_in_group("player")

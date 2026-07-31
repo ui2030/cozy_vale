@@ -33,6 +33,10 @@ const C_GLASS  := Color(1.00, 0.90, 0.62)  # 가로등 유리(옐로 창불빛)
 # 서리 앉은 마른 풀. 눈 지면(world.gd C_SNOW 0.67~0.76)보다 확실히 아래여야 실루엣이 읽힌다 —
 # 비슷한 값으로 두면 흰 바탕에 흰 낙서가 되어 풀포기가 사라진다(실측).
 const C_FROST  := Color(0.48, 0.54, 0.56)
+# 수관용 서리톤은 풀포기용보다 훨씬 밝다. 풀은 흰 눈 지면 위에 놓여 어두워야 읽히지만, 수관은
+# 크림 하늘을 배경으로 서 있어서 C_FROST를 쓰면 화면에 (113,124,142)로 나와 눈 덮인 나무가
+# 아니라 바위 덩어리로 보인다(실측). 눈 지면(0.71/0.73/0.76) 바로 아래 = 가지에 얹힌 눈.
+const C_FROST_LEAF := Color(0.66, 0.70, 0.74)
 
 # Kenney 머티리얼 이름 → 마을 팔레트. 없는 이름은 원본색 유지 + 로그로 알린다.
 const MAT_COLORS := {
@@ -132,6 +136,8 @@ const LAMP_RANGE := 8.0
 
 var _cache := {}                       # glb 이름 → 원본 노드(반복 로드 방지)
 var _lights: Array[OmniLight3D] = []
+var _blooms: Array[Node3D] = []        # 겨울에 숨길 만개 노드(화분·꽃수레 꽃, 등나무 드레이프 루트)
+var _tree_mesh := {}                   # 활엽수 MMI 이름 → [원색 Mesh, 겨울 수관 서리 Mesh]
 var _unknown_mats := {}                # 팔레트에 없는 킷 머티리얼 이름(로그용)
 # 검증 전용: 탑다운 도식용 좌표 수집 (headless는 MultiMesh 버퍼를 되읽지 못해 원본을 따로 남긴다)
 var _dumping := "decordump" in OS.get_cmdline_user_args()
@@ -177,11 +183,12 @@ func _glb(nm: String) -> Node3D:
 
 # MultiMesh용 Mesh: 인스턴스별 surface override가 없으므로 머티리얼을 Mesh에 박는다.
 # 캐시를 우회해 새로 로드 = 개별 노드가 쓰는 Mesh 리소스를 공유 변형하지 않는다(Codex MUST-FIX).
-func _mm_mesh(nm: String) -> Mesh:
+# swap = 팔레트 위에 덧씌울 {킷 머티리얼 이름: 색} — 계절 사본(겨울 수관)을 별도 Mesh로 뽑는 데 쓴다.
+func _mm_mesh(nm: String, swap := {}) -> Mesh:
 	var n := ToonChar.load_glb(DIR + nm + ".glb", OUTLINE)
 	if n == null:
 		return null
-	_repaint(n)
+	_repaint(n, swap)
 	var mi := _first_mesh(n)
 	if mi == null:
 		n.free()
@@ -205,7 +212,7 @@ func _first_mesh(node: Node) -> MeshInstance3D:
 	return null
 
 # 킷 원본색 → 마을 팔레트. ToonChar.apply가 깔아둔 toon 머티리얼의 albedo만 바꾼다.
-func _repaint(node: Node) -> void:
+func _repaint(node: Node, swap := {}) -> void:
 	if node is MeshInstance3D and (node as MeshInstance3D).mesh != null:
 		var mi := node as MeshInstance3D
 		for i in mi.mesh.get_surface_count():
@@ -215,11 +222,11 @@ func _repaint(node: Node) -> void:
 			if m == null:
 				continue
 			if MAT_COLORS.has(mat_name):
-				m.set_shader_parameter("albedo", MAT_COLORS[mat_name])
+				m.set_shader_parameter("albedo", swap.get(mat_name, MAT_COLORS[mat_name]))
 			else:
 				_unknown_mats[mat_name] = true
 	for c in node.get_children():
-		_repaint(c)
+		_repaint(c, swap)
 
 # MUST-FIX 1: 데코에 충돌체가 섞이면 통행 계약이 깨진다 — 즉시 free(큐 대기 아님, 감사에서 세지지 않게).
 func _strip_collision(node: Node) -> void:
@@ -362,6 +369,7 @@ func _planter(p: Node3D) -> void:
 		f.scale = Vector3.ONE * 2.6
 		f.rotation.y = a
 		p.add_child(f)
+		_blooms.append(f)  # 겨울엔 빈 화분만 남는다
 
 # 꽃수레: 목재 짐칸 + 바퀴 2 + 꽃 무더기 (상점 앞 생활감)
 func _cart(p: Node3D) -> void:
@@ -379,6 +387,7 @@ func _cart(p: Node3D) -> void:
 		f.scale = Vector3.ONE * 2.8
 		f.rotation.y = i * 1.1
 		p.add_child(f)
+		_blooms.append(f)  # 겨울엔 빈 수레만 남는다
 
 # ══ 울타리 ═════════════════════════════════════════════════════════
 func _place_fences() -> void:
@@ -477,15 +486,26 @@ func _add_flora(buckets: Dictionary, at: Vector2, rng: RandomNumberGenerator, ki
 # 꽃(개나리·라벤더)은 겨울에 숨긴다: 눈 지면 위에 만개한 꽃이 계절 감각을 통째로 깬다.
 # 풀·덤불은 숨기는 대신 서리톤으로 남긴다 — 통째로 지우면 마을이 민짜 눈판이 되고
 # 길가 띠·광장 화단 링·강변의 밀도와 실루엣이 같이 사라진다(꽃만 빼도 계절은 읽힌다).
-# 나무(Forest_*)는 손대지 않는다 — 침엽수가 겨울 실루엣을 이미 지고 있다.
+# 침엽수는 겨울에도 초록 — 눈 마을의 실루엣을 지고 있는 건 이쪽이다. 활엽수는 수관만 서리톤으로
+# 내린다(줄기는 원색): 겨울 설원에 초록 수관이 떠 있으면 계절이 통째로 안 읽힌다(실측).
 const WINTER := 3
 const FLORA_HIDE_WINTER := ["Flora_flower_yellowA", "Flora_flower_purpleA"]
+const DECIDUOUS := ["Forest_tree_default", "Forest_tree_fat"]  # 킷 머티리얼 leafsGreen 계열
 
 static func flora_visible(nm: String, season: int) -> bool:
 	return not (season == WINTER and nm in FLORA_HIDE_WINTER)
 
 static func flora_frosted(nm: String, season: int) -> bool:
 	return season == WINTER and nm.begins_with("Flora_") and flora_visible(nm, season)
+
+static func tree_frosted(nm: String, season: int) -> bool:
+	return season == WINTER and nm in DECIDUOUS
+
+# 만개한 꽃(화분·꽃수레의 개별 꽃 GLB, 등나무 드레이프)은 겨울에 숨긴다. 서리톤으로 남기지 않는
+# 이유: 꽃(Flora_flower_*)이 이미 겨울 숨김이라 규칙이 하나로 통일되고, 회색으로 물든 만개 송이는
+# 눈 위에 매달린 이물처럼 보인다. 빈 화분·빈 수레·맨 퍼걸러가 겨울 그림으로 맞다.
+static func bloom_visible(season: int) -> bool:
+	return season != WINTER
 
 # world.gd _apply_season이 계절 전환 신호 + 로드 직후에 부른다(축제 evaluate와 같은 규약).
 func apply_season(sea: int) -> void:
@@ -494,6 +514,9 @@ func apply_season(sea: int) -> void:
 		if mmi == null:
 			continue
 		var nm := String(mmi.name)
+		if _tree_mesh.has(nm):  # 활엽수: transform 버퍼는 그대로 두고 Mesh만 갈아 끼운다
+			mmi.multimesh.mesh = _tree_mesh[nm][1 if tree_frosted(nm, sea) else 0]
+			continue
 		if not nm.begins_with("Flora_"):
 			continue
 		mmi.visible = flora_visible(nm, sea)
@@ -501,6 +524,8 @@ func apply_season(sea: int) -> void:
 		# 머티리얼을 고쳐 쓰면 같은 GLB를 쓰는 개별 소품(화분 꽃·꽃수레)과 리소스를 공유할
 		# 위험 + 원색 복구용 백업 보관까지 딸려온다. override는 null로 지우면 원색이 돌아온다.
 		mmi.material_override = ToonChar.make_solid(C_FROST, OUTLINE) if flora_frosted(nm, sea) else null
+	for b in _blooms:
+		b.visible = bloom_visible(sea)
 
 # ══ 숲 띠 (경계 |x| 또는 |z| ∈ [34,40] 저밀도, 실나무 GLB MultiMesh) ══
 func _place_forest() -> void:
@@ -531,8 +556,15 @@ func _place_forest() -> void:
 	for nm in buckets:
 		if (buckets[nm] as Array).is_empty():
 			continue
-		_multimesh(_mm_mesh(nm), buckets[nm], "Forest_" + nm)
+		var full: String = "Forest_" + nm
+		var summer := _mm_mesh(nm)
+		_multimesh(summer, buckets[nm], full)
 		_n_trees += (buckets[nm] as Array).size()
+		if summer != null and tree_frosted(full, WINTER):
+			# 겨울용 사본을 빌드 때 미리 뽑아 둔다. MultiMeshInstance3D엔 표면별 override가 없어
+			# material_override로 물들이면 줄기까지 서리색이 된다 — 수관 표면만 바꾼 Mesh를 스왑한다.
+			var winter := _mm_mesh(nm, {"leafsGreen": C_FROST_LEAF})
+			_tree_mesh[full] = [summer, summer if winter == null else winter]
 
 	# 강변 바위 몇 개 — 물길이 지형에 박혀 보이게(개별 노드, 무충돌)
 	var rocks := Node3D.new()
@@ -560,6 +592,7 @@ func _wisteria() -> void:
 	var root := Node3D.new()
 	root.name = "Wisteria"
 	add_child(root)
+	_blooms.append(root)  # 등나무는 낙엽성 — 겨울엔 퍼걸러·난간 골조만 남는다
 	# 정자 퍼걸러(-26,14): 지붕 4.2각(y2.7~3.05) 가장자리에서 늘어뜨린다
 	for i in 14:
 		var t := i / 14.0 * TAU
