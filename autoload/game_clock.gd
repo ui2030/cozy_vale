@@ -9,7 +9,7 @@ signal season_changed(prev_season: int, season: int)
 enum State { NORMAL, PAUSED, FAST }
 
 const MINUTES_PER_DAY := 1440
-const DAYS_PER_SEASON := 28
+const DAYS_PER_SEASON := 30  # 한 해 = 120일. 7의 배수가 아니므로 계절 시작 요일이 계절마다 +2씩 밀린다.
 const SEASONS := ["봄", "여름", "가을", "겨울"]
 const WEEKDAYS := ["월", "화", "수", "목", "금", "토", "일"]
 const WAKE_MIN := 360  # 06:00

@@ -119,7 +119,7 @@ func _ready() -> void:
 	if "wedding" in OS.get_cmdline_user_args():  # 검증용: 결혼식 광장 집합 (shot wedding)
 		SaveManager.set_process(false)   # 유저 세이브 보호
 		GameClock.game_min = 9 * 60       # 결혼식 시각(NpcSystem.WEDDING_HOUR)
-		for d in 28:  # 봄의 첫 맑은 평일(축제 아님) — 비 오는 결혼식 컷 방지
+		for d in GameClock.DAYS_PER_SEASON:  # 봄의 첫 맑은 평일(축제 아님) — 비 오는 결혼식 컷 방지
 			if not GameData.is_rainy(d) and GameData.festival_on("spring", GameClock.day_of_season_at(d)).is_empty():
 				GameClock.abs_day = d
 				break
@@ -211,10 +211,14 @@ func _ready() -> void:
 		SaveManager.suspended = true  # 시계를 옮기므로 유저 세이브 보호(festival 하네스와 같은 정책)
 		var sid: String = _args[_si + 1]
 		var sb: int = GameData.SEASON_IDS.find(sid) * GameClock.DAYS_PER_SEASON
-		for d in GameClock.DAYS_PER_SEASON:
-			if not GameData.is_rainy(sb + d) and GameData.festival_on(sid, d + 1).is_empty():
-				GameClock.abs_day = sb + d
-				break
+		# `-- season <계절> <일차>` = 그 계절의 특정 일차로 직행(계절 말일 HUD 컷용). 생략하면 기존대로 첫 맑은 날.
+		if _si + 2 < _args.size() and _args[_si + 2].is_valid_int():
+			GameClock.abs_day = sb + clampi(int(_args[_si + 2]), 1, GameClock.DAYS_PER_SEASON) - 1
+		else:
+			for d in GameClock.DAYS_PER_SEASON:
+				if not GameData.is_rainy(sb + d) and GameData.festival_on(sid, d + 1).is_empty():
+					GameClock.abs_day = sb + d
+					break
 		print("season shot: ", sid, " abs_day=", GameClock.abs_day)
 	# 시계를 옮기는 하네스(festival·wedding·weather·season)와 세이브 로드를 전부 지난 뒤 1회 —
 	# from_dict는 신호를 안 쏘므로 여기서 계절 표현(지면 눈 톤·식생)을 명시 재평가한다.

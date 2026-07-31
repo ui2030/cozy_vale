@@ -101,7 +101,7 @@ func _validate() -> void:
 		for tier in ["loved", "liked", "disliked"]:
 			for item_id in g.get(tier, []):
 				assert(has_item_id(item_id), "%s 선물 %s: 없는 아이템 %s" % [nid, tier, item_id])
-	# 축제 선언 검증: 필수 필드 + 계절 유효 + 날짜 1..28 + 시간창 정합
+	# 축제 선언 검증: 필수 필드 + 계절 유효 + 날짜 1..DAYS_PER_SEASON + 시간창 정합
 	# (계절,일) 유일성도 계약이다: festival_on()이 먼저 걸린 하나만 돌려주므로 같은 날 두 축제를
 	# 선언하면 나머지가 조용히 사라진다(달력 패널·기상 토스트·결혼식 회피가 전부 어긋난다).
 	var fest_days := {}

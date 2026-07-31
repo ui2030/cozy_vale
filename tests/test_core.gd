@@ -54,14 +54,24 @@ func _ready() -> void:
 	get_tree().quit()
 
 func _test_clock_math() -> void:
-	GameClock.abs_day = 30  # 30 = 두번째 계절 3일차
+	var d2 := GameClock.DAYS_PER_SEASON + 2  # 두번째 계절 3일차
+	GameClock.abs_day = d2
 	GameClock.game_min = 725
-	assert(GameClock.season() == 1, "season")           # 30/28 % 4 = 1
-	assert(GameClock.day_of_season() == 3, "day_of_season")  # 30%28+1
+	assert(GameClock.season() == 1, "season")
+	assert(GameClock.day_of_season() == 3, "day_of_season")
 	assert(GameClock.year() == 1, "year")
-	assert(GameClock.weekday() == 30 % 7, "weekday")
+	assert(GameClock.weekday() == d2 % 7, "weekday")
 	assert(GameClock.hour() == 12, "hour")              # 725/60
 	assert(GameClock.minute() == 5, "minute")           # 725%60
+	# 계절/연차 경계: 마지막 날 취침 → 다음 계절 D1, 겨울 막날 → 다음 해 봄 D1
+	GameClock.abs_day = GameClock.DAYS_PER_SEASON - 1
+	assert(GameClock.day_of_season() == GameClock.DAYS_PER_SEASON, "봄 마지막 날")
+	GameClock.sleep_to_morning()
+	assert(GameClock.season() == 1 and GameClock.day_of_season() == 1, "계절 넘김 = 다음 계절 D1")
+	GameClock.abs_day = 4 * GameClock.DAYS_PER_SEASON - 1
+	assert(GameClock.season() == 3 and GameClock.day_of_season() == GameClock.DAYS_PER_SEASON and GameClock.year() == 1, "겨울 마지막 날")
+	GameClock.sleep_to_morning()
+	assert(GameClock.season() == 0 and GameClock.day_of_season() == 1 and GameClock.year() == 2, "연차 넘김 = Y2 봄 D1")
 
 func _test_sleep() -> void:
 	GameClock.abs_day = 5
@@ -148,7 +158,7 @@ func _test_farm_loop() -> void:
 	assert(int(_farm.get_tile(c2)["watered_growth_days"]) == before, "물 안 주면 성장 정지")
 
 # ── H-1: 작물 12종 (봄4·여름4·가을4·겨울0) ──────────────────────
-# 28일 계절에 밭 한 칸이 내는 gold/day. 단발 작물은 즉시 재파종, 재수확 작물은 regrow 주기로 계산.
+# 한 계절(DAYS_PER_SEASON일)에 밭 한 칸이 내는 gold/day. 단발 작물은 즉시 재파종, 재수확 작물은 regrow 주기로 계산.
 # 밸런스 대역이 데이터로만 유지되도록 게임 코드가 아니라 테스트에 둔다(런타임은 이 값을 안 쓴다).
 func _gold_per_day(d: Dictionary) -> float:
 	var season := GameClock.DAYS_PER_SEASON
@@ -188,6 +198,8 @@ func _test_crops_h1() -> void:
 	var per_season := {}
 	for cid in GameData.crops:
 		var gpd := _gold_per_day(GameData.crops[cid])
+		# 계절 30일화 때 cranberry가 재수확 임계(30-9=21, 21/5 → 4→5회)로 26.67 독주 →
+		# 기획 판정: sell 180→160(수확 5회×160=23.33, 재수확 프리미엄 1위 유지·독주 해소). 상한 26 복원.
 		assert(gpd >= 8.0 and gpd <= 26.0, "%s gold/day 대역(8~26) 밖: %.2f" % [cid, gpd])
 		for s in GameData.crops[cid]["seasons"]:
 			if not per_season.has(s):
@@ -199,7 +211,7 @@ func _test_crops_h1() -> void:
 		assert(hi / lo <= 3.0, "%s 계절 내 수익 격차 %.2f배 (상한 3배)" % [s, hi / lo])
 
 	# ── 여름 재배 루프 (재수확 작물 tomato: 7일 성숙 → 수확 → 3일 재성숙)
-	GameClock.abs_day = 28  # 여름 D1
+	GameClock.abs_day = GameClock.DAYS_PER_SEASON  # 여름 D1
 	GameClock.game_min = 360
 	assert(GameData.season_id(GameClock.season()) == "summer" and GameClock.day_of_season() == 1, "전제: 여름 D1")
 	var cell := Vector2i(6, 3)
@@ -219,8 +231,8 @@ func _test_crops_h1() -> void:
 	assert(_farm.harvest(cell) == "crop.tomato", "재수확")
 
 	# ── 계절 경계 고사: 여름 막날 심은 여름 작물은 죽고, 두 계절 작물(corn)은 산다
-	GameClock.abs_day = 55  # 여름 D28
-	assert(GameClock.day_of_season() == 28, "전제: 여름 마지막 날")
+	GameClock.abs_day = 2 * GameClock.DAYS_PER_SEASON - 1  # 여름 마지막 날
+	assert(GameClock.day_of_season() == GameClock.DAYS_PER_SEASON, "전제: 여름 마지막 날")
 	var c_die := Vector2i(6, 4)
 	var c_live := Vector2i(7, 4)
 	assert(_farm.till(c_die) and _farm.till(c_live), "막날 괭이질")
@@ -229,7 +241,7 @@ func _test_crops_h1() -> void:
 	assert(GameData.season_id(GameClock.season()) == "autumn", "가을 진입")
 	assert(_farm.get_tile(c_die)["crop_id"] == "", "철 지난 작물 고사")
 	assert(_farm.get_tile(c_live)["crop_id"] == "crop.corn", "여름·가을 작물은 계절 경계 생존")
-	GameClock.abs_day = 83  # 가을 D28
+	GameClock.abs_day = 3 * GameClock.DAYS_PER_SEASON - 1  # 가을 마지막 날
 	GameClock.sleep_to_morning()  # → 겨울 D1
 	assert(GameData.season_id(GameClock.season()) == "winter", "겨울 진입")
 	assert(_farm.get_tile(c_live)["crop_id"] == "", "겨울엔 corn도 고사")
@@ -239,7 +251,7 @@ func _test_crops_h1() -> void:
 	# ── 상점 계절 재고 + 씨앗 순환 집합 (씬 트리 없이 순수 로직)
 	var p: Node = preload("res://player/player.gd").new()
 	p.gold = 1000
-	GameClock.abs_day = 28  # 여름 D1 (월요일 = 영업일)
+	GameClock.abs_day = GameClock.DAYS_PER_SEASON  # 여름 D1
 	assert(GameClock.weekday() != 6, "전제: 상점 영업일")
 	p.selected_seed = "seed.turnip"  # 봄 씨앗을 든 채 여름 상점 앞
 	assert(p.cycle_seeds() == GameData.season_seed_ids("summer"), "무보유 = 순환 집합이 이번 계절 재고와 동일")
@@ -259,7 +271,8 @@ func _test_crops_h1() -> void:
 	p._cycle_seed()
 	assert(p.selected_seed in set0 and p.selected_seed != "seed.turnip", "Q = 집합 내 다음 항목: %s" % p.selected_seed)
 	# 겨울: 재고 0 → 구매 불가, 순환은 보유분만
-	GameClock.abs_day = 84  # 겨울 D1
+	# 겨울 D2 — D1(abs_day 90)은 일요일 휴무라 "재고 0" 대신 요일로 막혀 검증이 무뎌진다
+	GameClock.abs_day = 3 * GameClock.DAYS_PER_SEASON + 1
 	assert(GameData.season_id(GameClock.season()) == "winter" and GameClock.weekday() != 6, "전제: 겨울 영업일")
 	var gw: int = p.gold
 	p._buy_seed()
@@ -486,9 +499,9 @@ func _test_calendar() -> void:
 		var is_fest := not GameData.festival_on(sid, GameClock.day_of_season_at(d)).is_empty()
 		if is_fest:
 			assert(not GameData.is_rainy(d), "축제일 abs_day %d 강제 맑음" % d)
-	assert(not GameData.festival_on("summer", 15).is_empty(), "여름 D15 파생")   # abs_day 42
-	assert(not GameData.festival_on("autumn", 15).is_empty(), "가을 D15 파생")   # abs_day 70
-	assert(not GameData.festival_on("winter", 10).is_empty(), "겨울 D10 파생")   # abs_day 93
+	assert(not GameData.festival_on("summer", 15).is_empty(), "여름 D15 파생")
+	assert(not GameData.festival_on("autumn", 15).is_empty(), "가을 D15 파생")
+	assert(not GameData.festival_on("winter", 10).is_empty(), "겨울 D10 파생")
 	assert(GameData.festival_on("winter", 15).is_empty(), "겨울 D15는 축제 아님")
 	# 축제별 대사: 아키타입 × 축제 전부 2줄 (개수는 데이터에서 세고, 하드코딩하지 않는다)
 	for arche in GameData.dialogues:
@@ -523,7 +536,7 @@ func _test_festival() -> void:
 
 	# ── H-2: 저녁 축제(여름 별빛제 20:00~23:00). DAY_END=20 이후 집합이므로
 	# "축제 > 밤" 우선순위가 실제로 성립하는지가 핵심 위험이었다.
-	GameClock.abs_day = 42     # summer D15 (28 + 14)
+	GameClock.abs_day = GameClock.DAYS_PER_SEASON + 14     # summer D15
 	GameClock.game_min = 1230  # 20:30 = DAY_END(20시) 넘긴 시각
 	fest.evaluate()
 	assert(_npcsys._festival_active, "저녁 축제 활성(DAY_END 이후)")
@@ -552,7 +565,7 @@ func _test_festival() -> void:
 	assert(_npcsys._dialogue_line(id) in GameData.dialogues[String(GameData.npcs[id]["archetype"])]["normal"], "축제 밖 = 평상 대사")
 
 	# ── H-2: 겨울 등불 축제(D10 19:00~22:00) + 장식 생성
-	GameClock.abs_day = 93     # winter D10 (84 + 9)
+	GameClock.abs_day = 3 * GameClock.DAYS_PER_SEASON + 9     # winter D10
 	GameClock.game_min = 1170  # 19:30
 	fest.evaluate()
 	assert(_npcsys._festival_active and _npcsys._festival_id == "festival.lantern", "등불 축제 활성")
@@ -562,7 +575,7 @@ func _test_festival() -> void:
 	assert(not _npcsys._festival_active, "등불 축제 종료")
 
 	# ── 가을 수확제(D15 낮) + 수확 장식
-	GameClock.abs_day = 70     # autumn D15 (56 + 14)
+	GameClock.abs_day = 2 * GameClock.DAYS_PER_SEASON + 14     # autumn D15
 	GameClock.game_min = 720
 	fest.evaluate()
 	assert(_npcsys._festival_active and _npcsys._festival_id == "festival.harvest", "수확제 활성")
@@ -593,6 +606,10 @@ func _test_festival() -> void:
 		assert(moved != fd, "%s 축제일 결혼식 회피" % fid)
 		assert(GameData.festival_on(GameData.SEASON_IDS[GameClock.season_at(moved)], GameClock.day_of_season_at(moved)).is_empty(), "%s 회피한 날도 축제 아님" % fid)
 		assert(_npcsys.wedding_day_for(fd - 1) == fd - 1, "%s 전날은 그대로" % fid)
+	# 계절 말일 예약: 축제가 없는 날이므로 계절 경계를 넘겨 밀지 않는다
+	for s in 4:
+		var last := (s + 1) * GameClock.DAYS_PER_SEASON - 1
+		assert(_npcsys.wedding_day_for(last) == last, "계절 %d 마지막 날 결혼식은 그대로" % s)
 
 	# 후속 테스트를 위해 시계를 원래 종료 상태(봄 D15 22:00)로 되돌린다
 	GameClock.abs_day = 14
@@ -1042,7 +1059,7 @@ func _test_weather() -> void:
 	# ── 비 오는 날 자동 물주기 (farm day_changed 4단계 정합)
 	var rd := -1   # 봄의 첫 비 오는 날
 	var cd := -1   # 그 뒤 첫 맑은 날
-	for d in range(1, 28):
+	for d in range(1, GameClock.DAYS_PER_SEASON):
 		if rd < 0 and days[d]:
 			rd = d
 		elif rd >= 0 and cd < 0 and not days[d]:

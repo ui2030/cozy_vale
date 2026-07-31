@@ -51,7 +51,7 @@
 	},
 	"crop.cranberry": {
 		"name": "Cranberry", "seed_id": "seed.cranberry", "seasons": ["autumn"],
-		"grow_days": 9, "regrow_days": 5, "sell_price": 180, "seed_cost": 100, "stages": 4,
+		"grow_days": 9, "regrow_days": 5, "sell_price": 160, "seed_cost": 100, "stages": 4,
 		"color": [0.75, 0.12, 0.25]
 	},
 	"crop.pumpkin": {

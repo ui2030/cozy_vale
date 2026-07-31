@@ -16,7 +16,7 @@ func _run() -> void:
 	await get_tree().process_frame
 	var args := OS.get_cmdline_user_args()
 	var what: String = args[0] if args.size() > 0 else "prompt"
-	GameClock.abs_day = 28        # 결정적 컷(여름 D1) — 실내라 계절 자체는 그림에 안 나온다
+	GameClock.abs_day = GameClock.DAYS_PER_SEASON  # 결정적 컷(여름 D1) — 실내라 계절 자체는 그림에 안 나온다
 	GameClock.game_min = 11 * 60  # 낮 = 실내등 꺼짐, 창으로 들어오는 빛
 	GameClock.state = GameClock.State.PAUSED
 	var player := get_tree().get_first_node_in_group("player")

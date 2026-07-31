@@ -1,5 +1,5 @@
 extends Control
-# 달력 패널 (C키 토글). 현재 계절 28일 그리드 + 생일·축제·오늘 표시.
+# 달력 패널 (C키 토글). 현재 계절 그리드 + 생일·축제·오늘 표시.
 # 이벤트 데이터는 GameData(생일=npcs.json, 축제=calendar.json) 단일 출처 조회.
 
 const WD_EN := ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
@@ -61,6 +61,12 @@ func _rebuild() -> void:
 	_title.text = "%s  (Y%d)" % [SEASON_EN[sidx], GameClock.year()]
 	for c in _grid.get_children():
 		c.queue_free()
+	# 계절 길이가 7의 배수가 아니면 계절마다 1일의 요일이 달라진다 → 앞쪽 빈칸으로 요일 열을 맞춘다.
+	# 1일차의 abs_day = 오늘 abs_day - (오늘 일차 - 1), 요일 = 그 값 % 7 (0=월).
+	for _i in (GameClock.abs_day - today + 1) % 7:
+		var blank := Control.new()
+		blank.custom_minimum_size = Vector2(78, 52)
+		_grid.add_child(blank)
 	for day in range(1, GameClock.DAYS_PER_SEASON + 1):
 		_grid.add_child(_make_cell(sid, day, day == today))
 

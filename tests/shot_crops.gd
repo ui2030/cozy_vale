@@ -16,8 +16,8 @@ func _run() -> void:
 	var args := OS.get_cmdline_user_args()
 	var what: String = args[0] if args.size() > 0 else "farm"
 	# 맑은 평일 정오 (비 오는 컷·상점 휴무 회피). winter 샷만 겨울, 나머지는 여름.
-	var first: int = 84 if what == "winter" else 28
-	for d in range(first, first + 28):
+	var first: int = (3 if what == "winter" else 1) * GameClock.DAYS_PER_SEASON
+	for d in range(first, first + GameClock.DAYS_PER_SEASON):
 		GameClock.abs_day = d
 		if not GameData.is_rainy(d) and GameClock.weekday() != 6:
 			break
