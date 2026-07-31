@@ -204,7 +204,7 @@ func interact_target() -> Dictionary:
 	return {} if best == null else {"kind": best_kind, "area": best}
 
 func _area_kind(a: Area3D) -> String:
-	for k in ["bed", "shop", "bin", "npc", "water", "forage", "door"]:
+	for k in ["bed", "shop", "bin", "npc", "water", "forage", "door", "stove"]:
 		if a.is_in_group(k):
 			return k
 	return ""
@@ -221,6 +221,7 @@ func interact_prompt() -> String:
 		"npc": return "E: 대화 — " + GameData.npcs[t["area"].get_meta("npc_id")]["name"]
 		"water": return "E: 낚시"
 		"forage": return "E: 줍기"
+		"stove": return "E: 요리"
 		"door": return String(t["area"].get_meta("door_label", "E: 문"))
 	return ""
 
@@ -240,7 +241,17 @@ func _try_interact() -> void:
 			message.emit(r["msg"])
 		"water": _start_fishing(t["area"])
 		"forage": _pick_forage(t["area"])
+		"stove": _open_cooking()
 		"door": _use_door(t["area"])
+
+# 부엌 스토브 = 요리 패널. 여는 E가 같은 프레임에 패널의 닫기로 다시 판정되지 않게 소비한다
+# (낚시 시작과 같은 이유 — HUD 패널이 트리 역순으로 입력을 먼저 받는다).
+func _open_cooking() -> void:
+	var panel := get_tree().get_first_node_in_group("cooking_panel")
+	if panel == null:
+		return
+	panel.open()
+	get_viewport().set_input_as_handled()
 
 # 문 = 좌표 텔레포트 (씬 전환 없음). 도착점은 반대편 문 트리거 밖이라 E 연타로 왕복하지 않는다.
 func _use_door(area: Area3D) -> void:
@@ -286,7 +297,7 @@ func _give() -> void:
 		message.emit(propose_with_ring(npc_id)["msg"])
 		return
 	for e in inventory:
-		if GameData.is_produce(e["id"]):  # 산출물(작물·물고기·채집물) 선물
+		if GameData.is_produce(e["id"]):  # 산출물(작물·물고기·채집물) + 요리 선물
 			var r: Dictionary = _npcsys.give(npc_id, e["id"])
 			if r["ok"]:
 				_remove_item(e["id"], 1)
@@ -358,10 +369,33 @@ func buy_ring() -> void:
 	Sfx.play("coin")
 	message.emit(GameData.RING_NAME + " 구매! 마음에 둔 사람에게 G")
 
+# ── 요리 (부엌 스토브) ─────────────────────────────────────────
+# 재료 전량 보유 판정. 모르는 레시피는 false(패널·테스트 공용 단일 판정).
+func can_cook(recipe_id: String) -> bool:
+	if not GameData.recipes.has(recipe_id):
+		return false
+	var ing: Dictionary = GameData.recipes[recipe_id]["ingredients"]
+	for iid in ing:
+		if count(iid) < int(ing[iid]):
+			return false
+	return true
+
+# 요리 실행: 재료 차감 → 요리 1개. Area3D 없이도 검증 가능하게 분리(test_core가 직접 호출).
+func cook(recipe_id: String) -> bool:
+	if not can_cook(recipe_id):
+		return false
+	var ing: Dictionary = GameData.recipes[recipe_id]["ingredients"]
+	for iid in ing:
+		_remove_item(iid, int(ing[iid]))
+	_add_item(recipe_id, 1)
+	Sfx.play("harvest")
+	message.emit(GameData.display_name(recipe_id) + " 완성!")
+	return true
+
 func _deposit_all() -> void:
 	var any := false
 	for e in inventory.duplicate():
-		if GameData.is_produce(e["id"]):  # 산출물(작물·물고기·채집물) 판매상자로
+		if GameData.is_produce(e["id"]):  # 산출물(작물·물고기·채집물) + 요리 판매상자로
 			var accepted: int = _farm.deposit(e["id"], int(e["qty"]))  # 실제 수락량만 차감(증발 방지)
 			if accepted > 0:
 				_remove_item(e["id"], accepted)
@@ -383,9 +417,9 @@ func _add_item(id: String, qty: int) -> void:
 	inventory.append({"id": id, "qty": qty})
 	stats_changed.emit()
 
-# 도감: 산출물 최초 획득이면 등록 + 토스트
+# 도감: 자연 산출물 최초 획득이면 등록 + 토스트 (요리는 도감 대상 아님 = is_collectible)
 func _discover(id: String) -> void:
-	if not GameData.is_produce(id) or id in collection:
+	if not GameData.is_collectible(id) or id in collection:
 		return
 	collection.append(id)
 	message.emit("도감 등록: " + GameData.display_name(id))

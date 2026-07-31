@@ -33,6 +33,10 @@ const FACE_OUT := Vector3(0, 0, 1)               # 나오면 집을 등지고 �
 const SPOUSE_SPOT := ORIGIN + Vector3(1.8, 0, 3.0)  # 배우자 실내 정위치 (식탁 남동, 동선 밖)
 const BED_CENTER := ORIGIN + Vector3(-3.0, 0.9, -3.43)  # bedDouble 실측 중심 (2.50×2.94)
 const BED_SIZE := Vector3(2.50, 1.1, 2.94)
+# 요리(H-3): kitchenStove 앞에 서는 자리. 스토브 본체는 rel(1.9,-3.75)에 뒷면이 북벽 —
+# 트리거를 본체가 아니라 "앞"에 두어야 실내 문(IN_DOOR)과 프롬프트가 겹치지 않는다(실측 2.15 > 사거리 2.0).
+const STOVE_AT := ORIGIN + Vector3(1.9, 1.0, -3.2)
+const STOVE_R := 0.7                             # 문 트리거와 같은 반경 = 같은 사거리 감각
 
 # ── 야간 실내등 ──────────────────────────────────────────────────
 const LAMP_E := 1.2                       # 최대 밝기 (밤). 2.2는 방 전체가 균일하게 떠서 아늑함이 죽었다
@@ -90,6 +94,7 @@ func _ready() -> void:
 		_collide(Vector3(s[0], 1.0, s[1]), Vector3(s[2], 2.0, s[3]))
 	_shell_collision()
 	_bed()
+	_stove()
 	_doors()
 	_lights()
 	for n in _cache.values():  # 배치용 원본은 트리 밖 — 놔두면 종료 시 누수로 잡힌다
@@ -162,6 +167,19 @@ func _bed() -> void:
 	cs.shape = sh
 	a.add_child(cs)
 	a.add_child(_label("침대", 1.2))
+	add_child(a)
+
+# 요리 스토브: 그룹 "stove" Area3D. 침대와 같은 규약(그룹 + Label3D)이라 player.gd는 종류만 안다.
+func _stove() -> void:
+	var a := Area3D.new()
+	a.add_to_group("stove")
+	a.position = STOVE_AT
+	var cs := CollisionShape3D.new()
+	var sh := SphereShape3D.new()
+	sh.radius = STOVE_R
+	cs.shape = sh
+	a.add_child(cs)
+	a.add_child(_label("부엌", 1.1))
 	add_child(a)
 
 func _doors() -> void:

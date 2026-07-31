@@ -1,4 +1,4 @@
-[gd_scene load_steps=8 format=3]
+[gd_scene load_steps=9 format=3]
 
 [ext_resource type="Script" path="res://ui/hud.gd" id="1"]
 [ext_resource type="Script" path="res://ui/calendar_panel.gd" id="2"]
@@ -7,6 +7,7 @@
 [ext_resource type="Script" path="res://ui/fishing_game.gd" id="5"]
 [ext_resource type="Script" path="res://ui/collection_panel.gd" id="6"]
 [ext_resource type="Script" path="res://ui/inventory_panel.gd" id="7"]
+[ext_resource type="Script" path="res://ui/cooking_panel.gd" id="8"]
 
 [node name="HUD" type="CanvasLayer"]
 script = ExtResource("1")
@@ -76,3 +77,6 @@ script = ExtResource("6")
 
 [node name="InventoryPanel" type="Control" parent="."]
 script = ExtResource("7")
+
+[node name="CookingPanel" type="Control" parent="."]
+script = ExtResource("8")

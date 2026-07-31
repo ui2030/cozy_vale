@@ -21,6 +21,7 @@ const RING_COST := 1200
 var crops := {}            # crop_id → 정의
 var fish := {}             # fish_id → 정의 (낚시)
 var forage := {}           # forage_id → 정의 (채집)
+var recipes := {}          # dish_id → 정의 (요리 — 부엌 스토브에서 재료를 소모해 만든다)
 var npcs := {}             # npc_id → 정의
 var calendar := {}         # festival_id → 정의 (축제 선언)
 var dialogues := {}        # archetype → {normal:[], festival:[]}
@@ -30,6 +31,7 @@ func _ready() -> void:
 	crops = _load_json("res://data/crops.json")
 	fish = _load_json("res://data/fish.json")
 	forage = _load_json("res://data/forage.json")
+	recipes = _load_json("res://data/recipes.json")
 	npcs = _load_json("res://data/npcs.json")
 	calendar = _load_json("res://data/calendar.json")
 	dialogues = _load_json("res://data/dialogues.json")
@@ -78,9 +80,19 @@ func _validate() -> void:
 			assert(d.has(key), "%s 에 %s 누락" % [fid, key])
 		for s in d["seasons"]:
 			assert(s in SEASON_IDS, "%s 계절 잘못됨: %s" % [fid, str(s)])
-	# 아이템 ID 전역 유일성: crop/seed/fish/forage 충돌시 조회가 조용히 가려짐 (Codex)
+	# 요리: 필수 필드 + 재료 참조 무결성. 재료는 자연 산출물(crop/fish/forage)만 —
+	# 요리를 재료로 삼으면 마진 검증(테스트)이 연쇄가 되고 순환 참조가 조용히 성립한다.
+	for rid in recipes:
+		var r: Dictionary = recipes[rid]
+		for key in ["name", "sell_price", "ingredients"]:
+			assert(r.has(key), "%s 에 %s 누락" % [rid, key])
+		assert(not r["ingredients"].is_empty(), "%s 재료 없음(공짜 요리)" % rid)
+		for iid in r["ingredients"]:
+			assert(is_collectible(iid), "%s 재료 %s 없는 아이템(또는 요리)" % [rid, iid])
+			assert(int(r["ingredients"][iid]) > 0, "%s 재료 %s 수량 0 이하" % [rid, iid])
+	# 아이템 ID 전역 유일성: crop/seed/fish/forage/dish 충돌시 조회가 조용히 가려짐 (Codex)
 	var ids := {}
-	for key in crops.keys() + _seed_to_crop.keys() + fish.keys() + forage.keys():
+	for key in crops.keys() + _seed_to_crop.keys() + fish.keys() + forage.keys() + recipes.keys():
 		assert(not ids.has(key), "아이템 ID 충돌: " + key)
 		ids[key] = true
 	# NPC 선물 목록의 아이템 ID 참조 무결성 (통합 검사)
@@ -116,12 +128,19 @@ func _validate() -> void:
 			for key in ["date_invite", "date1", "date2", "propose_accept", "propose_reject", "wedding", "married"]:
 				assert(not dialogues[arche].get(key, []).is_empty(), "%s(%s) %s 대사 없음" % [nid, arche, key])
 
-# 통합 아이템 ID 레지스트리 (작물·씨앗·물고기·채집물·반지)
+# 통합 아이템 ID 레지스트리 (작물·씨앗·물고기·채집물·요리·반지)
 func has_item_id(item_id: String) -> bool:
-	return item_id == RING_ID or crops.has(item_id) or _seed_to_crop.has(item_id) or fish.has(item_id) or forage.has(item_id)
+	return item_id == RING_ID or crops.has(item_id) or _seed_to_crop.has(item_id) \
+		or fish.has(item_id) or forage.has(item_id) or recipes.has(item_id)
 
-# 산출물(판매·선물·도감 대상) — 씨앗 제외. crop/fish/forage.
+# 판매·선물 가능 아이템 — 씨앗·반지 제외. 자연 산출물 + 요리.
+# 요리를 여기 포함시키는 것이 계약이다: 판매상자(farm.deposit)·선물(_give)·가방 소지품 표시가
+# 전부 이 한 판정을 보므로, 요리가 자동으로 팔리고 선물된다(취향 목록 밖 = neutral).
 func is_produce(item_id: String) -> bool:
+	return is_collectible(item_id) or recipes.has(item_id)
+
+# 도감 대상 = 자연 산출물만. 요리는 만든 것이라 도감에 넣지 않는다(수집 진도율 왜곡 방지).
+func is_collectible(item_id: String) -> bool:
 	return crops.has(item_id) or fish.has(item_id) or forage.has(item_id)
 
 # 가중치·시간대·낚시터 반영 물고기 선택 (순수 함수, test_core 단위검증).
@@ -184,7 +203,7 @@ func season_seed_ids(sid: String) -> Array:
 	return out
 
 func sell_price(item_id: String) -> int:
-	for src in [crops, fish, forage]:
+	for src in [crops, fish, forage, recipes]:
 		if src.has(item_id):
 			return int(src[item_id].get("sell_price", 0))
 	return 0
@@ -205,7 +224,7 @@ func all_seed_ids() -> Array:
 func display_name(item_id: String) -> String:
 	if item_id == RING_ID:
 		return RING_NAME
-	for src in [crops, fish, forage]:
+	for src in [crops, fish, forage, recipes]:
 		if src.has(item_id):
 			return src[item_id].get("name", item_id)
 	return item_id

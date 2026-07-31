@@ -1,0 +1,34 @@
+{
+	"dish.salad": {
+		"name": "Spring Salad", "sell_price": 215,
+		"ingredients": {"crop.turnip": 1, "crop.cabbage": 1}
+	},
+	"dish.jam": {
+		"name": "Strawberry Jam", "sell_price": 310,
+		"ingredients": {"crop.strawberry": 2}
+	},
+	"dish.soup": {
+		"name": "Tomato Soup", "sell_price": 320,
+		"ingredients": {"crop.tomato": 2, "crop.pepper": 1}
+	},
+	"dish.bread": {
+		"name": "Corn Bread", "sell_price": 350,
+		"ingredients": {"crop.corn": 1, "crop.potato": 1}
+	},
+	"dish.pie": {
+		"name": "Pumpkin Pie", "sell_price": 870,
+		"ingredients": {"crop.pumpkin": 1, "crop.cranberry": 1}
+	},
+	"dish.roast": {
+		"name": "Roasted Carrot", "sell_price": 220,
+		"ingredients": {"crop.carrot": 2, "forage.horseradish": 1}
+	},
+	"dish.stew": {
+		"name": "Fish Stew", "sell_price": 290,
+		"ingredients": {"fish.bass": 1, "crop.potato": 1, "forage.leek": 1}
+	},
+	"dish.platter": {
+		"name": "Forest Platter", "sell_price": 260,
+		"ingredients": {"forage.morel": 1, "forage.leek": 1, "forage.dandelion": 2}
+	}
+}

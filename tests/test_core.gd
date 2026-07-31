@@ -48,6 +48,7 @@ func _ready() -> void:
 	_test_weather()
 	_test_interior()
 	_test_beach()
+	_test_cooking()
 	print("ALL CORE TESTS PASS")
 	get_tree().quit()
 
@@ -1144,3 +1145,86 @@ func _test_beach() -> void:
 	# 마을 쪽 신규물은 전부 무충돌(장식 길·표지판 + Area3D 게이트)이라 구세이브가 박힐 수 없다
 	# → WORLD_VERSION 유지. 이 단언이 무심코 범프하는 것을 잡는 트립와이어.
 	assert(SaveManager.WORLD_VERSION == 3, "해변 추가는 마을 충돌체 무변경 = WORLD_VERSION 유지")
+
+# ── H-3: 요리 8종 (부엌 스토브) ─────────────────────────────────
+# 아이템이 나는 계절 (crop/fish/forage 공통 조회) — 요리 계절 커버리지 판정용.
+func _item_seasons(item_id: String) -> Array:
+	for src in [GameData.crops, GameData.fish, GameData.forage]:
+		if src.has(item_id):
+			return src[item_id].get("seasons", [])
+	return []
+
+func _test_cooking() -> void:
+	# ── 데이터 정합: 종수·재료 참조·마진 대역
+	# 요리는 "가치를 더하는 소모처"다. 판매가가 재료 판매가 합의 1.25~1.6배를 벗어나면
+	# (아래면 아무도 안 만들고, 위면 재료 되팔기보다 요리가 돈복사가 된다) 여기서 잡는다.
+	# 작물 gold/day 대역과 같은 수법: 런타임은 이 대역을 모르고 테스트만 안다.
+	var lo := 1.25
+	var hi := 1.6
+	assert(GameData.recipes.size() == 8, "요리 8종 (실제 %d)" % GameData.recipes.size())
+	for rid in GameData.recipes:
+		var r: Dictionary = GameData.recipes[rid]
+		assert(rid.begins_with("dish."), "요리 id 규약 dish.*: %s" % rid)
+		assert(GameData.has_item_id(rid), "%s 아이템 레지스트리 등록" % rid)
+		assert(GameData.display_name(rid) == String(r["name"]), "%s 표시 이름 해석" % rid)
+		assert(GameData.sell_price(rid) == int(r["sell_price"]), "%s 판매가 해석" % rid)
+		var raw := 0
+		for iid in r["ingredients"]:
+			assert(GameData.is_collectible(iid), "%s 재료 %s 없는 아이템" % [rid, iid])
+			assert(not GameData.recipes.has(iid), "%s 재료가 요리(순환 참조)" % rid)
+			raw += GameData.sell_price(iid) * int(r["ingredients"][iid])
+		var margin := float(GameData.sell_price(rid)) / float(raw)
+		assert(margin >= lo and margin <= hi, "%s 마진 대역(%.2f~%.2f) 밖: %.3f (재료합 %d)" % [rid, lo, hi, margin, raw])
+		# 요리는 산출물 집합에만 든다 — 도감·씨앗 순환은 오염시키지 않는다
+		assert(GameData.is_produce(rid), "%s 판매·선물 대상" % rid)
+		assert(not GameData.is_collectible(rid), "%s 도감 대상 아님" % rid)
+		assert(not (rid in GameData.all_seed_ids()), "%s 씨앗 순환 밖" % rid)
+		for nid in GameData.npcs:  # 선물 취향 목록은 특정 id만 참조 = 요리는 항상 neutral
+			for tier in ["loved", "liked", "disliked"]:
+				assert(not (rid in GameData.npcs[nid].get("gifts", {}).get(tier, [])), "%s 취향 목록에 요리" % nid)
+	# ── 계절 커버리지: 봄·여름·가을은 그 계절 재료만으로 만드는 요리가 하나씩 있다.
+	# 겨울은 재료 산출이 0인 계절(설계) — 저장해 둔 재료로 요리한다(요리 자체엔 계절 게이트 없음).
+	for s in ["spring", "summer", "autumn"]:
+		var found := ""
+		for rid in GameData.recipes:
+			var all_in := true
+			for iid in GameData.recipes[rid]["ingredients"]:
+				if not (s in _item_seasons(iid)):
+					all_in = false
+					break
+			if all_in:
+				found = rid
+				break
+		assert(found != "", "%s 제철 재료만으로 만드는 요리 없음" % s)
+	# ── 요리 실행 (씬 트리 없이 순수 로직)
+	var p: Node = preload("res://player/player.gd").new()
+	assert(not p.can_cook("dish.salad"), "재료 0 = 요리 불가")
+	assert(not p.cook("dish.salad"), "재료 없이 요리 실패")
+	assert(p.inventory.is_empty(), "실패한 요리는 인벤 무변경")
+	assert(not p.can_cook("dish.없음"), "모르는 레시피 = 불가")
+	p._add_item("crop.turnip", 2)
+	p._add_item("crop.cabbage", 1)
+	assert(p.can_cook("dish.salad"), "재료 충족")
+	assert(p.cook("dish.salad"), "요리 성공")
+	assert(p.count("dish.salad") == 1, "요리 1개 획득")
+	assert(p.count("crop.turnip") == 1 and p.count("crop.cabbage") == 0, "재료만 정확히 차감")
+	assert(not p.can_cook("dish.salad"), "재료 소진 = 재요리 불가")
+	assert(not ("dish.salad" in p.collection), "요리는 도감 미등록")
+	assert("crop.turnip" in p.collection, "재료(자연 산출물)는 도감 등록 유지")
+	# 판매상자: farm.deposit은 is_produce 게이트 하나만 본다 → 요리도 팔린다
+	assert(_farm.deposit("dish.salad", 1) == 1, "판매상자가 요리 수락")
+	assert(GameData.sell_price("dish.salad") > 0, "정산 가격 해석")
+	_farm.shipping_bin.clear()  # 다음 취침 정산에 끼어들지 않게
+	# 선물: 취향 목록 밖 = neutral (크래시 없음)
+	_npcsys.state["npc.tom"]["gifted_today"] = false
+	var g: Dictionary = _npcsys.give("npc.tom", "dish.salad")
+	assert(g["ok"] and "받음" in String(g["msg"]), "요리 선물 = neutral: %s" % str(g["msg"]))
+	p.free()
+	# ── 스토브 배치 계약: 실내 문·침대와 프롬프트가 겹치지 않는다 (단일 판정이 서로를 먹지 않게)
+	var I := preload("res://world/interior.gd")
+	const PLAYER_R := 1.3
+	assert(I.inside(I.STOVE_AT), "스토브가 실내")
+	assert(I.STOVE_AT.distance_to(I.IN_DOOR) > I.STOVE_R + PLAYER_R, "스토브와 실내 문 이격 (%.2f)" % I.STOVE_AT.distance_to(I.IN_DOOR))
+	assert(I.STOVE_AT.distance_to(I.BED_CENTER) > I.STOVE_R + PLAYER_R, "스토브와 침대 이격")
+	# ── 세이브 표면: 새 아이템 id는 인벤토리 자유형 리스트에 흡수 = 포맷 무변경
+	assert(SaveManager.VERSION == 5, "요리 추가 = 세이브 포맷 무변경 (VERSION 5 유지)")
