@@ -547,6 +547,10 @@ func _roads(parent: Node) -> void:
 func _road(parent: Node, center: Vector3, size: Vector3, rot_deg: float) -> void:
 	var mi := _box(parent, center, size, C_WOOD, 0.0)
 	mi.rotation.y = deg_to_rad(rot_deg)
+	# 곡률 셰이더(v.y -= 0.006·z²)는 정점 단위 — 세분할 없는 긴 박스는 장축이 현(직선)으로
+	# 근사돼 가운데가 지면 아래로 잠긴다(N길 12u 실증, 처짐 0.0015·Δd²  vs 부상고 0.085).
+	# 장축을 ~1.5u 간격으로 쪼개면 지면(60분할 평면)과 같은 곡선을 탄다.
+	(mi.mesh as BoxMesh).subdivide_depth = maxi(1, int(size.z / 1.5))
 
 func _pavilion(parent: Node, base: Vector3) -> void:
 	# 정자 4×4 퍼걸러: 기둥4 + 등나무 지붕 + 테이블. 개방(무충돌).
