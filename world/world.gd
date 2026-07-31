@@ -419,6 +419,10 @@ const C_WALL  := Color(0.880, 0.844, 0.774)  # 크림 — 벽토/석재
 const C_WOOD  := Color(0.590, 0.480, 0.362)  # 브라운 — 목재
 const C_ROAD  := Color(0.700, 0.619, 0.476)  # 흙길 — 파스텔 모래빛
 const C_ROAD_E := Color(0.720, 0.673, 0.590)  # 길 가장자리 — 풀로 옅어지는 톤(같은 hue, 채도만 낮춤)
+# 강둑 흙 — C_ROAD(흙길) × 0.889. hue 보존, 한 단 눅눅한 흙. ×0.94는 흙길과 거의 같은 밝기라
+# 길이 강에 닿는 자리에서 둑과 길이 한 덩어리로 뭉쳤다(실측 스샷). 목재 브라운(C_WOOD)을 쓰면
+# 둑이 "각목 두 줄"로 읽힌다(유저 실플레이 지적) — 울타리·다리 난간과 같은 색이라 더 그렇다.
+const C_BANK  := Color(0.622, 0.550, 0.422)
 const C_STONE := Color(0.770, 0.758, 0.735)  # 석재 회 — 다리/계단/분수
 const C_DRESSED := Color(0.700, 0.688, 0.667)  # 다듬돌(갓돌·이맛돌) — 같은 hue 한 단 아래
 const C_GREEN := Color(0.652, 0.710, 0.494)  # 그린 — 언덕(수평면이라 0.72 이하로 묶는다)
@@ -593,8 +597,19 @@ const ROADS := [
 # 데크 리프트 소멸 지점(DECK_EDGE 3.4) + 0.2 — ROADS 데이터는 그대로 두고(decor 길가 판정 공유)
 # 빌드에서만 클립한다.
 const BRIDGE_TRIM := 3.6
-# 강둑을 비우는 다리 중심 반경. 둑 오프셋 2.05 기준 흐름 방향 ±2.2가 비어 파라펫(z±1.6)을 넉넉히 벗어난다.
+# 강둑을 비우는 다리 중심 반경. 둑 오프셋 기준 흐름 방향 ±2.2가 비어 파라펫(z±1.6)을 넉넉히 벗어난다.
 const BANK_GAP := 3.0
+# ── 강둑 치수 ──────────────────────────────────────────────────
+# 물 상면 0.23이 초지 상면 0.10보다 **높다** — 물이 잔디 위에 떠 있고, 그 단차를 가려서
+# "파인 개울"로 읽히게 하는 게 둑의 유일한 임무다. 그래서 높이는 마음대로 못 낮춘다.
+# 옛 값(폭1.0·높이0.7)은 그 임무를 초과 달성해 통나무 두 줄로 읽혔다(유저 실플레이 지적).
+# 0.45 = 물 위 턱 0.22 · 잔디 위 노출 0.35. 폭 0.6이라 위에서 봐도 띠가 얇다.
+const BANK_W := 0.6
+const BANK_H := 0.45
+# 안쪽 모서리를 옛 값 그대로 1.55에 붙들어 둔다(BANK_OFF − BANK_W/2). 물 반폭 1.5 대비
+# 0.05 틈은 채널 바닥(어두운 상면 0.13)이 실선처럼 비치는 자리 — 현행 그림 그대로.
+# 얇아진 만큼 바깥쪽만 안으로 들어온다.
+const BANK_OFF := 1.85
 
 func _roads(parent: Node) -> void:
 	for r in ROADS:
@@ -669,13 +684,13 @@ func _river_and_bridges(parent: Node) -> void:
 		var water := _box(parent, Vector3(mid.x, 0.16, mid.y), Vector3(3.0, 0.14, span + 0.4), C_WATER, 0.0)
 		water.rotation.y = ang      # 밝은 물면(강둑보다 낮게 inset), 폭3
 		water.material_override = _water_mat()  # 애니 물(연못과 통일)
-		for s in [1.0, -1.0]:       # 양안 강둑(브라운) — 물면보다 ~0.45 높아 파인 채널로 읽힘
-			# 다리 근처는 비운다(충돌벽과 같은 분절 방식) — 둑(높이 0.7)이 아치 발치(데크 끝
-			# 높이 ~0.55)보다 높아 다리 끝이 흙에 먹힌 그림이 된다(유저 실플레이 지적).
+		for s in [1.0, -1.0]:       # 양안 강둑(흙) — 물면보다 0.22 높아 파인 채널로 읽힘
+			# 다리 근처는 비운다(충돌벽과 같은 분절 방식) — 둑이 아치 발치(데크 끝 높이 ~0.55)
+			# 보다 높으면 다리 끝이 흙에 먹힌 그림이 된다(유저 실플레이 지적).
 			var bsteps := maxi(1, int(ceil(span / 1.4)))
 			var bstep := (b - a) / bsteps
 			for k in bsteps:
-				var bc: Vector2 = a + bstep * (k + 0.5) + perp * (2.05 * s)
+				var bc: Vector2 = a + bstep * (k + 0.5) + perp * (BANK_OFF * s)
 				var near_bridge := false
 				for br in BRIDGES:
 					if bc.distance_to(br) < BANK_GAP:
@@ -683,7 +698,7 @@ func _river_and_bridges(parent: Node) -> void:
 						break
 				if near_bridge:
 					continue
-				var bank := _box(parent, Vector3(bc.x, 0.35, bc.y), Vector3(1.0, 0.7, bstep.length() + 0.1), C_WOOD, 0.004)
+				var bank := _box(parent, Vector3(bc.x, BANK_H * 0.5, bc.y), Vector3(BANK_W, BANK_H, bstep.length() + 0.1), C_BANK, 0.004)
 				bank.rotation.y = ang
 		_river_wall_seg(parent, a, b, ang)  # 분절 충돌벽(다리 gap 제외)
 	for br in BRIDGES:

@@ -448,6 +448,11 @@ func _test_npc_schedule() -> void:
 	var b_flow := Vector2(sin(b_ang), cos(b_ang))
 	assert(W2.deck_lift(BR[0] + b_flow * 2.0) == 0.0, "데크 폭 밖 = 리프트 0")
 	assert(absf(W2.deck_lift(BR[0] + b_flow * 1.5) - W2.DECK_CROWN) < 0.001, "난간 선까지는 온전한 데크 높이")
+	# ── 강둑이 "떠 있는 물"을 가리는 계약 (슬림화하다 illusion을 깨는 회귀 방지)
+	# 물 상자: 중심 y0.16 · 높이 0.14 → 상면 0.23 (초지 상면 0.10보다 높다) · 반폭 1.5.
+	assert(W2.BANK_H - 0.23 >= 0.10, "강둑 상면이 물 위 턱 0.10 미만 (%.2f)" % (W2.BANK_H - 0.23))
+	assert(W2.BANK_OFF - W2.BANK_W * 0.5 <= 1.6, "강둑 안쪽 모서리가 물(반폭1.5)에서 떨어짐 (%.2f)" % (W2.BANK_OFF - W2.BANK_W * 0.5))
+	assert(W2.BANK_H < 0.55, "강둑이 아치 발치(데크 끝 ~0.55)보다 높다 = 다리가 흙에 먹힘")
 	# ── 로드/취침 점프: 그 시각 장소에 이미 배치 (단체 행군 방지)
 	GameClock.game_min = 13 * 60
 	_npcsys.snap_to_schedule()
