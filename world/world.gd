@@ -91,6 +91,7 @@ func _ready() -> void:
 		"v_pavilion":  Vector3(-26, 2, 20),   # 정자(서 -26,14)
 		"v_hall":      Vector3(0, 2, -11),    # 시계탑 회관(0,-18) 근접(고정카메라라 첨탑 상단은 프레임 위)
 		"v_forest":    Vector3(-30, 2, 26),   # 남서 숲 띠 경계(P3 드레싱 검증)
+		"v_bend":      Vector3(11, 2, 30),    # 강 최대 굽이(6,26·30.5°) 바깥쪽 — 물·둑 이음새 검증
 	}
 	for _k in _vp:
 		if _k in OS.get_cmdline_user_args():
@@ -103,8 +104,12 @@ func _ready() -> void:
 	if "v_arch" in OS.get_cmdline_user_args():
 		var ca := $Camera as Camera3D
 		ca.set_process(false)
-		ca.global_position = Vector3(21.1, 0.75, -10.3)  # 강 중심선 하류 6
-		ca.look_at(Vector3(23, 0.45, -16), Vector3.UP)   # 다리 아래 개구부
+		# 좌표를 복제하지 않고 BRIDGES에서 파생 — 다리를 옮기면 카메라도 따라온다.
+		var bn: Vector2 = BRIDGES[0]
+		var fa := _river_dir_at(bn)
+		var fl := Vector2(sin(fa), cos(fa)) * 6.0  # 강 중심선 하류 6
+		ca.global_position = Vector3(bn.x + fl.x, 0.75, bn.y + fl.y)
+		ca.look_at(Vector3(bn.x, 0.45, bn.y), Vector3.UP)  # 다리 아래 개구부
 		_vp_pinned = true
 	# 여백 체감 샷: 광장 중심에서 4방(주거/정자/강·풍차/생활) — 게임 카메라 각도(피치·거리) 유지한 채
 	# 카메라를 4 방위로 오빗(추종 스크립트 정지 후 수동 배치). 구역 간 트임을 한 컷에 담기 위함.
@@ -474,11 +479,19 @@ func _build_village() -> void:
 	v.add_child(decor)
 	decor.build(RIVER_PTS, BRIDGES, ROADS)
 
+# 곡률 셰이더(v.y -= 0.006·z²)는 정점 단위 — 세분할 없는 긴 박스는 장축이 현(직선)으로
+# 근사돼 가운데가 지면 아래로 잠긴다(처짐 0.0015·L², N길 12u·강 물면 15u 실증). 장축을
+# ~1.5u로 쪼개면 지면(60분할 평면)과 같은 곡선을 탄다. z<3이면 0 = 추가 정점 없음.
+# test_core가 이 수식으로 물 박스 계약을 검증하므로 복제 금지(단일 출처).
+static func _subdiv_z(len_z: float) -> int:
+	return maxi(0, int(len_z / 1.5) - 1)
+
 # 박스 메시(툰 단색). center=박스 중심.
 func _box(parent: Node, center: Vector3, size: Vector3, color: Color, outline := 0.006) -> MeshInstance3D:
 	var mi := MeshInstance3D.new()
 	var bm := BoxMesh.new()
 	bm.size = size
+	bm.subdivide_depth = _subdiv_z(size.z)
 	mi.mesh = bm
 	mi.material_override = ToonChar.make_solid(color, outline)
 	mi.position = center
@@ -610,6 +623,11 @@ const BANK_H := 0.45
 # 0.05 틈은 채널 바닥(어두운 상면 0.13)이 실선처럼 비치는 자리 — 현행 그림 그대로.
 # 얇아진 만큼 바깥쪽만 안으로 들어온다.
 const BANK_OFF := 1.85
+# 물·채널바닥 박스를 세그먼트 길이보다 이만큼 길게 뽑는다(끝당 절반). 폴리라인이 각 Δ로 꺾이면
+# 바깥 모서리 마이터를 채우는 데 끝당 1.5·tan(Δ/2)가 필요하다 — 옛 0.4는 Δ≤15.2°까지만 커버해
+# J4(24.2°)·J5(30.5°)에 잔디 쐐기가 남았다. 1.4 = 끝당 0.7 → Δ≤50°. 안쪽 겹침은 물 셰이더가
+# world_xz 기반이라 무늬가 이어져 무해.
+const RIVER_PAD := 1.4
 
 func _roads(parent: Node) -> void:
 	for r in ROADS:
@@ -646,10 +664,6 @@ func _road(parent: Node, center: Vector3, size: Vector3, rot_deg: float) -> void
 	rm.set_shader_parameter("edge_color", C_ROAD_E)  # 팔레트 단일 출처 = 셰이더 기본값에 안 맡긴다
 	rm.set_shader_parameter("half_ext", Vector2(size.x * 0.5, size.z * 0.5))
 	mi.material_override = rm
-	# 곡률 셰이더(v.y -= 0.006·z²)는 정점 단위 — 세분할 없는 긴 박스는 장축이 현(직선)으로
-	# 근사돼 가운데가 지면 아래로 잠긴다(N길 12u 실증, 처짐 0.0015·Δd²  vs 부상고 0.085).
-	# 장축을 ~1.5u 간격으로 쪼개면 지면(60분할 평면)과 같은 곡선을 탄다.
-	(mi.mesh as BoxMesh).subdivide_depth = maxi(1, int(size.z / 1.5))
 
 func _pavilion(parent: Node, base: Vector3) -> void:
 	# 정자 4×4 퍼걸러: 기둥4 + 등나무 지붕 + 테이블. 개방(무충돌).
@@ -668,7 +682,9 @@ const RIVER_PTS := [
 	Vector2(30, -34), Vector2(24, -20), Vector2(20, -8), Vector2(18, 2),
 	Vector2(16, 12), Vector2(6, 26), Vector2(-12, 34),
 ]
-const BRIDGES := [Vector2(23, -16), Vector2(17, 7), Vector2(-3.5, 30.2)]  # 북동/동/남서
+# 다리 중심은 강 중심선(폴리라인) 위에 있어야 한다 — 벗어나면 양안 강둑 컷이 비대칭이 되고
+# 아치가 채널에 편심으로 걸린다. 북동은 옛 (23,-16)이 S1 위 최근접점에서 0.32 어긋나 있었다.
+const BRIDGES := [Vector2(22.7, -16.1), Vector2(17, 7), Vector2(-3.5, 30.2)]  # 북동/동/남서
 const BRIDGE_GAP := 2.4  # 다리에서 충돌벽을 비우는 반경(폭 방향 통과 확보)
 
 func _river_and_bridges(parent: Node) -> void:
@@ -679,18 +695,25 @@ func _river_and_bridges(parent: Node) -> void:
 		var mid := (a + b) * 0.5
 		var span := (b - a).length()
 		var perp := Vector2((b - a).y, -(b - a).x).normalized()  # 강 수직(강둑 오프셋)
-		var floor_box := _box(parent, Vector3(mid.x, -0.02, mid.y), Vector3(3.2, 0.3, span + 0.4), Color(0.401, 0.572, 0.650), 0.0)
+		var floor_box := _box(parent, Vector3(mid.x, -0.02, mid.y), Vector3(3.2, 0.3, span + RIVER_PAD), Color(0.401, 0.572, 0.650), 0.0)
 		floor_box.rotation.y = ang  # 어두운 채널 바닥(깊이감)
-		var water := _box(parent, Vector3(mid.x, 0.16, mid.y), Vector3(3.0, 0.14, span + 0.4), C_WATER, 0.0)
+		var water := _box(parent, Vector3(mid.x, 0.16, mid.y), Vector3(3.0, 0.14, span + RIVER_PAD), C_WATER, 0.0)
 		water.rotation.y = ang      # 밝은 물면(강둑보다 낮게 inset), 폭3
 		water.material_override = _water_mat()  # 애니 물(연못과 통일)
+		var dir := (b - a) / span   # 흐름 단위벡터(끝조각 연장 방향)
+		var ext_a := _bank_ext(i, false)
+		var ext_b := _bank_ext(i, true)
 		for s in [1.0, -1.0]:       # 양안 강둑(흙) — 물면보다 0.22 높아 파인 채널로 읽힘
 			# 다리 근처는 비운다(충돌벽과 같은 분절 방식) — 둑이 아치 발치(데크 끝 높이 ~0.55)
 			# 보다 높으면 다리 끝이 흙에 먹힌 그림이 된다(유저 실플레이 지적).
 			var bsteps := maxi(1, int(ceil(span / 1.4)))
 			var bstep := (b - a) / bsteps
 			for k in bsteps:
-				var bc: Vector2 = a + bstep * (k + 0.5) + perp * (BANK_OFF * s)
+				# 굽이 바깥 결손은 런의 첫/끝 조각만 관절 쪽으로 늘려 마이터로 만난다.
+				# (전 조각 균일 패딩은 겹침마다 외곽선 next_pass가 이중선을 그린다.)
+				var e0 := ext_a if k == 0 else 0.0
+				var e1 := ext_b if k == bsteps - 1 else 0.0
+				var bc: Vector2 = a + bstep * (k + 0.5) + perp * (BANK_OFF * s) + dir * ((e1 - e0) * 0.5)
 				var near_bridge := false
 				for br in BRIDGES:
 					if bc.distance_to(br) < BANK_GAP:
@@ -698,11 +721,23 @@ func _river_and_bridges(parent: Node) -> void:
 						break
 				if near_bridge:
 					continue
-				var bank := _box(parent, Vector3(bc.x, BANK_H * 0.5, bc.y), Vector3(BANK_W, BANK_H, bstep.length() + 0.1), C_BANK, 0.004)
+				var bank := _box(parent, Vector3(bc.x, BANK_H * 0.5, bc.y), Vector3(BANK_W, BANK_H, bstep.length() + 0.1 + e0 + e1), C_BANK, 0.004)
 				bank.rotation.y = ang
 		_river_wall_seg(parent, a, b, ang)  # 분절 충돌벽(다리 gap 제외)
 	for br in BRIDGES:
 		_arch_bridge(parent, br, _river_dir_at(br))
+
+# 세그먼트 i의 강둑 런을 관절 쪽으로 얼마나 늘려야 굽이 바깥에서 이웃 런과 마이터로 만나는가.
+# 오프셋 라인(BANK_OFF)끼리의 교점이 관절에서 BANK_OFF·tan(Δ/2)만큼 앞서 있어 그만큼 모자란다.
+# at_end=false는 a끝(정점 i), true는 b끝(정점 i+1). 강 양 끝 정점은 굽이가 없으므로 0.
+static func _bank_ext(i: int, at_end: bool) -> float:
+	var j: int = i + 1 if at_end else i
+	if j <= 0 or j >= RIVER_PTS.size() - 1:
+		return 0.0
+	var p0: Vector2 = RIVER_PTS[j - 1]
+	var p1: Vector2 = RIVER_PTS[j]
+	var p2: Vector2 = RIVER_PTS[j + 1]
+	return BANK_OFF * tan(absf((p1 - p0).angle_to(p2 - p1)) * 0.5)
 
 # 세그먼트를 ~1.4 간격 짧은 벽으로 채우되, 다리(BRIDGE_GAP) 근처 스텝은 비운다(다리로만 통과).
 func _river_wall_seg(parent: Node, a: Vector2, b: Vector2, ang: float) -> void:

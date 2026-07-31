@@ -453,6 +453,28 @@ func _test_npc_schedule() -> void:
 	assert(W2.BANK_H - 0.23 >= 0.10, "강둑 상면이 물 위 턱 0.10 미만 (%.2f)" % (W2.BANK_H - 0.23))
 	assert(W2.BANK_OFF - W2.BANK_W * 0.5 <= 1.6, "강둑 안쪽 모서리가 물(반폭1.5)에서 떨어짐 (%.2f)" % (W2.BANK_OFF - W2.BANK_W * 0.5))
 	assert(W2.BANK_H < 0.55, "강둑이 아치 발치(데크 끝 ~0.55)보다 높다 = 다리가 흙에 먹힘")
+	# ── 물 박스가 곡률 셰이더에 잠기지 않는 계약 (강 안에 "물 아닌 잔디" 패치 회귀 방지)
+	# 툰 셰이더는 정점마다 v.y -= 0.006·z² — 세분할 없는 긴 박스는 조각이 현으로 근사돼
+	# 최대 0.006·조각²/4 만큼 처진다. 물 상면 0.23 − 잔디 상면 0.10 = 여유 0.13.
+	# 굽이 쐐기: 박스 끝 여유(RIVER_PAD/2)가 1.5·tan(Δ/2)보다 작으면 바깥 모서리에 잔디가 남는다.
+	for i in W2.RIVER_PTS.size() - 1:
+		var pa: Vector2 = W2.RIVER_PTS[i]
+		var pb: Vector2 = W2.RIVER_PTS[i + 1]
+		var lz: float = (pb - pa).length() + W2.RIVER_PAD
+		var piece := lz / float(W2._subdiv_z(lz) + 1)
+		assert(0.006 * piece * piece * 0.25 < 0.13,
+			"강 세그먼트 %d 물면 처짐 %.3f ≥ 여유 0.13 (조각 %.2f)" % [i, 0.006 * piece * piece * 0.25, piece])
+		# 수식만이 아니라 _box()가 실제로 그 값을 메시에 물리는지도 본다(우회 삭제 회귀 방지).
+		var probe := W2.new()
+		var pm: BoxMesh = probe._box(probe, Vector3.ZERO, Vector3(3.0, 0.14, lz), Color.WHITE, 0.0).mesh
+		assert(pm.subdivide_depth == W2._subdiv_z(lz), "_box가 장축 세분할을 안 걸었다 (z=%.1f)" % lz)
+		probe.free()
+		if i > 0:
+			var p0: Vector2 = W2.RIVER_PTS[i - 1]
+			var half := absf((pa - p0).angle_to(pb - pa)) * 0.5
+			assert(W2.RIVER_PAD * 0.5 >= 1.5 * tan(half),
+				"관절 %d 굽이 %.1f°에 물 박스 패딩 부족 (필요 %.2f, 현재 %.2f)"
+					% [i, rad_to_deg(half) * 2.0, 1.5 * tan(half), W2.RIVER_PAD * 0.5])
 	# ── 로드/취침 점프: 그 시각 장소에 이미 배치 (단체 행군 방지)
 	GameClock.game_min = 13 * 60
 	_npcsys.snap_to_schedule()
