@@ -64,8 +64,8 @@ const ANCHORS := {
 const ANCHOR_R_MIN := 1.5   # 장소 앵커 배회 반경 (집보다 좁게 = 모여 있는 그림)
 const ANCHOR_R_MAX := 3.0
 const RIVER_AVOID := 2.9    # 강 중심선 이 거리 안엔 목표점 금지 (물폭3 + 양안 강둑)
-const DECK_HALF := 3.4      # 다리 데크 반폭(가로 6) — 경유 웨이포인트 = 데크 양끝
-const DECK_Y := 0.9         # 데크 상면 y (world.gd _arch_bridge: 중심 0.75 + 두께 0.3/2)
+const DECK_HALF := WorldScript.DECK_EDGE   # 다리 데크 반폭 — 경유 웨이포인트 = 데크 양끝
+const DECK_Y := WorldScript.DECK_CROWN     # 관정 데크 상면 y (world.gd가 곡선 단일 출처)
 const DECK_KEEP := 4.0      # 목표점 금지 반경(데크 밑에 서지 않게)
 const BLOCK_PAD := 0.3      # 구간이 장애물 원을 이만큼 침범하면 우회
 const DETOUR_PAD := 1.5     # 우회점을 원 밖 이만큼 띄움
@@ -475,12 +475,10 @@ static func _near_on(a: Vector2, b: Vector2, p: Vector2) -> Vector2:
 	return a + ab * clampf((p - a).dot(ab) / l2, 0.0, 1.0)
 
 # 다리 위를 지날 때만 데크 높이로 들어올림 — 발이 물에 잠기거나 데크를 관통하는 그림 방지.
+# 곡선은 world.gd가 단독으로 갖는다(식 복제 금지). 여기는 호출 지점 이름만 유지.
 # (배회 목표는 DECK_KEEP 밖이라 강을 건너는 중에만 0이 아니다)
 static func _deck_y(p: Vector2) -> float:
-	var d := INF
-	for br in WorldScript.BRIDGES:
-		d = minf(d, p.distance_to(br))
-	return DECK_Y * smoothstep(DECK_HALF, DECK_HALF - 1.9, d)
+	return WorldScript.deck_lift(p)
 
 static func _v3(p: Vector2) -> Vector3:
 	return Vector3(p.x, 0, p.y)

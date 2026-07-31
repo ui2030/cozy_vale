@@ -425,14 +425,29 @@ func _test_npc_schedule() -> void:
 	# ── 데크 높이 리프트 (다리 위에서만 들림 = 발이 물에 안 잠김)
 	assert(absf(N._deck_y(BR[0]) - N.DECK_Y) < 0.001, "다리 중심 = 데크 높이")
 	assert(N._deck_y(BR[0] + Vector2(10, 0)) == 0.0, "다리 밖 = 지면")
-	# ── 휜 데크(캠버) = NPC 발높이 곡선과 동일식 (어긋나면 건너는 동안 발이 돌에 파묻히거나 뜬다)
+	# ── 풀 아치 데크 = NPC 발높이 곡선과 동일식 (어긋나면 건너는 동안 발이 돌에 파묻히거나 뜬다)
+	# NPC는 이제 world.gd deck_lift를 직접 호출하므로 이 루프는 "식 복제 재발" 방지 트립와이어다.
+	# 표본은 다리 로컬 X축(강 횡단 = 데크 축) 위에서 뜬다 — 데크는 축 밖에선 리프트가 죽는다.
 	var W2 := preload("res://world/world.gd")
+	var b_ang: float = W2._river_dir_at(BR[0])
+	var b_axis := Vector2(cos(b_ang), -sin(b_ang))  # 다리 로컬 +X의 월드 방향
 	for i in 13:
 		var dx := -3.0 + i * 0.5
-		assert(absf(W2.deck_top(dx) - N._deck_y(BR[0] + Vector2(dx, 0))) < 0.001,
-			"데크 상면 x=%.1f (%.3f) ≠ NPC 발높이 (%.3f)" % [dx, W2.deck_top(dx), N._deck_y(BR[0] + Vector2(dx, 0))])
+		assert(absf(W2.deck_top(dx) - N._deck_y(BR[0] + b_axis * dx)) < 0.001,
+			"데크 상면 x=%.1f (%.3f) ≠ NPC 발높이 (%.3f)" % [dx, W2.deck_top(dx), N._deck_y(BR[0] + b_axis * dx)])
 	assert(W2.deck_top(0.0) == N.DECK_Y, "관정 = DECK_Y")
 	assert(absf(W2.deck_top(3.0) - 0.1) < 0.05, "데크 끝이 지면 상면(0.1)과 턱 없이 물림")
+	# 연속 원호: 관정에 평탄 구간이 없다(혹등 v2 회귀 방지 — 스무스스텝은 0에서 기울기가 0).
+	assert(W2.deck_top(0.0) - W2.deck_top(0.4) > 0.015, "관정이 평평함 = 원호가 아님")
+	# 원호 위 아무 점이나 원 방정식을 만족 (반지름 파생값이 어긋나면 여기서 터짐)
+	for i in 7:
+		var ax := i * 0.5
+		var cy: float = W2.DECK_CROWN - W2.DECK_ARC_R
+		assert(absf(Vector2(ax, W2.deck_top(ax) - cy).length() - W2.DECK_ARC_R) < 0.001, "x=%.1f 원호 이탈" % ax)
+	# 데크 축 밖(흐름 방향)은 리프트 0 — 다리 옆 강물 위에 떠 있지 않게
+	var b_flow := Vector2(sin(b_ang), cos(b_ang))
+	assert(W2.deck_lift(BR[0] + b_flow * 2.0) == 0.0, "데크 폭 밖 = 리프트 0")
+	assert(absf(W2.deck_lift(BR[0] + b_flow * 1.5) - W2.DECK_CROWN) < 0.001, "난간 선까지는 온전한 데크 높이")
 	# ── 로드/취침 점프: 그 시각 장소에 이미 배치 (단체 행군 방지)
 	GameClock.game_min = 13 * 60
 	_npcsys.snap_to_schedule()

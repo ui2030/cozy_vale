@@ -22,12 +22,14 @@ var _fishing: Node           # 낚시 미니게임 (지연 조회 — HUD 초기
 
 const CAT_GLB := "res://assets/cat_anim.glb"  # idle/walk 애니 포함 (cat.glb 교체 아님)
 const ToonChar := preload("res://common/toon_character.gd")  # class_name 대신 preload(헤드리스 안전)
+const WorldScript := preload("res://world/world.gd")  # 다리 데크 곡선 단일 출처 (world.gd는 player를 preload 안 함 = 무순환)
 @export var visual_scale := 2.1
 @export var visual_y := -0.85  # 발바닥을 캡슐 밑면에 맞춤 (스크린샷 보고 튜닝)
 # walk 재생속도 배율. 무슬립 이론값은 ~8.9(치비 다리엔 과속) → 가독 우선 절충값, 스크린샷 튜닝.
 @export var walk_speed_scale := 1.6
 
 var _anim: AnimationPlayer
+var _visual: Node3D          # GLB 루트 — 다리 위 시각 리프트를 여기에 건다
 var _cur_anim := ""
 var _step_t := 0.0  # 발소리 간격 누적 (걷는 동안만)
 
@@ -43,6 +45,7 @@ func _setup_visual() -> void:
 	cat.position.y = visual_y
 	cat.rotation.y = PI  # 앞=+Z, Godot look_at은 -Z 기준 → 180° 보정 (실측 확정)
 	add_child(cat)
+	_visual = cat
 	_anim = ToonChar.find_anim(cat)
 	if _anim != null:
 		for n in ["idle", "walk"]:
@@ -83,6 +86,7 @@ func _physics_process(delta: float) -> void:
 	if GameClock.state == GameClock.State.PAUSED or _is_fishing():  # 메뉴/낚시 = 조작 정지
 		velocity = Vector3.ZERO
 		_play_anim("idle")  # 걷던 중 정지돼도 제자리걸음 안 남게
+		_deck_lift()  # 정지 중(메뉴·낚시·스샷 하네스 PAUSED)에도 다리 위 높이는 맞아야 한다
 		return
 	if not is_on_floor():
 		velocity.y -= gravity * delta
@@ -102,6 +106,15 @@ func _physics_process(delta: float) -> void:
 	_play_anim("walk" if moving else "idle")
 	_footsteps(delta, moving)
 	_update_highlight()
+	_deck_lift()  # move_and_slide 뒤 위치 기준 — 다리에 올라설 때 한 프레임 밀리지 않게
+
+# 다리 위 시각 리프트. 다리엔 충돌이 없어(통행 계약) 몸통은 지면 높이 그대로 지나간다 —
+# 그러면 돌다리에 발이 파묻힌다. 몸통(CharacterBody3D)을 올리면 is_on_floor가 풀려 중력이
+# 도로 끌어내리고, 카메라가 몸통을 추종하므로 화면이 튄다. 그래서 비주얼 자식만 올린다.
+# 높이 곡선은 world.gd deck_lift 단일 출처 = NPC 발높이와 같은 값.
+func _deck_lift() -> void:
+	if _visual != null:
+		_visual.position.y = visual_y + WorldScript.deck_lift(Vector2(global_position.x, global_position.z))
 
 # 걷는 동안 STEP_INTERVAL마다 발소리. 멈추면 다음 첫 걸음이 바로 나도록 누적값을 채워 둔다.
 func _footsteps(delta: float, moving: bool) -> void:

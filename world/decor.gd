@@ -672,9 +672,11 @@ func _wisteria() -> void:
 		for fs in [-1.0, 1.0]:
 			for ps in [-1.0, 1.0]:
 				var q: Vector2 = br + flow * (1.5 * fs) + perp * (2.2 * ps)
-				# 1.02 = 캠버 데크 갓돌 상단(world.gd deck_top(2.2)+0.40) — 혹등다리 v2에서 난간이
-				# 곡선을 타고 내려가므로 옛 평데크 값(1.32)이면 30cm 공중에 뜬다(스샷 실증).
-				_drape(root, Vector3(q.x, 1.02, q.y), 0.45)
+				# 1.10 = 풀 아치 데크 갓돌 상단 = world.gd deck_top(2.2) + 0.40
+				#      = (DECK_CROWN 1.30 − (DECK_ARC_R 4.35 − √(4.35² − 2.2²))) + 0.40 = 0.703 + 0.40.
+				# world.gd가 decor.gd를 preload하므로 역방향 preload는 순환 — 파생식을 주석으로
+				# 남기고 상수로 박는다. 어긋나면 test_core의 deck_top 핀이 잡는다.
+				_drape(root, Vector3(q.x, 1.10, q.y), 0.45)
 
 # 점 p에서 가장 가까운 강 세그먼트의 흐름 방향(y회전각) — world.gd _river_dir_at와 같은 식.
 func _river_dir_at(p: Vector2) -> float:
