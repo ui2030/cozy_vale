@@ -13,7 +13,12 @@ extends Node3D
 
 const ToonChar := preload("res://common/toon_character.gd")
 const Interior := preload("res://world/interior.gd")  # 오두막 문 목적지(집 실내) 단일 출처
+# 팔레트·절차 블롭 나무 단일 출처. world.gd는 beach.gd를 preload하므로 역방향은 순환이지만,
+# decor.gd는 world/beach 어느 쪽도 참조하지 않아 안전하다(마을 드레싱과 같은 값을 그대로 쓴다).
+const Decor := preload("res://world/decor.gd")
 const WATER_SHADER := preload("res://world/water.gdshader")
+const GROUND_SHADER := preload("res://world/ground.gdshader")  # 마을 초지와 같은 절차 지면 패턴
+const ROAD_SHADER := preload("res://world/road.gdshader")      # 마을 흙길과 같은 침식 가장자리
 
 const ORIGIN := Vector3(-150, 0, 150)
 const GROUND_Y := 0.10   # 지면 상면 — 마을 Ground 상면과 같은 높이(플레이어 낙하·발높이 동일)
@@ -29,6 +34,11 @@ const SEA_REL := Vector3(0, 0, -25.0)
 const SEA_W := 150.0      # 모래와 같은 폭 — 좁으면 원경 좌우 구석에서 수면이 끊긴다
 const SEA_D := 42.0       # z ∈ [-46, -4] — 원경까지 채워 수평선이 화면 위에서 닫힌다
 const SHORE_Z := -4.3     # 물가 충돌선. 바다로 걸어 들어가 허공에 떨어지는 것 방지
+# 젖은 모래 띠 = 물가선. 바다 판 남단(SEA_REL.z + SEA_D/2)을 띠 **한가운데** 두고 수면 위에 깐다 —
+# 띠 가장자리만 침식해 봐야 그 밑에서 바다 판의 자로 그은 직선 남단이 그대로 드러난다.
+const WET_Z := SEA_REL.z + SEA_D * 0.5
+const WET_D := 3.6        # 띠 깊이. 반깊이 1.8 > WET_ERODE = 어떤 각도에서도 수면 모서리가 안 샌다
+const WET_ERODE := 1.2    # 물가선 물결 진폭(m). 반깊이보다 작아야 바다 판 남단이 안 드러난다
 const WALK_HALF_X := 24.0 # 걷는 영역 반폭
 const WALK_Z1 := 16.0     # 걷는 영역 남단
 const WALL_H := 3.0
@@ -47,15 +57,18 @@ const DOOR_R := 0.7                          # interior와 동일 (프롬프트 
 const FACE_N := Vector3(0, 0, -1)            # 북향 = 바다/마을 쪽. 카메라가 남(+Z)에 있어 정면이 다 보인다
 const SPOT := "sea"                          # 낚시터 구분 — fish.json "spot"과 짝
 
-# 팔레트: 마을 컬러박스 계열과 같은 채도대. world.gd 상수를 preload하지 않는 이유는
-# world.gd가 이 스크립트를 preload하기 때문(순환 방지).
-const C_SAND := Color(0.87, 0.80, 0.66)   # 마른 모래(웜톤). 채도를 더 주면 노을에 형광 노랑이 된다(실측)
-const C_WET := Color(0.72, 0.68, 0.60)    # 젖은 모래 = 물가 라인. 갈색기를 빼야 노을에 주황 띠로 안 뜬다
-const C_ROCK := Color(0.63, 0.62, 0.58)
-const C_WOOD := Color(0.54, 0.40, 0.25)
-const C_WALL := Color(0.90, 0.85, 0.76)
-const C_ROOF := Color(0.42, 0.31, 0.56)
-const C_PINE := Color(0.36, 0.50, 0.31)   # 해송(숲 띠 침엽수보다 살짝 짙게)
+# 팔레트(소프트닝 v2): 건물·목재·석재·침엽은 Decor 상수를 그대로 쓴다 = 마을과 같은 파스텔.
+# 아래 상수는 해변 전용이거나, 순환 preload를 피하려 복제한 것뿐이다(복제분은 test_core가 핀).
+#
+# 모래는 **지면 계열 albedo 상한 0.76**을 지킨다 — 정오 수평면은 그 위에서 255로 포화한다
+# (world.gd C_GRASS 실측). 옛 0.87은 상한을 한참 넘겨 낮 모래사장이 통째로 흰 판이었다(전 스샷).
+const C_SAND := Color(0.750, 0.718, 0.653)  # 마른 모래(웜톤). hue 40° 보존, 채도 0.24→0.13
+const C_WET := Color(0.660, 0.634, 0.586)   # 젖은 모래 = 물가 띠. 같은 hue 한 단 어둡게(젖음 대비)
+const C_ROCK := Color(0.660, 0.654, 0.631)  # 갯바위 — 파스텔 시프트(채도 ×0.55, 명도 +5%p)
+# 마을 흙길 색 = world.gd C_ROAD / C_ROAD_E와 같은 값. 순환 preload를 피한 복제라 어긋나면
+# 진입로만 색이 튄다 — test_core가 동일성을 핀한다(decor 등나무 앵커와 같은 규약).
+const C_ROAD := Color(0.700, 0.619, 0.476)
+const C_ROAD_E := Color(0.720, 0.673, 0.590)
 
 func _ready() -> void:
 	add_to_group("beach")
@@ -72,10 +85,33 @@ func _ready() -> void:
 # 가시 판은 분할된 PlaneMesh로 깐다: 툰 셰이더의 월드 곡률이 정점 단위라 넓은 판을 한 장
 # (정점 4개)으로 두면 곡률이 안 먹고 마을 지면과 어긋난다(world.tscn Ground도 80분할).
 func _sand() -> void:
-	_plane(SAND_REL + Vector3(0, GROUND_Y, 0), SAND_W, SAND_D, 40, C_SAND)
-	# 물가 라인: 파도가 적신 띠. 수면 남단(z=-4) 바로 아래에 붙이고 모래 상면보다 살짝 띄워
-	# z-fighting을 피한다. 플레이어는 물가 충돌선(-4.3+반경)까지 와서 이 띠 위에 선다.
-	_plane(Vector3(0, GROUND_Y + 0.02, SHORE_Z + 1.3), SAND_W, 2.2, 4, C_WET)
+	# 마을 초지와 같은 절차 패턴 셰이더 재사용(새 셰이더 복제 금지) — 단색 판이면 낮 모래사장이
+	# 무늬 0인 거대한 판때기로 읽힌다. uniform만 모래로 튠: 칸을 잘게, 감광을 얕게 = 체커가
+	# 아니라 은은한 모래 얼룩.
+	var sm := ShaderMaterial.new()
+	sm.shader = GROUND_SHADER
+	sm.set_shader_parameter("albedo", C_SAND)
+	# 초지 값(cell 1.4 · 감광 0.11)을 그대로 쓰면 모래가 **타일 바닥**으로 읽힌다(실측) — 잔디는
+	# 깎은 자국으로 보이지만 모래엔 그런 독법이 없다. 두 가지로 갈랐다:
+	#   · mottle=0 — 칸별 랜덤은 셀 경계가 각져서 모자이크 타일이 된다(실측, 모래에선 치명적).
+	#     둥근 체커 항(smoothstep)만 남기면 경계가 통째로 부드럽다.
+	#   · 칸을 넓히고(2.4m) 감광을 얕게(0.05) — 격자가 아니라 완만한 모래 언덕 음영으로 읽힌다.
+	sm.set_shader_parameter("cell", 2.4)
+	sm.set_shader_parameter("shade_depth", 0.05)
+	sm.set_shader_parameter("mottle", 0.0)
+	_plane(SAND_REL + Vector3(0, GROUND_Y, 0), SAND_W, SAND_D, 40, C_SAND).material_override = sm
+	# 물가 라인: 파도가 적신 띠. 마을 흙길과 같은 road.gdshader로 가장자리를 갉으면(라운드 SDF −
+	# 월드 fbm) 그대로 물결치는 물가선이 된다. 수면(WATER_Y)보다 위에 깔아 바다 판의 직선 남단을
+	# 띠가 덮는다. 플레이어는 물가 충돌선(-4.3+반경)까지 와서 이 띠 위에 선다.
+	var wm := ShaderMaterial.new()
+	wm.shader = ROAD_SHADER
+	wm.set_shader_parameter("albedo", C_WET)
+	wm.set_shader_parameter("edge_color", C_SAND)  # 마른 모래로 스미며 사라진다
+	wm.set_shader_parameter("half_ext", Vector2(SAND_W * 0.5, WET_D * 0.5))
+	wm.set_shader_parameter("corner", 1.2)   # 반깊이 1.8보다 작아야 SDF가 성립
+	wm.set_shader_parameter("erode", WET_ERODE)
+	wm.set_shader_parameter("fade", 0.35)    # 0.9면 띠 전체가 edge_color = 젖은 티가 안 난다(실측)
+	_plane(Vector3(0, WATER_Y + 0.02, WET_Z), SAND_W, WET_D, 40, C_WET).material_override = wm
 	_collide(SAND_REL + Vector3(0, GROUND_Y - 0.3, 0), Vector3(SAND_W, 0.6, SAND_D))
 
 func _sea() -> void:
@@ -111,29 +147,27 @@ func _props() -> void:
 	# 텅 빈 사막으로 읽히지 않게 한다(마을 숲 띠와 같은 역할).
 	for t in [Vector2(-20.0, 12.5), Vector2(-13.5, 14.0), Vector2(14.0, 13.5), Vector2(20.5, 9.5),
 			Vector2(-31.0, 6.0), Vector2(-42.0, 0.0), Vector2(30.0, 3.0), Vector2(41.0, 8.0)]:
-		_pine(t, rng.randf_range(0.9, 1.3))
+		# 회전은 같은 rng 스트림에서(결정적) — 안 돌리면 8그루가 같은 로브 방향 = 복붙 실루엣.
+		_pine(t, rng.randf_range(0.9, 1.3), rng.randf() * TAU)
 
-# 해송: 줄기(원통) + 원뿔 수관 — world.gd _tree 침엽수 레시피와 같은 조립.
-func _pine(at: Vector2, s: float) -> void:
-	_cyl(Vector3(at.x, GROUND_Y + 0.9 * s, at.y), 0.22 * s, 1.8 * s, C_WOOD)
-	var cone := MeshInstance3D.new()
-	var cm := CylinderMesh.new()
-	cm.top_radius = 0.0
-	cm.bottom_radius = 1.1 * s
-	cm.height = 2.6 * s
-	cone.mesh = cm
-	cone.material_override = ToonChar.make_solid(C_PINE, 0.006)
-	cone.position = ORIGIN + Vector3(at.x, GROUND_Y + 3.1 * s, at.y)
-	add_child(cone)
+# 해송: 마을 숲 띠와 같은 절차 블롭 침엽(decor.gd 단일 출처). 각진 원뿔은 소프트닝 v1에서
+# 마을이 이미 버린 문법이라 해변에만 남으면 존을 넘을 때 그림체가 갈린다.
+func _pine(at: Vector2, s: float, rot: float) -> void:
+	var mi := MeshInstance3D.new()
+	mi.mesh = Decor.blob_mesh(Decor.BLOB_KINDS["cone_tall"], Decor.C_CONIF)
+	mi.scale = Vector3.ONE * (s * 3.4)  # 옛 원뿔 전고(~4.4s)와 같은 키 = 마을 숲 띠 스케일 대역
+	mi.rotation.y = rot
+	mi.position = ORIGIN + Vector3(at.x, GROUND_Y, at.y)
+	add_child(mi)
 
 # 귀가 오두막: 문이 남향(+z)이라 카메라(플레이어 뒤 +Z·위)가 몸통에 가리지 않는다.
 # 마을 컬러박스 _house와 같은 조립(벽·처마·문짝) — 프리미티브 재사용.
 func _hut() -> void:
 	var c := HUT_REL
 	var half := HUT_W * 0.5
-	_box(Vector3(c.x, HUT_H * 0.5 + GROUND_Y, c.z), Vector3(HUT_W, HUT_H, HUT_W), C_WALL)
-	_box(Vector3(c.x, HUT_H + 0.2 + GROUND_Y, c.z), Vector3(HUT_W + 0.5, 0.5, HUT_W + 0.5), C_ROOF)
-	_box(Vector3(c.x, 0.9 + GROUND_Y, c.z + half + 0.05), Vector3(0.9, 1.8, 0.12), C_WOOD, 0.004)
+	_box(Vector3(c.x, HUT_H * 0.5 + GROUND_Y, c.z), Vector3(HUT_W, HUT_H, HUT_W), Decor.C_CREAM)
+	_box(Vector3(c.x, HUT_H + 0.2 + GROUND_Y, c.z), Vector3(HUT_W + 0.5, 0.5, HUT_W + 0.5), Decor.C_ROOF)
+	_box(Vector3(c.x, 0.9 + GROUND_Y, c.z + half + 0.05), Vector3(0.9, 1.8, 0.12), Decor.C_WOOD, 0.004)
 	_collide(Vector3(c.x, HUT_H * 0.5 + GROUND_Y, c.z), Vector3(HUT_W, HUT_H, HUT_W))
 
 # 보이지 않는 둘레 벽: 북=물가선(바다 진입 차단), 남/동/서=존 경계(허공 낙하 차단).
@@ -157,11 +191,20 @@ func _doors() -> void:
 # 마을 쪽에 새 충돌체를 만들지 않으므로 WORLD_VERSION 범프가 필요 없다(구세이브 위치가
 # 새 충돌체에 박힐 수 없다). 강(마을 남면을 감싼다)은 여기서 x≈-7까지 물러나 있어 간섭 없다.
 func _village_path() -> void:
-	var road := _box_at(Vector3(24, 0.16, 28.5), Vector3(2.4, 0.05, 11.0), C_WOOD, 0.0)
+	# 마을 흙길과 **같은 셰이더**(road.gdshader): 라운드 SDF − 월드 fbm 침식 + 불투명 discard.
+	# half_ext는 박스마다 다르므로 호출부가 넣는다(world.gd _road와 같은 계약).
+	var sz := Vector3(2.4, 0.05, 11.0)  # 폭은 마을 ROAD_W와 같은 2.4
+	var road := _box_at(Vector3(24, 0.16, 28.5), sz, C_ROAD, 0.0)
 	road.name = "BeachRoad"
+	var rm := ShaderMaterial.new()
+	rm.shader = ROAD_SHADER
+	rm.set_shader_parameter("albedo", C_ROAD)
+	rm.set_shader_parameter("edge_color", C_ROAD_E)
+	rm.set_shader_parameter("half_ext", Vector2(sz.x * 0.5, sz.z * 0.5))
+	road.material_override = rm
 	# 표지판: 기둥 + 판 + 라벨. 길 서쪽에 비켜 세워 게이트 프롬프트와 겹치지 않게.
-	_box_at(Vector3(22.4, 0.9, 32.5), Vector3(0.14, 1.8, 0.14), C_WOOD, 0.004)
-	_box_at(Vector3(22.4, 1.75, 32.5), Vector3(1.5, 0.6, 0.1), C_WALL, 0.004)
+	_box_at(Vector3(22.4, 0.9, 32.5), Vector3(0.14, 1.8, 0.14), Decor.C_WOOD, 0.004)
+	_box_at(Vector3(22.4, 1.75, 32.5), Vector3(1.5, 0.6, 0.1), Decor.C_CREAM, 0.004)
 	var l := _label("바닷가 ↓", 2.5)
 	l.position = Vector3(22.4, 2.5, 32.5)
 	add_child(l)
@@ -206,6 +249,7 @@ func _box_at(at: Vector3, size: Vector3, color: Color, outline := 0.006) -> Mesh
 	var mi := MeshInstance3D.new()
 	var bm := BoxMesh.new()
 	bm.size = size
+	bm.subdivide_depth = _subdiv_z(size.z)
 	mi.mesh = bm
 	mi.material_override = ToonChar.make_solid(color, outline)
 	mi.position = at
@@ -219,17 +263,6 @@ func _sphere(rel: Vector3, r: float, color: Color) -> void:
 	sm.height = r * 1.7  # 살짝 눌린 돌
 	mi.mesh = sm
 	mi.material_override = ToonChar.make_solid(color, 0.006)
-	mi.position = ORIGIN + rel
-	add_child(mi)
-
-func _cyl(rel: Vector3, r: float, h: float, color: Color) -> void:
-	var mi := MeshInstance3D.new()
-	var cm := CylinderMesh.new()
-	cm.top_radius = r
-	cm.bottom_radius = r
-	cm.height = h
-	mi.mesh = cm
-	mi.material_override = ToonChar.make_solid(color, 0.004)
 	mi.position = ORIGIN + rel
 	add_child(mi)
 
@@ -271,6 +304,12 @@ func _label(text: String, y: float) -> Label3D:
 	return l
 
 # ── 순수 판정 (test_core가 노드 없이 검증) ────────────────────────
+# 곡률 셰이더(v.y -= 0.006·z²)는 정점 단위 — 세분할 없는 긴 박스는 장축이 현으로 근사돼
+# 가운데가 지면 아래로 잠긴다(진입로 11u면 ~0.18 침하). world.gd _subdiv_z와 같은 식 —
+# 순환 preload를 피한 복제라 test_core가 동일성을 핀한다.
+static func _subdiv_z(len_z: float) -> int:
+	return maxi(0, int(len_z / 1.5) - 1)
+
 # 이 좌표가 해변 존인가. 문 앞 여유까지 포함해 문턱에서 판정이 깜빡이지 않게 한다.
 static func inside(p: Vector3) -> bool:
 	return absf(p.x - ORIGIN.x) < WALK_HALF_X + 4.0 and p.z - ORIGIN.z > SEA_REL.z - 6.0 \

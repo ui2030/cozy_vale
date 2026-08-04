@@ -990,8 +990,14 @@ func _test_winter_pass() -> void:
 	assert(W.ground_pattern(3) < W.ground_pattern(0), "겨울 지면 패턴은 약해진다(설원 요철 수준)")
 	# 정오 수평면은 albedo ~0.75 위에서 255로 포화한다(실측). 포화하면 풀 패턴·곡률 음영이
 	# 통째로 날아가므로 지면 계열 채널 상한을 테스트로 못박는다.
-	for gc in [W.C_GRASS, W.C_SNOW, W.C_ROAD, W.C_GREEN]:
+	var B2 := preload("res://world/beach.gd")  # 해변 모래도 같은 수평 지면 = 같은 상한을 받는다
+	for gc in [W.C_GRASS, W.C_SNOW, W.C_ROAD, W.C_GREEN, B2.C_SAND, B2.C_WET]:
 		assert(maxf(maxf(gc.r, gc.g), gc.b) <= 0.76, "지면/길 albedo가 정오 클리핑 한계 초과: %s" % gc)
+	# 팔레트 단일 출처: decor.gd는 순환 preload를 피해 마을 팔레트를 복제한다(beach.gd가 이걸
+	# 재사용한다). 값이 갈라지면 존을 넘을 때 같은 소재가 다른 색으로 보인다.
+	assert(D.C_WOOD == W.C_WOOD and D.C_CREAM == W.C_WALL and D.C_ROOF == W.C_ROOF \
+		and D.C_STONE == W.C_STONE and D.C_GREEN == W.C_GREEN and D.C_WIST == W.C_WIST,
+		"decor.gd 팔레트가 world.gd와 어긋남")
 	for nm in ["Flora_flower_yellowA", "Flora_flower_purpleA"]:
 		assert(not D.flora_visible(nm, 3), "%s 겨울엔 숨김" % nm)
 		for s in 3:
@@ -1197,6 +1203,14 @@ func _test_beach() -> void:
 	var N := preload("res://npc/npc_system.gd")
 	var F := preload("res://farm/farm_system.gd")
 	const REACH := 2.0  # 프롬프트 사거리 = 문 DOOR_R(0.7) + player.tscn InteractArea(1.3)
+
+	# ── 0. 소프트닝 v2 계약: 해변이 순환 preload를 피해 복제한 값은 마을과 같아야 한다.
+	assert(B.C_ROAD == W.C_ROAD and B.C_ROAD_E == W.C_ROAD_E, "해변 진입로 색 = 마을 흙길 색")
+	for L in [0.0, 1.4, 1.5, 3.0, 11.0, 42.0]:
+		assert(B._subdiv_z(L) == W._subdiv_z(L), "해변 곡률 세분할 식이 world.gd와 어긋남 (L=%s)" % L)
+	# 젖은 모래 띠는 바다 판 남단을 한가운데 물고 수면 위에 떠야 한다(직선 물가선 은폐).
+	assert(B.WET_Z == B.SEA_REL.z + B.SEA_D * 0.5, "물가 띠 중심 = 바다 판 남단")
+	assert(B.WET_D * 0.5 > B.WET_ERODE, "띠 반깊이가 침식 진폭보다 커야 수면 모서리가 안 샌다")
 
 	# ── 1. spot 필터 (순수 함수). 기본값 미지정 = pond → 기존 호출부 무변경 호환.
 	var defs := {

@@ -543,7 +543,8 @@ const CONIFER := ["cone_tall", "cone_slim"]
 # 로브 방향 — 수관을 몇 방향으로만 부풀려 완벽한 구가 아닌 뭉게구름 실루엣을 만든다.
 const LOBES := [Vector3(1, 0.3, 0.4), Vector3(-0.8, 0.15, 0.6), Vector3(0.25, 0.55, -1), Vector3(-0.45, -0.15, -0.85)]
 
-func _blob_mesh(k: Array, leaf: Color) -> ArrayMesh:
+# static = 노드 없이도 만들 수 있다(beach.gd 해송이 같은 실루엣을 쓴다 — 나무 문법 단일 출처).
+static func blob_mesh(k: Array, leaf: Color) -> ArrayMesh:
 	var sm := SphereMesh.new()
 	sm.radius = 1.0
 	sm.height = 2.0
@@ -619,13 +620,13 @@ func _place_forest() -> void:
 			continue
 		var full: String = "Forest_" + nm
 		var kp: Array = BLOB_KINDS[nm]
-		var summer := _blob_mesh(kp, C_CONIF if nm in CONIFER else C_LEAF)
+		var summer := blob_mesh(kp, C_CONIF if nm in CONIFER else C_LEAF)
 		_multimesh(summer, buckets[nm], full)
 		_n_trees += (buckets[nm] as Array).size()
 		if tree_frosted(full, WINTER):
 			# 겨울용 사본을 빌드 때 미리 뽑아 둔다. MultiMeshInstance3D엔 표면별 override가 없어
 			# material_override로 물들이면 줄기까지 서리색이 된다 — 수관 색만 바꾼 Mesh를 스왑한다.
-			_tree_mesh[full] = [summer, _blob_mesh(kp, C_FROST_LEAF)]
+			_tree_mesh[full] = [summer, blob_mesh(kp, C_FROST_LEAF)]
 
 	# 강변 바위 몇 개 — 물길이 지형에 박혀 보이게(개별 노드, 무충돌)
 	var rocks := Node3D.new()
