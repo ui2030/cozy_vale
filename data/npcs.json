@@ -50,6 +50,7 @@
 	"npc.nun": {
 		"name": "수녀님", "archetype": "shy", "birthday": {"season": "winter", "day": 3},
 		"home": [-22, 10], "color": [0.55, 0.48, 0.62], "model": "res://assets/nun.glb",
+		"walk_speed": 1.1,
 		"schedule": [{"h": 9, "place": "home"}, {"h": 12, "place": "plaza"}, {"h": 15, "place": "shop"}, {"h": 18, "place": "home"}],
 		"gifts": {"loved": ["forage.leek"], "liked": ["forage.dandelion", "crop.cabbage"], "disliked": ["fish.smelt"]}
 	}

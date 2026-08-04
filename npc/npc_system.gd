@@ -18,7 +18,7 @@ const NPC_SCALE := 2.1        # 플레이어와 동일
 const KID_MULT := 0.8         # 꼬마 축소
 const NPC_Y := 0.05           # 발 접지 오프셋 (플레이어 기준, 스크린샷 튜닝)
 # 배회 파라미터
-const WANDER_SPEED := 1.6     # 플레이어 5.0보다 느리게
+const WANDER_SPEED := 1.6     # 플레이어 5.0보다 느리게 (npcs.json "walk_speed"로 주민별 덮어쓰기)
 const WANDER_R_MIN := 4.0
 const WANDER_R_MAX := 6.0
 const WAIT_MIN := 5.0
@@ -141,6 +141,7 @@ func _spawn(id: String) -> void:
 		"target": root.position, "wait": randf_range(0.0, WAIT_MAX),
 		"anim": ToonChar.find_anim(vis) if vis != null else null, "cur": "",
 		"place": "home", "path": [],   # path = 남은 경유 웨이포인트(Vector2)
+		"speed": float(n.get("walk_speed", WANDER_SPEED)),  # 수녀님처럼 느긋한 주민용
 		"vis": vis, "area": area, "hidden": false,  # 밤 귀가 페이드용
 	}
 
@@ -320,7 +321,7 @@ func _wander_step(id: String, delta: float) -> void:
 		st["target"] = _pick_target(id)
 		_set_walk(id, false)
 		return
-	var step := minf(WANDER_SPEED * delta, flat.length())  # 프레임 드랍 시 목표 초과 방지
+	var step := minf(float(st["speed"]) * delta, flat.length())  # 프레임 드랍 시 목표 초과 방지
 	node.position += flat.normalized() * step
 	node.position.y = _deck_y(Vector2(node.position.x, node.position.z))  # 다리 위면 데크 높이
 	node.look_at(node.global_position + flat, Vector3.UP)  # yaw만 (flat.y=0)

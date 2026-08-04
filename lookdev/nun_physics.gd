@@ -49,19 +49,26 @@ static func setup_springs(sk: Skeleton3D) -> SpringBoneSimulator3D:
 		_sphere(sk, cb, Vector3.ZERO, 0.08)
 
 	# 체인: [root, end, stiffness, drag, gravity, joint_radius]
+	# 강도(2026-08-05): 수녀 컨셉 = 보폭 좁고 조신 → 걸을 때 "살짝 흔들리는 정도"까지 절제.
+	# stiffness 범위는 0~4 (엔진 기본 1.0), drag 0~1. 종전 0.62/0.70은 기본보다 훨씬 물러서
+	# 60° 급회전에 치마가 통째로 젖혀지고 프릴 실루엣이 무너졌다.
+	# 주의(A/B 실측): stiffness를 극단(40)으로 올리면 스프링을 끈 것과 같아진다 — 치마 부피는
+	# 다리 충돌구가 밀어내서 생기므로, rest 포즈로 굳으면 오히려 치마가 홀쭉해지고 발이 드러난다.
+	# 즉 "강체에 가깝게"는 stiffness 최대가 아니라 0~4 범위 안 + drag 높임으로 잡아야 한다.
 	# 베일 복원(2026-07-22): Blender에서 5줄을 각 4~5본으로 세분(veil_XX_01..04/05).
 	# 세분 전엔 줄당 본 2개라 자락 하반부가 _02에 강체 스키닝 → 스윙 시 판자로 꺾이고 음영 깨짐.
 	# 이제 하반부까지 관절이 이어져 연속 곡면 굽힘. gravity 미소로 드레이프 복귀.
 	var chains: Array = []
 	for tag in ["F", "FL", "L", "BL", "B", "BR", "R", "FR"]:
-		chains.append(["skirt_%s_01" % tag, "skirt_%s_02" % tag, 0.62, 0.70, 0.002, 0.025])
+		chains.append(["skirt_%s_01" % tag, "skirt_%s_02" % tag, 2.6, 0.90, 0.002, 0.025])
 	# 베일: BC/BL/BR 5본(_05), FL/FR 4본(_04)
-	# stiffness는 치마(0.62)와 동급으로 — 자락이 넓은 시트라 너무 낮으면 급회전 시
-	# 시트가 급각도로 접혀 자기교차+검은 음영. drag 높여 오버슈트 링잉 억제.
+	# 가벼운 실크라 치마(2.6)보다는 무르게(1.8) — 걸을 때 자락이 조금은 흘러야 한다.
+	# 다만 너무 낮으면(종전 0.60) 넓은 시트가 급회전 시 급각도로 접혀 자기교차+검은 음영.
+	# drag 0.92 로 오버슈트 링잉 억제 — 스냅백 뒤 한 박자에 수습된다.
 	for tag in ["BC", "BL", "BR"]:
-		chains.append(["veil_%s_01" % tag, "veil_%s_05" % tag, 0.60, 0.72, 0.003, 0.020])
+		chains.append(["veil_%s_01" % tag, "veil_%s_05" % tag, 1.8, 0.92, 0.003, 0.020])
 	for tag in ["FL", "FR"]:
-		chains.append(["veil_%s_01" % tag, "veil_%s_04" % tag, 0.62, 0.72, 0.003, 0.020])
+		chains.append(["veil_%s_01" % tag, "veil_%s_04" % tag, 1.8, 0.92, 0.003, 0.020])
 	chains.append(["pendant_01", "pendant_01", 0.55, 0.60, 0.004, 0.015])
 
 	var sim := SpringBoneSimulator3D.new()
@@ -116,6 +123,9 @@ func _ready() -> void:
 		print("bones=", skel.get_bone_count(), " springs setup")
 		setup_springs(skel)
 	_camera()
+	for a in OS.get_cmdline_user_args():   # shot/walk 공용 — before_/after_ 파일명 충돌 방지
+		if a == "before" or a == "after":
+			shot_prefix = a + "_"
 	if "walk" in OS.get_cmdline_user_args():
 		_run_walk()
 	elif "shot" in OS.get_cmdline_user_args():
@@ -151,10 +161,6 @@ func _light() -> void:
 	add_child(fill)
 
 func _run_shot() -> void:
-	var uargs := OS.get_cmdline_user_args()
-	for a in uargs:
-		if a == "before" or a == "after":
-			shot_prefix = a + "_"
 	# 게임 카메라(하향 약 34°, fov 48) — 베일 얼굴 가림·스윙 지연 검증용
 	var gcam := Camera3D.new(); gcam.fov = 48.0; add_child(gcam)
 	gcam.look_at_from_position(Vector3(0.0, 1.34, 1.33), Vector3(0.0, 0.45, 0.0), Vector3.UP)

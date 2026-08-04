@@ -121,6 +121,7 @@ func _validate() -> void:
 	# 대사 참조 무결성: 모든 NPC 아키타입에 대사 풀 존재 + normal 비어있지 않음
 	for nid in npcs:
 		var arche: String = npcs[nid].get("archetype", "")
+		assert(float(npcs[nid].get("walk_speed", 1.6)) > 0.0, "%s walk_speed는 양수여야 함(0이면 그 자리에 굳음)" % nid)
 		assert(dialogues.has(arche), "%s archetype '%s' 대사 풀 없음" % [nid, arche])
 		assert(not dialogues[arche].get("normal", []).is_empty(), "%s normal 대사 비어있음" % arche)
 		# 결혼 후보(candidate)는 연애 대사가 다 있어야 함 (F단계: 데이트 → 청혼 → 결혼식 → 부부)
