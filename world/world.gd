@@ -126,6 +126,7 @@ func _ready() -> void:
 		var pp := get_tree().get_first_node_in_group("player")
 		if pp != null:
 			pp.global_position = Vector3(10, 2, 3.8)
+			_vp_pinned = true  # `-- hour N`이 뒤에서 광장으로 되돌리지 않게(연못+시각 조합 컷)
 	if "fishing" in OS.get_cmdline_user_args():  # 검증용: 낚시 미니게임 열린 상태
 		var pf := get_tree().get_first_node_in_group("player")
 		if pf != null:
@@ -612,6 +613,12 @@ const ROADS := [
 const BRIDGE_TRIM := 3.6
 # 강둑을 비우는 다리 중심 반경. 둑 오프셋 기준 흐름 방향 ±2.2가 비어 파라펫(z±1.6)을 넉넉히 벗어난다.
 const BANK_GAP := 3.0
+# ── 강 물면 ────────────────────────────────────────────────────
+# 상면 0.23은 아래 강둑 주석과 weather.gd 빗방울 파문이 함께 쓰는 기준값이다 — 파문이 이보다
+# 낮으면 불투명 툰 물에 통째로 가려 비 오는 날 수면만 잠잠해진다(실측). 값을 옮기면 둘 다 따라온다.
+const WATER_TOP := 0.23
+const WATER_H := 0.14   # 물면 박스 두께(상면에서 아래로) — 어두운 채널 바닥 상면 0.13 위에 얹힌다
+const RIVER_W := 3.0    # 물면 폭. 반폭 1.5 = 파문 물 판정 반경
 # ── 강둑 치수 ──────────────────────────────────────────────────
 # 물 상면 0.23이 초지 상면 0.10보다 **높다** — 물이 잔디 위에 떠 있고, 그 단차를 가려서
 # "파인 개울"로 읽히게 하는 게 둑의 유일한 임무다. 그래서 높이는 마음대로 못 낮춘다.
@@ -697,7 +704,7 @@ func _river_and_bridges(parent: Node) -> void:
 		var perp := Vector2((b - a).y, -(b - a).x).normalized()  # 강 수직(강둑 오프셋)
 		var floor_box := _box(parent, Vector3(mid.x, -0.02, mid.y), Vector3(3.2, 0.3, span + RIVER_PAD), Color(0.401, 0.572, 0.650), 0.0)
 		floor_box.rotation.y = ang  # 어두운 채널 바닥(깊이감)
-		var water := _box(parent, Vector3(mid.x, 0.16, mid.y), Vector3(3.0, 0.14, span + RIVER_PAD), C_WATER, 0.0)
+		var water := _box(parent, Vector3(mid.x, WATER_TOP - WATER_H * 0.5, mid.y), Vector3(RIVER_W, WATER_H, span + RIVER_PAD), C_WATER, 0.0)
 		water.rotation.y = ang      # 밝은 물면(강둑보다 낮게 inset), 폭3
 		water.material_override = _water_mat()  # 애니 물(연못과 통일)
 		var dir := (b - a) / span   # 흐름 단위벡터(끝조각 연장 방향)

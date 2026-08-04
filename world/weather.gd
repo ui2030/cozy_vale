@@ -9,6 +9,8 @@ extends Node3D
 # 물웅덩이·굴절 없이 비는 가는 선 + 지면에 번지는 얇은 파문, 눈은 둥근 점만 떨어뜨린다.
 
 const Interior := preload("res://world/interior.gd")
+const WorldScript := preload("res://world/world.gd")  # 강 폴리라인·물 상면 단일 출처
+const Beach := preload("res://world/beach.gd")        # 바다 판 단일 출처
 
 const AREA := 14.0   # 플레이어 중심 강수 범위(한 변) — 고정 카메라 화각을 덮는 최소 크기
 const TOP := 9.0     # 낙하 시작 높이
@@ -16,9 +18,14 @@ const WINTER := 3    # GameClock.SEASONS 인덱스
 # 파문 높이 = 초지 상면 0.10 + 0.03. 스플래시 셰이더가 지면과 **같은 월드 곡률**을 쓰므로
 # 이 여유는 거리와 무관하게 일정하다(곡률을 빠뜨리면 먼 파문이 지면 위로 붕 뜬다).
 const SPLASH_Y := 0.13
+const WATER_CAPS := 10  # 셰이더 물 영역 배열 크기 = 강 6세그먼트 + 연못 + 바다 + 여유
 
 # 파문 셰이더 — 지면(ground.gdshader)·물(water.gdshader)과 같은 뷰공간 곡률을 그대로 복제한다.
 # 링 모양은 텍스처(방사 그라디언트)가 내고, 여기선 색·알파와 곡률만 담당한다.
+#
+# 물 위 파문: GPUParticles는 입자 배치가 GPU 몫이라 CPU에서 개별 y를 못 준다 → 여기서
+# 월드 xz가 물이면 파문을 그 수면 위로 올린다. 안 하면 지면 높이(0.13)가 물 상면(강 0.23·
+# 연못 0.18·바다 0.18)보다 낮아 불투명 툰 물에 통째로 가린다 = 비 오는 날 수면만 잠잠함.
 const SPLASH_SHADER := """
 shader_type spatial;
 render_mode unshaded, cull_disabled, depth_draw_never, blend_mix;
@@ -26,9 +33,33 @@ render_mode unshaded, cull_disabled, depth_draw_never, blend_mix;
 uniform vec4 tint : source_color = vec4(0.86, 0.92, 0.99, 1.0);
 uniform sampler2D ring : source_color, filter_linear;
 uniform float curve_strength = 0.006;  // toon.gdshader와 동일 월드 곡률
+// 물 영역 = 캡슐(선분 ab + 반경) 목록. 강 세그먼트·연못(a==b인 원)·바다를 한 형태로 통일한다.
+uniform vec4 water_ab[10];   // (ax, az, bx, bz) 월드 xz
+uniform vec2 water_ry[10];   // (반경, 수면 상면 y)
+uniform int water_n = 0;
+uniform float water_lift = 0.03;  // 수면 위 여유(지면 파문이 초지 위에 뜨는 폭과 같다)
+
+// xz가 물이면 그 수면 상면 y, 아니면 -1000.0
+float water_top(vec2 p) {
+	for (int i = 0; i < water_n; i++) {
+		vec2 a = water_ab[i].xy;
+		vec2 ab = water_ab[i].zw - a;
+		// 연못은 a == b(길이 0) — 나눗셈 보호가 없으면 NaN이 되어 판정이 통째로 샌다.
+		float t = clamp(dot(p - a, ab) / max(dot(ab, ab), 1e-6), 0.0, 1.0);
+		if (distance(p, a + ab * t) < water_ry[i].x) {
+			return water_ry[i].y;
+		}
+	}
+	return -1000.0;
+}
 
 void vertex() {
-	vec4 v = MODELVIEW_MATRIX * vec4(VERTEX, 1.0);
+	vec4 w = MODEL_MATRIX * vec4(VERTEX, 1.0);   // 입자 인스턴스 변환 포함 = 월드 좌표
+	float wy = water_top(w.xz);
+	if (wy > -999.0) {
+		w.y = wy + water_lift;
+	}
+	vec4 v = VIEW_MATRIX * w;
 	v.y -= curve_strength * v.z * v.z;
 	POSITION = PROJECTION_MATRIX * v;
 }
@@ -186,8 +217,48 @@ func _make_splash() -> GPUParticles3D:
 	mat.shader = sh
 	mat.set_shader_parameter("tint", Color(0.86, 0.92, 0.99, 0.55))
 	mat.set_shader_parameter("ring", _ring_tex())
+	_set_water(mat)
 	p.material_override = mat
 	return p
+
+# 물 영역을 캡슐 목록으로 셰이더에 넘긴다. 좌표는 전부 기존 단일 출처에서 파생한다 —
+# 강은 world.gd 폴리라인, 연못은 world.tscn 노드의 실제 AABB, 바다는 beach.gd 상수.
+func _set_water(mat: ShaderMaterial) -> void:
+	var ab := PackedVector4Array()
+	var ry := PackedVector2Array()
+	var pts: Array = WorldScript.RIVER_PTS
+	for i in pts.size() - 1:
+		var a: Vector2 = pts[i]
+		var b: Vector2 = pts[i + 1]
+		ab.append(Vector4(a.x, a.y, b.x, b.y))
+		ry.append(Vector2(WorldScript.RIVER_W * 0.5, WorldScript.WATER_TOP))
+	# 연못: 그룹 "water" 노드의 수면 메시(원기둥) AABB = 중심·반경·상면. 좌표 복제 0.
+	# (해변 낚시 트리거도 같은 그룹이지만 메시 자식이 없어 자연히 걸러진다.)
+	for n in get_tree().get_nodes_in_group("water"):
+		for c in n.get_children():
+			var mi := c as MeshInstance3D
+			if mi == null or mi.mesh == null:
+				continue
+			var box: AABB = mi.global_transform * mi.mesh.get_aabb()
+			var ctr := box.get_center()
+			ab.append(Vector4(ctr.x, ctr.z, ctr.x, ctr.z))
+			ry.append(Vector2(box.size.x * 0.5, box.end.y))
+	# 바다: 판 남단이 아니라 **젖은 모래 띠** 안쪽까지 덮는다(띠가 수면보다 0.02 높고 물가선을
+	# 침식으로 흔들기 때문 — 띠 남단까지 늘리면 파인 자리에서 파문이 마른 모래 위에 뜬다).
+	var sea := Beach.ORIGIN + Beach.SEA_REL
+	var z0 := sea.z - Beach.SEA_D * 0.5
+	var z1 := Beach.ORIGIN.z + Beach.WET_Z + Beach.WET_D * 0.5 - Beach.WET_ERODE
+	var r := (z1 - z0) * 0.5
+	var cz := (z0 + z1) * 0.5
+	ab.append(Vector4(sea.x - Beach.SEA_W * 0.5 + r, cz, sea.x + Beach.SEA_W * 0.5 - r, cz))
+	ry.append(Vector2(r, Beach.WATER_Y + 0.02))
+	if ab.size() > WATER_CAPS:
+		push_warning("파문 물 영역 %d개 > 셰이더 배열 %d — 초과분 무시" % [ab.size(), WATER_CAPS])
+	mat.set_shader_parameter("water_n", mini(ab.size(), WATER_CAPS))
+	ab.resize(WATER_CAPS)   # 배열 uniform은 선언 크기로 채워 넘긴다
+	ry.resize(WATER_CAPS)
+	mat.set_shader_parameter("water_ab", ab)
+	mat.set_shader_parameter("water_ry", ry)
 
 # 빗줄기 세로 알파 그라디언트 — 양 끝이 녹아 딱딱한 사각 끝(= "저화질")이 사라진다.
 func _streak_tex() -> GradientTexture2D:
