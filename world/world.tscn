@@ -103,6 +103,15 @@ material_override = SubResource("shop_mat")
 [node name="ShopCol" type="CollisionShape3D" parent="Shop"]
 shape = SubResource("shop_col")
 
+; 마을 라벨 거리 페이드 (상점·판매 상자·연못 공통)
+; fixed_size=true라 라벨은 멀어져도 화면상 크기가 그대로다 → 원거리 컷에서 여러 개가 한 자리에
+; 뭉쳐 서로 겹치고 화면 밖으로 잘린다(해변 게이트 컷에서 "판매 상자"+"연못"이 겹쳐 "영목"으로 읽힘).
+; 임계는 lookdev/shots/label_fade 실측 기준 — 카메라~라벨 거리:
+;   광장 컷 상점 13.7 / 연못 컷 연못 15.1·판매상자 9.4 = 안내로 읽혀야 하는 근거리
+;   연못 컷 상점 24.7 = 이미 화면 끝에서 반쯤 잘린 잡음 / 해변 게이트 컷 37~54 = 뭉침
+; → 16까지 100%, 16~22 선형 페이드, 22 밖 소거. FADE_SELF(=1)라 팝 없이 알파로 사라진다.
+; (end 24로 먼저 찍어 보니 연못 컷의 잘린 "상점"이 옅은 유령으로 남았다 — 22로 좁혀 지웠다.)
+; 라벨 충돌 회피 대신 거리 하나로 끝낸다 — 겹침은 원거리에서만 나므로 거리가 곧 원인이다.
 [node name="Label" type="Label3D" parent="Shop"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.3, 0)
 billboard = 1
@@ -112,6 +121,9 @@ pixel_size = 0.0007
 font_size = 96
 outline_size = 24
 text = "상점"
+visibility_range_end = 22.0
+visibility_range_end_margin = 6.0
+visibility_range_fade_mode = 1
 
 [node name="ShippingBin" type="Area3D" parent="." groups=["bin"]]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 9.5, 0.4, 7)
@@ -132,6 +144,9 @@ pixel_size = 0.0007
 font_size = 96
 outline_size = 24
 text = "판매 상자"
+visibility_range_end = 22.0
+visibility_range_end_margin = 6.0
+visibility_range_fade_mode = 1
 
 [node name="Pond" type="Area3D" parent="." groups=["water"]]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 10, 0.1, 0)
@@ -152,6 +167,9 @@ pixel_size = 0.0007
 font_size = 96
 outline_size = 24
 text = "연못"
+visibility_range_end = 22.0
+visibility_range_end_margin = 6.0
+visibility_range_fade_mode = 1
 
 [node name="Camera" type="Camera3D" parent="."]
 fov = 40.0
