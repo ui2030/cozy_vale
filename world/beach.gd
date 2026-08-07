@@ -154,7 +154,7 @@ func _props() -> void:
 # 마을이 이미 버린 문법이라 해변에만 남으면 존을 넘을 때 그림체가 갈린다.
 func _pine(at: Vector2, s: float, rot: float) -> void:
 	var mi := MeshInstance3D.new()
-	mi.mesh = Decor.blob_mesh(Decor.BLOB_KINDS["cone_tall"], Decor.C_CONIF)
+	mi.mesh = Decor.blob_mesh(Decor.BLOB_KINDS["cone_slim"], Decor.C_CONIF)  # 해송 = 홀쭉한 침엽(cone_tall은 침엽치곤 둥긂)
 	mi.scale = Vector3.ONE * (s * 3.4)  # 옛 원뿔 전고(~4.4s)와 같은 키 = 마을 숲 띠 스케일 대역
 	mi.rotation.y = rot
 	mi.position = ORIGIN + Vector3(at.x, GROUND_Y, at.y)
