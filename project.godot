@@ -26,3 +26,11 @@ window/size/viewport_height=720
 
 renderer/rendering_method="forward_plus"
 camera/exposure/multiplier=1.0
+
+[shader_globals]
+
+; 시각(0~24 연속). day_night.gd가 매 프레임 주입 — 물 셰이더가 하늘과 같은 값을 본다.
+time_of_day={
+"type": "float",
+"value": 12.0
+}

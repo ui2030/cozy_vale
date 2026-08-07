@@ -38,6 +38,7 @@ func _process(dt: float) -> void:
 		if _sun == null:
 			return
 	var h := GameClock.game_min / 60.0  # 연속값(분 단위 부드럽게, 스냅 없음)
+	RenderingServer.global_shader_parameter_set("time_of_day", h)  # 물 셰이더(연못·강·바다 공용 머티리얼 다수)
 	var p := sample(h)
 	_sun.rotation_degrees = p["sun_rot"]
 	_sun.light_color = p["sun_col"]
