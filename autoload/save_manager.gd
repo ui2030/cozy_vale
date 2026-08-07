@@ -7,14 +7,16 @@ const VERSION := 5
 # 위치가 신규 충돌체 안에 박혔을 수 있으므로 로드 시 광장으로 폴백(신규 게임엔 영향 없음).
 const WORLD_VERSION := 3  # v3: 침대가 야외(3,16)→실내로 이전, 집 앞 문 트리거 추가
 const PLAZA_SPAWN := Vector3(0, 2, -3.5)  # 광장 안(분수 r1·밭 밖), 스폰/폴백 공용
-const F_JSON := "user://save.json"
-const F_BAK := "user://save.bak"
-const F_TMP := "user://save.tmp"
-
 var _queued_reason := ""
 # 스크린샷·e2e 하네스 전용 쓰기 차단. set_process(false)만으로는 부족하다 — 취침 등
 # 게임 코드가 request_save()를 부르면 process가 다시 켜져 유저 세이브를 덮어쓴다(오염 전력).
 var suspended := false
+# 세이브 파일명 접두사. 일부러 쓰기를 해야 하는 하네스(test_core)는 이걸 갈아끼워
+# 유저 세이브(save.*)가 아니라 자기 파일에 쓴다 — suspended로는 못 막는 경로의 봉쇄.
+var basename := "save"
+
+func path(ext: String) -> String:
+	return "user://%s.%s" % [basename, ext]
 
 # save_version v → v+1 순수 함수 체인 (키 = from_version).
 var _migrations := {
@@ -54,8 +56,6 @@ func _ready() -> void:
 	set_process(false)  # 기본 활성이면 첫 프레임에 무요청 _write 실행(하네스 세이브 오염 원인)
 
 func request_save(reason := "") -> void:
-	if suspended:
-		return
 	_queued_reason = reason
 	set_process(true)
 
@@ -83,9 +83,9 @@ func _gather() -> Dictionary:
 	return data
 
 func load_game() -> bool:
-	var data := _read(F_JSON)
+	var data := _read(path("json"))
 	if data.is_empty():
-		data = _read(F_BAK)  # json 손상 시 폴백
+		data = _read(path("bak"))  # json 손상 시 폴백
 	if data.is_empty():
 		return false
 	data = _migrate(data)
@@ -116,8 +116,10 @@ func _migrate(data: Dictionary) -> Dictionary:
 	return data
 
 func _write(data: Dictionary) -> void:
+	if suspended:
+		return  # 모든 쓰기의 공통 관문 (request_save를 우회하는 직접 호출도 여기서 막힌다)
 	var txt := JSON.stringify(data, "  ")
-	var f := FileAccess.open(F_TMP, FileAccess.WRITE)
+	var f := FileAccess.open(path("tmp"), FileAccess.WRITE)
 	if f == null:
 		push_error("세이브 tmp 쓰기 실패")
 		return
@@ -125,16 +127,16 @@ func _write(data: Dictionary) -> void:
 	f.close()  # flush + close
 	# 원자적 회전: 이전 bak 삭제 → json→bak → tmp→json (Windows rename 안전)
 	var dir := DirAccess.open("user://")
-	if dir.file_exists("save.bak"):
-		dir.remove("save.bak")
-	if dir.file_exists("save.json"):
-		dir.rename("save.json", "save.bak")
-	dir.rename("save.tmp", "save.json")
+	if dir.file_exists(basename + ".bak"):
+		dir.remove(basename + ".bak")
+	if dir.file_exists(basename + ".json"):
+		dir.rename(basename + ".json", basename + ".bak")
+	dir.rename(basename + ".tmp", basename + ".json")
 
-func _read(path: String) -> Dictionary:
-	if not FileAccess.file_exists(path):
+func _read(p: String) -> Dictionary:
+	if not FileAccess.file_exists(p):
 		return {}
-	var f := FileAccess.open(path, FileAccess.READ)
+	var f := FileAccess.open(p, FileAccess.READ)
 	if f == null:
 		return {}
 	var txt := f.get_as_text()

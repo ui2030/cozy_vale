@@ -8,6 +8,9 @@ var _npcsys: Node
 var _stub: Node
 
 func _ready() -> void:
+	# 이 테스트는 일부러 세이브를 쓴다(라운드트립·bak 폴백) — suspended로는 못 막으므로
+	# 파일명을 갈아끼워 유저 세이브(save.json)를 아예 건드리지 않는다.
+	SaveManager.basename = "save_test"
 	GameClock.state = GameClock.State.PAUSED  # 자동 tick 정지 (결정적 테스트)
 	_stub = preload("res://tests/stub_player.gd").new()
 	_stub.add_to_group("player")
@@ -96,7 +99,7 @@ func _test_bak_fallback() -> void:
 	SaveManager._write(SaveManager._gather())   # json=77
 	GameClock.abs_day = 88
 	SaveManager._write(SaveManager._gather())   # json=88, bak=77
-	var f := FileAccess.open("user://save.json", FileAccess.WRITE)
+	var f := FileAccess.open(SaveManager.path("json"), FileAccess.WRITE)
 	f.store_string("{ broken json")             # json 손상
 	f.close()
 	GameClock.abs_day = 0
@@ -1143,10 +1146,9 @@ func _test_weather() -> void:
 
 func _test_v1_save_compat() -> void:
 	# A단계(v1) 세이브를 그대로 로드 → 마이그레이션되어 복원 (호환)
-	var dir := DirAccess.open("user://")
-	if dir.file_exists("save.bak"):
-		dir.remove("save.bak")
-	var f := FileAccess.open("user://save.json", FileAccess.WRITE)
+	if FileAccess.file_exists(SaveManager.path("bak")):
+		DirAccess.remove_absolute(SaveManager.path("bak"))
+	var f := FileAccess.open(SaveManager.path("json"), FileAccess.WRITE)
 	f.store_string(JSON.stringify({"save_version": 1, "clock": {"abs_day": 9, "game_min": 100}, "player": {"pos": [0, 2, 0]}}))
 	f.close()
 	GameClock.abs_day = 0
