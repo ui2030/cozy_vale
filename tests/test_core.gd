@@ -991,11 +991,18 @@ func _test_winter_pass() -> void:
 	for s in 3:
 		assert(W.ground_color(s) == W.C_GRASS, "계절 %d 지면 무변경(초지)" % s)
 	assert(W.ground_pattern(3) < W.ground_pattern(0), "겨울 지면 패턴은 약해진다(설원 요철 수준)")
-	# 정오 수평면은 albedo ~0.75 위에서 255로 포화한다(실측). 포화하면 풀 패턴·곡률 음영이
-	# 통째로 날아가므로 지면 계열 채널 상한을 테스트로 못박는다.
+	# 정오 수평면은 albedo 0.75 위에서 255로 포화한다(실측). 포화하면 풀 패턴·곡률 음영이
+	# 통째로 날아가므로 지면 계열 채널 상한을 테스트로 못박는다. 상한을 0.76→0.75로 조인 근거:
+	# 0.76은 "클리핑 직전"이 아니라 실측에서 이미 B가 255였다(눈 지면 (241,247,255)).
 	var B2 := preload("res://world/beach.gd")  # 해변 모래도 같은 수평 지면 = 같은 상한을 받는다
 	for gc in [W.C_GRASS, W.C_SNOW, W.C_ROAD, W.C_GREEN, B2.C_SAND, B2.C_WET]:
-		assert(maxf(maxf(gc.r, gc.g), gc.b) <= 0.76, "지면/길 albedo가 정오 클리핑 한계 초과: %s" % gc)
+		assert(maxf(maxf(gc.r, gc.g), gc.b) <= 0.75, "지면/길 albedo가 정오 클리핑 한계 초과: %s" % gc)
+	# 겨울 실루엣: 크림 벽토의 직광면은 어차피 255로 포화한다(C_WALL은 그늘면 파스텔 기준으로
+	# 고정 — 내리면 근접 컷이 갈색이 된다). 그래서 눈 지면이 벽토보다 확실히 어두워야 눈밭에서
+	# 집·판매상자 윤곽이 떠오른다. 0.76이던 동안 명도차가 없어 실루엣이 통째로 소실됐다(실측).
+	assert(W.C_WALL.g - W.C_SNOW.g >= 0.15, "눈 지면과 벽토 명도차 부족 — 겨울 실루엣 소실")
+	# 가지에 얹힌 눈은 눈 지면 바로 아래 = 지면보다 밝으면 수관이 지면에서 분리되지 않는다.
+	assert(D.C_FROST_LEAF.g < W.C_SNOW.g and D.C_FROST_LEAF.g > D.C_FROST.g, "설경 서리톤 서열 어긋남")
 	# 팔레트 단일 출처: decor.gd는 순환 preload를 피해 마을 팔레트를 복제한다(beach.gd가 이걸
 	# 재사용한다). 값이 갈라지면 존을 넘을 때 같은 소재가 다른 색으로 보인다.
 	assert(D.C_WOOD == W.C_WOOD and D.C_CREAM == W.C_WALL and D.C_ROOF == W.C_ROOF \

@@ -11,6 +11,7 @@ extends Node3D
 
 const ToonChar := preload("res://common/toon_character.gd")
 const DayNight := preload("res://world/day_night.gd")
+const Decor := preload("res://world/decor.gd")  # 마을 팔레트 단일 출처 (beach.gd 전례)
 const DIR := "res://assets/furniture/"
 
 const ORIGIN := Vector3(120, 0, 120)  # 마을(|x|,|z| ≤ 40)·강·숲 띠에서 충분히 먼 격리 좌표
@@ -39,7 +40,12 @@ const STOVE_AT := ORIGIN + Vector3(1.9, 1.0, -3.2)
 const STOVE_R := 0.7                             # 문 트리거와 같은 반경 = 같은 사거리 감각
 
 # ── 야간 실내등 ──────────────────────────────────────────────────
-const LAMP_E := 1.2                       # 최대 밝기 (밤). 2.2는 방 전체가 균일하게 떠서 아늑함이 죽었다
+# 최대 밝기 (밤). 옛 1.2는 albedo 1.0(=정오에 포화하던 값) 기준이었고, 그때 2.2가 "방 전체가
+# 균일하게 떠서 아늑함이 죽는" 값이었다 — 균일해진 건 램프 탓이 아니라 벽이 죄다 255로
+# 클리핑해서였다. TINT_DEF로 albedo를 0.72까지 내린 지금은 같은 벽 밝기(실측 화면 ~240)를
+# 내려면 램프를 그만큼 올려야 한다. 낮은 sun_e로 램프가 완전히 꺼지므로(아래 _process)
+# 낮 과노출=albedo, 밤 아늑함=램프로 완전히 분리된다 = 서로 회귀시키지 않는다.
+const LAMP_E := 2.3
 const LAMP_COL := Color(1.0, 0.86, 0.66)  # 따뜻한 전구색
 const LAMP_RANGE := 7.5                   # 모서리는 어둡게 남겨야 등불로 읽힌다
 
@@ -49,12 +55,17 @@ const WALL_N := ["wall", "wall", "wallDoorway", "wallWindow", "wall"]  # x = -4,
 const WALL_W := ["wall", "wall", "wall", "wallWindow", "wall"]         # z = -4,-2,0,2,4
 const WALL_E := ["wall", "wall", "wallWindow", "wall", "wall"]
 
-# 조각별 색조 곱(ToonChar.load_glb tint). Kenney 킷은 전부 크림·흰 계열이라 그대로 쓰면
-# 벽·바닥·가구가 한 덩어리로 붕 뜬다(실측). 바닥은 따뜻한 목재로, 벽은 살짝 식혀 분리하고,
-# 흰 벽에 묻히던 흰 냉장고에만 푸른기를 준다. 없는 조각은 원본색(흰 tint).
+# 조각 색조 곱(ToonChar.load_glb tint).
+#
+# 낮 과노출의 근본원인: Kenney 킷 albedo가 정오 직광면 상한(0.75, world.gd 규약)을 한참 넘는다 —
+# 벽·싱크·협탁 `_defaultMat` 1.0(순백), 매트리스 `carpetWhite` 0.973, 목재 `wood` 0.896.
+# 그래서 벽 면적 100%가 (255,254,255) 단색, 바닥은 (255,244,181) 백지 노랑이 되어 형태·음영·
+# 나뭇결이 통째로 사라졌다(실측). 밤엔 램프가 약해 티가 안 났을 뿐 albedo는 낮·밤 공용이다.
+# 최댓값 1.0을 크림 상한으로 끌어내리는 기본 감쇠 하나로 킷 전체가 규약 안에 들어온다 —
+# 조각별 예외는 "색을 바꿔야 하는" 것만 남긴다(마을 벽토 크림과 같은 hue 계열).
+const TINT_DEF := Color(0.72, 0.71, 0.65)
 const TINTS := {
-	"floorFull": Color(0.97, 0.90, 0.82),      # 살짝만 — 강하게 주면 형광 주황이 된다(실측)
-	"kitchenFridge": Color(0.78, 0.86, 0.94),  # 흰 벽에 흰 냉장고가 통째로 사라져서
+	"kitchenFridge": Color(0.78, 0.86, 0.94),  # 흰 벽에 흰 냉장고가 통째로 사라져서(푸른기)
 }
 
 # 가구: [glb, x, z, rot_deg, y]. 좌표=ORIGIN 기준, rot 0 = Kenney 기본(정면이 +z=남=카메라 쪽).
@@ -106,7 +117,7 @@ func _ready() -> void:
 # GLB 1회 로드 후 복제 배치. rel = ORIGIN 기준 좌표, sc = 가로 배율, ysc = 세로 배율.
 func _place(name: String, rel: Vector3, rot_deg: float, sc := FSC, ysc := 0.0) -> void:
 	if not _cache.has(name):
-		_cache[name] = ToonChar.load_glb(DIR + name + ".glb", OUTLINE, TINTS.get(name, Color.WHITE))
+		_cache[name] = ToonChar.load_glb(DIR + name + ".glb", OUTLINE, TINTS.get(name, TINT_DEF))
 	var proto: Node3D = _cache[name]
 	if proto == null:
 		return  # 에셋 누락 폴백: 그 조각만 비운다(방은 그대로 선다)
@@ -135,7 +146,9 @@ func _ground_pad() -> void:
 	var bm := BoxMesh.new()
 	bm.size = Vector3(30, 0.5, 30)
 	mi.mesh = bm
-	mi.material_override = ToonChar.make_solid(Color(0.62, 0.8, 0.52), 0.0)  # 마을 지면과 같은 초지색
+	# 초지색은 복제하지 않고 마을 팔레트에서 가져온다 — 직접 박아둔 (0.62,0.8,0.52)는 지면 상한
+	# 도입 전 값이라 정오에 G가 255로 포화했고(실측 (213,255,172)) 방 밖이 형광 초록으로 떴다.
+	mi.material_override = ToonChar.make_solid(Decor.C_GREEN, 0.0)
 	mi.position = ORIGIN + Vector3(0, -0.45, 0)
 	add_child(mi)
 
