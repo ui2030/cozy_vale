@@ -386,6 +386,13 @@ func _shot_hour(hn: int) -> void:
 	# PAUSED라 GameClock.tick이 안 온다 → HUD 시각 라벨이 세이브 로드값에 멈춰 샷마다 엉뚱한
 	# 시각이 찍혔다(실측). 강제 시각을 적용한 뒤 한 번 갱신해 준다.
 	get_tree().call_group("hud", "_refresh")
+	# PAUSED는 player._physics_process를 통째로 멈춘다 = 중력이 안 돈다. 그래서 하네스가 세워둔
+	# 스폰 높이(v_* 조망은 y=2)에 뜬 채로 찍혀 왔다 — 실측 y=2.00, 발밑 지면 0.10에서 1m 공중.
+	# "캐릭터가 지면에 안 붙어 보인다"의 절반이 이거였다(접지 그림자를 붙이고서야 드러남).
+	# 중력 대신 한 번 내려꽂는다 — 시계·NPC를 다시 돌리지 않으므로 다른 컷 구성은 안 건드린다.
+	var _pl := get_tree().get_first_node_in_group("player") as CharacterBody3D
+	if _pl != null:
+		_pl.move_and_collide(Vector3.DOWN * 4.0)
 	await get_tree().create_timer(0.6).timeout  # 물리 착지 + day_night 파라미터 적용 대기
 	await RenderingServer.frame_post_draw
 	var img := get_viewport().get_texture().get_image()

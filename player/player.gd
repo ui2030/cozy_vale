@@ -30,6 +30,7 @@ const WorldScript := preload("res://world/world.gd")  # 다리 데크 곡선 단
 
 var _anim: AnimationPlayer
 var _visual: Node3D          # GLB 루트 — 다리 위 시각 리프트를 여기에 건다
+var _shadow: MeshInstance3D  # 접지 그림자 판 — 지면 높이 고정(몸통을 따라 뜨지 않는다)
 var _cur_anim := ""
 var _step_t := 0.0  # 발소리 간격 누적 (걷는 동안만)
 
@@ -65,6 +66,9 @@ func _ready() -> void:
 	_farm = get_tree().get_first_node_in_group("farm")
 	_npcsys = get_tree().get_first_node_in_group("npc_system")
 	_setup_visual()
+	_shadow = ToonChar.contact_shadow(ToonChar.CONTACT_R)
+	add_child(_shadow)
+	_deck_lift()  # 스폰 첫 프레임부터 판을 지면에 앉힌다(몸통은 아직 공중에서 떨어지는 중)
 	# 3D 소리는 플레이어 기준으로 들린다. 기본 리스너인 Camera3D는 뒤로 9.5·위로 6.5 떨어져
 	# 있어 그대로 두면 물가 감쇠 거리가 카메라 기준이 돼 어긋난다.
 	var listener := AudioListener3D.new()
@@ -112,9 +116,14 @@ func _physics_process(delta: float) -> void:
 # 그러면 돌다리에 발이 파묻힌다. 몸통(CharacterBody3D)을 올리면 is_on_floor가 풀려 중력이
 # 도로 끌어내리고, 카메라가 몸통을 추종하므로 화면이 튄다. 그래서 비주얼 자식만 올린다.
 # 높이 곡선은 world.gd deck_lift 단일 출처 = NPC 발높이와 같은 값.
+# 접지 그림자 판도 같은 리프트를 탄다. 판 높이는 몸통 y가 아니라 지면(CONTACT_Y) 기준이라
+# 스폰 낙하·문 텔레포트로 몸이 공중에 있어도 그림자는 땅에 남는다.
 func _deck_lift() -> void:
+	var lift := WorldScript.deck_lift(Vector2(global_position.x, global_position.z))
 	if _visual != null:
-		_visual.position.y = visual_y + WorldScript.deck_lift(Vector2(global_position.x, global_position.z))
+		_visual.position.y = visual_y + lift
+	if _shadow != null:
+		_shadow.global_position.y = ToonChar.CONTACT_Y + lift
 
 # 걷는 동안 STEP_INTERVAL마다 발소리. 멈추면 다음 첫 걸음이 바로 나도록 누적값을 채워 둔다.
 func _footsteps(delta: float, moving: bool) -> void:

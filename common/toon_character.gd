@@ -4,6 +4,21 @@ extends RefCounted
 
 const TOON := preload("res://lookdev/toon.gdshader")
 const OUTLINE := preload("res://lookdev/outline.gdshader")
+const CONTACT := preload("res://world/contact.gdshader")
+
+# 접지 그림자 판이 놓이는 월드 높이. 마을·해변·실내의 지면 상면이 전부 0.10이고 그 위 0.10을 띄운다 —
+# 판이 밟고 선 표면보다 아래면 깊이 판정에 통째로 먹힌다. 넘어야 하는 것들(실측):
+# 마을 흙길 상면 0.185 · 판석 0.14 · 밭 흙 0.11 / 해변 젖은 모래 띠 0.18 · 소품 그림자 판 0.19
+# (0.19와 1cm 띄워야 갯바위·해송 판과 겹칠 때 z-fight 하지 않는다) / 실내 바닥 0.10 · 러그 0.16.
+# ponytail: 다리 위는 호출측이 deck_lift를 더한다. 풍차 언덕 대지(상면 2.5)처럼 지형이 통째로
+# 솟은 곳에선 판이 땅속에 묻혀 안 보인다 — 지형이 늘면 그때 발밑 높이를 인자로 받게 고친다.
+const CONTACT_Y := 0.20
+
+# 캐릭터 접지 그림자 코어 반경(플레이어·주민 공용 단일 레버, 꼬마는 ×KID_MULT).
+# 치비 고양이는 폭이 ~1.3m(전고 2.1)이고 카메라가 30° 저각이라 몸통이 발밑 지면을 통째로
+# 가린다 — 판이 몸통 반폭(0.65)보다 좁으면 그림자가 아예 안 보인다(실측 r0.35: 주민 8명
+# 전원 그림자 0px). 몸통 폭 대역까지 키워야 판이 발 앞뒤로 삐져나와 접지로 읽힌다.
+const CONTACT_R := 0.55
 
 # 캐릭터 외곽선 두께의 단일 튜닝 레버 — 월드 단위(m). 연필선 톤.
 # 셰이더 width는 오브젝트 공간이라 모델 native 스케일이 다르면 굵기가 제각각 된다
@@ -82,6 +97,20 @@ static func make_solid(color: Color, outline_width := 0.0) -> ShaderMaterial:
 		o.set_shader_parameter("width", outline_width)
 		m.next_pass = o
 	return m
+
+# 접지 그림자 판(곱셈 블렌드, 무충돌). r = 균일하게 어두운 코어 반경 — 판은 1.25r까지 깔고
+# 그 사이가 페이드다(contact.gdshader core 0.8). 캐릭터·해변 소품 공용.
+static func contact_shadow(r: float) -> MeshInstance3D:
+	var mi := MeshInstance3D.new()
+	var pm := PlaneMesh.new()
+	pm.size = Vector2(r * 2.5, r * 2.5)
+	pm.subdivide_width = 4   # 곡률이 정점 단위 — 4장이면 판 안쪽도 지면 곡선을 탄다
+	pm.subdivide_depth = 4
+	mi.mesh = pm
+	var m := ShaderMaterial.new()
+	m.shader = CONTACT
+	mi.material_override = m
+	return mi
 
 # 트리 밖(스폰 전) 노드에도 안전 — global_transform 대신 로컬 변환 누적
 static func aabb_of(node: Node, xform := Transform3D(), acc := AABB()) -> AABB:

@@ -48,6 +48,10 @@ const STOVE_R := 0.7                             # 문 트리거와 같은 반�
 const LAMP_E := 2.3
 const LAMP_COL := Color(1.0, 0.86, 0.66)  # 따뜻한 전구색
 const LAMP_RANGE := 7.5                   # 모서리는 어둡게 남겨야 등불로 읽힌다
+# 부엌등 세기(LAMP_E 배율). 조리대 바로 위라 거리가 짧아 1.0이면 냉장고가 (252,248,239)로
+# 클리핑한다 — b88ce9c가 잡은 백지화가 밤에 재현되는 것과 같은 실패다(실측). 0.45면 조리대가
+# 램프 쪽 벽(213)보다 아래에 머물러 "부엌에 등 하나 켠" 밝기가 된다.
+const LAMP_KITCHEN := 0.45
 
 # 벽 조각: [glb, 축, 좌표] — 북(z=-HALF)은 x축으로, 동/서는 z축으로 늘어선다.
 # 남(+z)은 카메라 쪽이라 생략. 문은 북쪽 벽 중앙 = 방에 들어서면 정면에 보인다.
@@ -234,19 +238,25 @@ func _label(text: String, y: float) -> Label3D:
 # 실내등: 낮엔 태양광으로 충분하니 꺼두고 밤에만 켠다. 시각 판정은 day_night.sample()의
 # 태양 에너지를 그대로 읽어 쓴다 — 승인된 룩 상수를 복제하지 않기 위함(단일 출처).
 func _lights() -> void:
-	for at in [Vector3(-3.0, 1.5, -2.05), Vector3(4.2, 1.9, 1.6)]:  # 협탁 램프 / 스탠드 위치
+	# 협탁 램프 / 동쪽 스탠드 / 부엌등. 부엌등을 더한 이유: 스토브·싱크 라인(rel z −3.75)이 두
+	# 램프 어디서도 사거리(7.5) 끝자락이라 밤에 조리대가 (130,104,71)까지 떨어졌다(실측
+	# before_interior_h21). 요리하는 자리가 방에서 제일 어두우면 안 된다. 조리대 바로 위에
+	# 짧게 걸어 부엌만 끌어올린다 — 남/남서(방 앞쪽)는 여전히 어느 램프에서도 멀어서
+	# 밤 실내의 그라데이션(등불 주변만 밝고 구석은 어둑)은 그대로 남는다.
+	for l in [[Vector3(-3.0, 1.5, -2.05), 1.0], [Vector3(4.2, 1.9, 1.6), 1.0], [Vector3(2.8, 1.7, -3.0), LAMP_KITCHEN]]:
 		var o := OmniLight3D.new()
-		o.position = ORIGIN + at
+		o.position = ORIGIN + l[0]
 		o.light_color = LAMP_COL
 		o.omni_range = LAMP_RANGE
 		o.light_energy = 0.0
+		o.set_meta("strength", l[1])  # 등마다 세기 배율 — 점등 계수는 아래 한 곳이 단독으로 곱한다
 		add_child(o)
 		_lamps.append(o)
 
 func _process(_dt: float) -> void:
 	var e: float = LAMP_E * DayNight.night_factor(GameClock.game_min / 60.0)
 	for o in _lamps:
-		o.light_energy = e
+		o.light_energy = e * float(o.get_meta("strength", 1.0))
 
 # ── 순수 판정 (test_core가 노드 없이 검증) ────────────────────────
 # 이 좌표가 실내인가. 문 앞 여유(+3)까지 실내로 봐서 문턱에서 판정이 깜빡이지 않게 한다.

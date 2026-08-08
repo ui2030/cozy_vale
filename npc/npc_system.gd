@@ -134,6 +134,11 @@ func _spawn(id: String) -> void:
 	area.add_child(cs)
 	area.position = Vector3(0, 1.0, 0)
 	root.add_child(area)
+	# 접지 그림자. root.y는 지면(0, 다리 위면 데크 리프트)이라 판을 자식으로 달면 존·다리를
+	# 가리지 않고 늘 발밑 지면 높이에 온다.
+	var shadow := ToonChar.contact_shadow(ToonChar.CONTACT_R * (KID_MULT if id in KID_IDS else 1.0))
+	shadow.position.y = ToonChar.CONTACT_Y
+	root.add_child(shadow)
 	add_child(root)
 	_attach_springs(vis)   # 트리에 붙은 뒤에 — 스켈레톤이 준비돼야 본 이름 조회가 된다
 	npc_nodes[id] = root
@@ -142,7 +147,7 @@ func _spawn(id: String) -> void:
 		"anim": ToonChar.find_anim(vis) if vis != null else null, "cur": "",
 		"place": "home", "path": [],   # path = 남은 경유 웨이포인트(Vector2)
 		"speed": float(n.get("walk_speed", WANDER_SPEED)),  # 수녀님처럼 느긋한 주민용
-		"vis": vis, "area": area, "hidden": false,  # 밤 귀가 페이드용
+		"vis": vis, "area": area, "shadow": shadow, "hidden": false,  # 밤 귀가 페이드용
 	}
 
 # ── 비주얼 어댑터 (종족별 실물 모델 교체는 여기만 수정) ──────────────
@@ -280,6 +285,7 @@ func _set_hidden(id: String, hide: bool) -> void:
 		area.remove_from_group("npc")
 	else:
 		area.add_to_group("npc")
+	st["shadow"].visible = not hide  # 집에 들어간 주민 자리에 그림자만 남지 않게
 	var vis: Node3D = st["vis"]
 	if vis == null:
 		return

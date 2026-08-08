@@ -19,7 +19,6 @@ const Decor := preload("res://world/decor.gd")
 const WATER_SHADER := preload("res://world/water.gdshader")
 const GROUND_SHADER := preload("res://world/ground.gdshader")  # 마을 초지와 같은 절차 지면 패턴
 const ROAD_SHADER := preload("res://world/road.gdshader")      # 마을 흙길과 같은 침식 가장자리
-const CONTACT_SHADER := preload("res://world/contact.gdshader") # 접지 그림자(오브젝트 밑 타원 판)
 
 const ORIGIN := Vector3(-150, 0, 150)
 const GROUND_Y := 0.10   # 지면 상면 — 마을 Ground 상면과 같은 높이(플레이어 낙하·발높이 동일)
@@ -313,19 +312,10 @@ func _box_at(at: Vector3, size: Vector3, color: Color, outline := 0.006) -> Mesh
 	add_child(mi)
 	return mi
 
-# 접지 그림자: 오브젝트 밑 어두운 타원 판 하나(무충돌). r = 균일하게 어두운 코어 반경 —
-# 판은 1.25r까지 깔고 그 사이가 페이드다(셰이더 core 0.8).
-# 마을엔 이 처방이 없다(거긴 태양광 그림자가 실제로 나온다 — contact.gdshader 주석 참조).
+# 접지 그림자: 오브젝트 밑 어두운 타원 판 하나(무충돌). 판 조립은 ToonChar 공용 —
+# 캐릭터 그림자(player·npc_system)와 같은 판이라야 한 존에서 문법이 갈리지 않는다.
 func _contact(x: float, z: float, r: float) -> void:
-	var mi := MeshInstance3D.new()
-	var pm := PlaneMesh.new()
-	pm.size = Vector2(r * 2.5, r * 2.5)
-	pm.subdivide_width = 4   # 곡률이 정점 단위 — 4장이면 판 안쪽도 지면 곡선을 탄다
-	pm.subdivide_depth = 4
-	mi.mesh = pm
-	var m := ShaderMaterial.new()
-	m.shader = CONTACT_SHADER
-	mi.material_override = m
+	var mi := ToonChar.contact_shadow(r)
 	mi.position = ORIGIN + Vector3(x, SHADOW_Y, z)
 	add_child(mi)
 
