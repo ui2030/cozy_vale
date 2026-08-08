@@ -459,11 +459,14 @@ func _test_npc_schedule() -> void:
 	# ── 물 박스가 곡률 셰이더에 잠기지 않는 계약 (강 안에 "물 아닌 잔디" 패치 회귀 방지)
 	# 툰 셰이더는 정점마다 v.y -= 0.006·z² — 세분할 없는 긴 박스는 조각이 현으로 근사돼
 	# 최대 0.006·조각²/4 만큼 처진다. 물 상면 0.23 − 잔디 상면 0.10 = 여유 0.13.
-	# 굽이 쐐기: 박스 끝 여유(RIVER_PAD/2)가 1.5·tan(Δ/2)보다 작으면 바깥 모서리에 잔디가 남는다.
+	# 굽이 쐐기: 박스 끝 여유가 1.5·tan(Δ/2)보다 작으면 바깥 모서리에 잔디가 남고,
+	# 크면 그만큼 강둑 밖으로 물이 삐져나온다 — 파생식이라 항상 정확히 맞는다.
 	for i in W2.RIVER_PTS.size() - 1:
 		var pa: Vector2 = W2.RIVER_PTS[i]
 		var pb: Vector2 = W2.RIVER_PTS[i + 1]
-		var lz: float = (pb - pa).length() + W2.RIVER_PAD
+		var pad_a: float = absf(W2._joint_ext(i, false, 1.5))
+		var pad_b: float = absf(W2._joint_ext(i, true, 1.5))
+		var lz: float = (pb - pa).length() + pad_a + pad_b
 		var piece := lz / float(W2._subdiv_z(lz) + 1)
 		assert(0.006 * piece * piece * 0.25 < 0.13,
 			"강 세그먼트 %d 물면 처짐 %.3f ≥ 여유 0.13 (조각 %.2f)" % [i, 0.006 * piece * piece * 0.25, piece])
@@ -475,9 +478,18 @@ func _test_npc_schedule() -> void:
 		if i > 0:
 			var p0: Vector2 = W2.RIVER_PTS[i - 1]
 			var half := absf((pa - p0).angle_to(pb - pa)) * 0.5
-			assert(W2.RIVER_PAD * 0.5 >= 1.5 * tan(half),
-				"관절 %d 굽이 %.1f°에 물 박스 패딩 부족 (필요 %.2f, 현재 %.2f)"
-					% [i, rad_to_deg(half) * 2.0, 1.5 * tan(half), W2.RIVER_PAD * 0.5])
+			assert(absf(pad_a - 1.5 * tan(half)) < 0.001,
+				"관절 %d 굽이 %.1f° 물 박스 패딩 어긋남 (필요 %.3f, 현재 %.3f)"
+					% [i, rad_to_deg(half) * 2.0, 1.5 * tan(half), pad_a])
+		else:
+			assert(pad_a == 0.0, "강 북단은 관절이 아니다 — 여유를 주면 둑 밖으로 물이 삐져나온다")
+	# 강 남단도 같은 계약(마지막 세그먼트의 b끝). 여기가 실제로 새던 자리다.
+	assert(W2._joint_ext(W2.RIVER_PTS.size() - 2, true, 1.5) == 0.0, "강 남단 여유 0")
+	# 강둑 마이터는 부호가 있어야 한다: 굽이 바깥은 늘리고 안쪽은 같은 양만큼 줄인다(호출부가 s를 곱한다).
+	# 옛 absf 식은 안쪽에서 두 런이 겹쳐 둑이 두꺼워지는 계단 혹을 만들었다.
+	# S자 곡류라 관절 1(북, 서로 꺾임)과 관절 5(남, 반대로 꺾임)의 부호가 반대여야 한다.
+	assert(W2._joint_ext(1, false, W2.BANK_OFF) < 0.0 and W2._joint_ext(5, false, W2.BANK_OFF) > 0.0,
+		"굽이 방향 부호가 살아 있지 않다(absf 회귀) — 안쪽 둑이 겹쳐 혹이 된다")
 	# ── 로드/취침 점프: 그 시각 장소에 이미 배치 (단체 행군 방지)
 	GameClock.game_min = 13 * 60
 	_npcsys.snap_to_schedule()

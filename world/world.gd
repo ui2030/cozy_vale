@@ -710,11 +710,9 @@ const BANK_H := 0.45
 # 0.05 틈은 채널 바닥(어두운 상면 0.13)이 실선처럼 비치는 자리 — 현행 그림 그대로.
 # 얇아진 만큼 바깥쪽만 안으로 들어온다.
 const BANK_OFF := 1.85
-# 물·채널바닥 박스를 세그먼트 길이보다 이만큼 길게 뽑는다(끝당 절반). 폴리라인이 각 Δ로 꺾이면
-# 바깥 모서리 마이터를 채우는 데 끝당 1.5·tan(Δ/2)가 필요하다 — 옛 0.4는 Δ≤15.2°까지만 커버해
-# J4(24.2°)·J5(30.5°)에 잔디 쐐기가 남았다. 1.4 = 끝당 0.7 → Δ≤50°. 안쪽 겹침은 물 셰이더가
-# world_xz 기반이라 무늬가 이어져 무해.
-const RIVER_PAD := 1.4
+# 물·채널바닥 박스의 끝 여유는 상수가 아니라 관절마다 파생한다 — _joint_ext(i, at_end, 1.5).
+# 필요량이 정확히 1.5·tan(Δ/2)라서 상수로 두면 굽이가 얕은 관절과 폴리라인 양 끝에서 남고,
+# 남은 여유는 강둑 없는 잔디 위로 물이 삐져나오는 혀가 된다(옛 RIVER_PAD 1.4의 실측 결함).
 
 func _roads(parent: Node) -> void:
 	for r in ROADS:
@@ -816,24 +814,35 @@ func _river_and_bridges(parent: Node) -> void:
 		var mid := (a + b) * 0.5
 		var span := (b - a).length()
 		var perp := Vector2((b - a).y, -(b - a).x).normalized()  # 강 수직(강둑 오프셋)
-		var floor_box := _box(parent, Vector3(mid.x, -0.02, mid.y), Vector3(3.2, 0.3, span + RIVER_PAD), C_CHANNEL, 0.0)
+		var dir := (b - a) / span   # 흐름 단위벡터(끝조각 연장 방향)
+		# 물·채널 박스의 끝 여유는 **관절에만** 준다. 폴리라인 양 끝(i=0의 a끝, 마지막의 b끝)엔
+		# 이어질 이웃이 없어 마이터가 필요 없는데도 옛 균일 패딩(RIVER_PAD/2 = 0.7)이 붙어,
+		# 강둑이 끝난 자리에서 물 판이 잔디 위로 혀처럼 삐져나왔다
+		# (실측 sea/before_bridge_sw_h12 좌하단 = 강 남단 (−12,34)).
+		var wa := absf(_joint_ext(i, false, RIVER_W * 0.5))  # 물 박스는 좌우 대칭 = 굽이 방향 무관
+		var wb := absf(_joint_ext(i, true, RIVER_W * 0.5))
+		var wmid := mid + dir * ((wb - wa) * 0.5)
+		var floor_box := _box(parent, Vector3(wmid.x, -0.02, wmid.y), Vector3(3.2, 0.3, span + wa + wb), C_CHANNEL, 0.0)
 		floor_box.rotation.y = ang  # 어두운 채널 바닥(깊이감)
-		var water := _box(parent, Vector3(mid.x, WATER_TOP - WATER_H * 0.5, mid.y), Vector3(RIVER_W, WATER_H, span + RIVER_PAD), C_WATER, 0.0)
+		var water := _box(parent, Vector3(wmid.x, WATER_TOP - WATER_H * 0.5, wmid.y), Vector3(RIVER_W, WATER_H, span + wa + wb), C_WATER, 0.0)
 		water.rotation.y = ang      # 밝은 물면(강둑보다 낮게 inset), 폭3
 		water.material_override = _water_mat()  # 애니 물(연못과 통일)
-		var dir := (b - a) / span   # 흐름 단위벡터(끝조각 연장 방향)
-		var ext_a := _bank_ext(i, false)
-		var ext_b := _bank_ext(i, true)
+		var ext_a := _joint_ext(i, false, BANK_OFF)
+		var ext_b := _joint_ext(i, true, BANK_OFF)
 		for s in [1.0, -1.0]:       # 양안 강둑(흙) — 물면보다 0.22 높아 파인 채널로 읽힘
 			# 다리 근처는 비운다(충돌벽과 같은 분절 방식) — 둑이 아치 발치(데크 끝 높이 ~0.55)
 			# 보다 높으면 다리 끝이 흙에 먹힌 그림이 된다(유저 실플레이 지적).
 			var bsteps := maxi(1, int(ceil(span / 1.4)))
 			var bstep := (b - a) / bsteps
 			for k in bsteps:
-				# 굽이 바깥 결손은 런의 첫/끝 조각만 관절 쪽으로 늘려 마이터로 만난다.
+				# 굽이 결손·초과는 런의 첫/끝 조각만 관절 쪽으로 늘이거나 줄여 마이터로 만난다.
 				# (전 조각 균일 패딩은 겹침마다 외곽선 next_pass가 이중선을 그린다.)
-				var e0 := ext_a if k == 0 else 0.0
-				var e1 := ext_b if k == bsteps - 1 else 0.0
+				# **s를 곱하는 게 핵심**: 오프셋 라인은 굽이 바깥에서 벌어지고 안쪽에선 교차한다 —
+				# 바깥 런은 늘리고 안쪽 런은 그만큼 줄여야 한 점에서 만난다. 양쪽 다 늘리던 옛 식은
+				# 안쪽에서 두 런이 2·BANK_OFF·tan(Δ/2)(J4에서 0.79) 겹쳐 둑이 통째로 두꺼워진
+				# 계단 혹이 됐다(실측 sea/before_bridge_e_h12 좌상단 = 관절 (16,12)).
+				var e0: float = ext_a * s if k == 0 else 0.0
+				var e1: float = ext_b * s if k == bsteps - 1 else 0.0
 				var bc: Vector2 = a + bstep * (k + 0.5) + perp * (BANK_OFF * s) + dir * ((e1 - e0) * 0.5)
 				var near_bridge := false
 				for br in BRIDGES:
@@ -848,17 +857,20 @@ func _river_and_bridges(parent: Node) -> void:
 	for br in BRIDGES:
 		_arch_bridge(parent, br, _river_dir_at(br))
 
-# 세그먼트 i의 강둑 런을 관절 쪽으로 얼마나 늘려야 굽이 바깥에서 이웃 런과 마이터로 만나는가.
-# 오프셋 라인(BANK_OFF)끼리의 교점이 관절에서 BANK_OFF·tan(Δ/2)만큼 앞서 있어 그만큼 모자란다.
-# at_end=false는 a끝(정점 i), true는 b끝(정점 i+1). 강 양 끝 정점은 굽이가 없으므로 0.
-static func _bank_ext(i: int, at_end: bool) -> float:
+# 중심선에서 off만큼 떨어진 띠(강둑 BANK_OFF / 물 반폭 1.5)를 관절 쪽으로 얼마나 늘려야
+# 이웃 런과 한 점에서 만나는가 = off·tan(Δ/2). 오프셋 라인끼리의 교점이 관절에서 그만큼
+# 앞서(굽이 바깥) 또는 뒤에(안쪽) 있기 때문이다.
+# **부호가 굽이 방향**이다(absf 없음): +perp 쪽이 바깥이면 양수 — 호출부가 s를 곱해 안쪽은 줄인다.
+# at_end=false는 a끝(정점 i), true는 b끝(정점 i+1). 강 양 끝 정점은 관절이 아니므로 0 —
+# 여기에 여유를 주면 강둑 없는 자리로 물이 삐져나온다.
+static func _joint_ext(i: int, at_end: bool, off: float) -> float:
 	var j: int = i + 1 if at_end else i
 	if j <= 0 or j >= RIVER_PTS.size() - 1:
 		return 0.0
 	var p0: Vector2 = RIVER_PTS[j - 1]
 	var p1: Vector2 = RIVER_PTS[j]
 	var p2: Vector2 = RIVER_PTS[j + 1]
-	return BANK_OFF * tan(absf((p1 - p0).angle_to(p2 - p1)) * 0.5)
+	return off * tan((p1 - p0).angle_to(p2 - p1) * 0.5)
 
 # 연못(world.tscn Pond)을 **강과 같은 문법**으로 판다: 어두운 채널 바닥 + 물 상면보다 높은 둑.
 # 옛 연못은 지면 위에 얹힌 파란 원반이라 물가에 선 캐릭터가 물 위에 서 있었다(audit_0808/pond_h12).

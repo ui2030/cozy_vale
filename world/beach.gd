@@ -43,6 +43,13 @@ const WET_ERODE := 1.2    # 물가선 물결 진폭(m). 반깊이보다 작아�
 # 접지 그림자 판 높이 — 젖은 모래 띠(WATER_Y+0.02)보다 위. 모래(GROUND_Y) 높이에 깔면 띠가
 # 덮은 자리(갯바위 절반이 그 안이다)에서 깊이 판정에 걸려 그림자가 통째로 사라진다.
 const SHADOW_Y := WATER_Y + 0.03
+# 원경 곡률이 멈추는 뷰 깊이(m) — water.gdshader curve_cap. 툰 월드 곡률(v.y −= 0.006·z²)은
+# 수면을 뷰 깊이 35 부근 크레스트에서 끊어서, 도착 지점에선 바다가 세로 33px짜리 띠로만 남았다
+# (실측 sea/before_beach_spawn_h12). 이 깊이 밖을 평평하게 두면 판 남단이 그대로 수평선이 된다.
+# 40인 근거: 걷는 영역 어디서 보든 물가선(z_rel −4.3)의 뷰 깊이는 최대 36(최대 줌아웃 1.6배)이라
+# 항상 캡 **안**이다 → 물가 이음매의 곡률은 모래·젖은 띠와 언제나 일치한다(SEA_*/WET_* 계약 불변).
+const SEA_CURVE_CAP := 40.0
+const FOAM_GAP := 6.0     # 파도선 간격(m). 물가선 기준 반복 — 42m 판에 7줄쯤 들어온다
 const WALK_HALF_X := 24.0 # 걷는 영역 반폭
 const WALK_Z1 := 16.0     # 걷는 영역 남단
 const WALL_H := 3.0
@@ -69,6 +76,8 @@ const SPOT := "sea"                          # 낚시터 구분 — fish.json "s
 const C_SAND := Color(0.750, 0.718, 0.653)  # 마른 모래(웜톤). hue 40° 보존, 채도 0.24→0.13
 const C_WET := Color(0.660, 0.634, 0.586)   # 젖은 모래 = 물가 띠. 같은 hue 한 단 어둡게(젖음 대비)
 const C_ROCK := Color(0.660, 0.654, 0.631)  # 갯바위 — 파스텔 시프트(채도 ×0.55, 명도 +5%p)
+const C_SHELL := Color(0.750, 0.700, 0.700) # 조개 — 모래와 같은 명도 상한, 분홍기로만 갈린다
+const C_WEED := Color(0.470, 0.545, 0.470)  # 해초 — 젖은 모래(0.66)보다 확실히 어두운 초록
 # 마을 흙길 색 = world.gd C_ROAD / C_ROAD_E와 같은 값. 순환 preload를 피한 복제라 어긋나면
 # 진입로만 색이 튄다 — test_core가 동일성을 핀한다(decor 등나무 앵커와 같은 규약).
 const C_ROAD := Color(0.700, 0.619, 0.476)
@@ -123,6 +132,12 @@ func _sea() -> void:
 	# 원경 구석에 어두운 판때기만 삐져나온다(실측). 수면 너머는 하늘 = 수평선.
 	var m := ShaderMaterial.new()
 	m.shader = WATER_SHADER
+	# 바다를 바다로 읽히게 하는 세 가지. 전부 같은 셰이더의 uniform이라 연못·강은 손대지 않는다.
+	m.set_shader_parameter("curve_cap", SEA_CURVE_CAP)  # ① 원경 볼륨 = 수평선
+	m.set_shader_parameter("foam_gap", FOAM_GAP)        # ② 밀려오는 흰 파도선
+	m.set_shader_parameter("foam_z", ORIGIN.z + WET_Z)  # 위상 0 = 물가선(젖은 모래 띠 한가운데)
+	# ③ 하이라이트 패치를 좁힌다: 연못 값(0.60)이면 수면 절반이 흰 얼룩이라 파도선이 묻힌다.
+	m.set_shader_parameter("coverage", 0.74)
 	_plane(SEA_REL + Vector3(0, WATER_Y, 0), SEA_W, SEA_D, 40, C_SAND).material_override = m  # 색은 물 셰이더로 덮음
 	# 낚시 트리거: 물가 앞 띠만 덮는다(원경까지 덮으면 Area 중심이 멀어져 문 판정과 경합).
 	# z ∈ [-17, -3] — 물가 충돌선(-4.3)에서 플레이어가 서면 InteractArea(1.3)가 넉넉히 닿는다.
@@ -154,6 +169,41 @@ func _props() -> void:
 			Vector2(-31.0, 6.0), Vector2(-42.0, 0.0), Vector2(30.0, 3.0), Vector2(41.0, 8.0)]:
 		# 회전은 같은 rng 스트림에서(결정적) — 안 돌리면 8그루가 같은 로브 방향 = 복붙 실루엣.
 		_pine(t, rng.randf_range(0.9, 1.3), rng.randf() * TAU)
+	_litter(rng)
+
+# 모래 소품: 조개·유목·해초. 갯바위 4·해송 8만으로는 걷는 영역(±24 × z −4~16)이 여전히 빈
+# 판때기다 — 도착 프레임의 화면 아래 절반이 통째로 무늬 없는 모래였다(실측 before_beach_spawn_h12).
+# 전부 무충돌 장식(마을 decor.gd와 같은 규약) — 통행은 둘레 벽만이 정한다.
+# 접지 그림자는 안 깐다: SHADOW_Y(0.19)가 이 소품들 키(0.1~0.35)와 겹쳐 판이 소품을 가른다.
+# 좌표는 손으로 고른 표다(갯바위·해송과 같은 문법). 오두막 발치(rel 6.5 ±3.5)와 물가 낚시
+# 자리(|x|<3, z −4~0)는 비워 프롬프트·문 앞 그림을 가리지 않는다.
+func _litter(rng: RandomNumberGenerator) -> void:
+	# 조개: 눌린 반구 한 쌍(짝조개). 모래보다 밝고 분홍기라 정오에도 실루엣이 남는다.
+	# 도착 시점 정면(|x|<4, z>8)은 비운다 — 카메라 코앞이라 조개 하나가 화면 아래를 채운다(실측).
+	for c in [Vector2(-4.6, 0.4), Vector2(3.6, -1.2), Vector2(-11.0, 4.6), Vector2(13.2, 5.0),
+			Vector2(-17.5, 9.0), Vector2(-6.8, 9.2), Vector2(9.5, 13.5), Vector2(17.5, 12.0)]:
+		var s := rng.randf_range(0.8, 1.25)
+		_sphere(Vector3(c.x, GROUND_Y, c.y), 0.30 * s, C_SHELL)
+		_sphere(Vector3(c.x + 0.34 * s, GROUND_Y, c.y + 0.18 * s), 0.19 * s, C_SHELL)
+	# 유목: 밀려 올라온 통나무 토막. 눕혀야(x축 90°) 모래에 박힌 말뚝이 안 된다. z 성분 = 눕힌 뒤 방향각.
+	for w in [Vector3(-14.0, 1.6, 0.7), Vector3(8.0, 8.8, -0.4), Vector3(-2.4, 14.2, 1.9),
+			Vector3(20.0, 3.4, 2.6)]:
+		var mi := MeshInstance3D.new()
+		var cm := CylinderMesh.new()
+		cm.top_radius = 0.16
+		cm.bottom_radius = 0.20
+		cm.height = rng.randf_range(1.5, 2.4)
+		mi.mesh = cm
+		mi.material_override = ToonChar.make_solid(Decor.C_WOOD_D, 0.006)
+		mi.rotation = Vector3(PI * 0.5, w.z, 0.0)
+		mi.position = ORIGIN + Vector3(w.x, GROUND_Y + 0.16, w.y)
+		add_child(mi)
+	# 해초: 물가에 밀려온 짙은 초록 무더기. 젖은 모래 띠 위(WATER_Y+0.04)에 얹는다.
+	for g in [Vector2(-8.2, -3.0), Vector2(6.2, -3.4), Vector2(-19.0, -2.4), Vector2(15.0, -2.8),
+			Vector2(-1.0, -3.6)]:
+		for _i in 3:
+			var p: Vector2 = g + Vector2(rng.randf_range(-0.5, 0.5), rng.randf_range(-0.35, 0.35))
+			_sphere(Vector3(p.x, WATER_Y + 0.04, p.y), rng.randf_range(0.16, 0.28), C_WEED)
 
 # 해송: 마을 숲 띠와 같은 절차 블롭 침엽(decor.gd 단일 출처). 각진 원뿔은 소프트닝 v1에서
 # 마을이 이미 버린 문법이라 해변에만 남으면 존을 넘을 때 그림체가 갈린다.
