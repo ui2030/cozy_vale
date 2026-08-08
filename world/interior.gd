@@ -52,6 +52,9 @@ const LAMP_RANGE := 7.5                   # 모서리는 어둡게 남겨야 등
 # 클리핑한다 — b88ce9c가 잡은 백지화가 밤에 재현되는 것과 같은 실패다(실측). 0.45면 조리대가
 # 램프 쪽 벽(213)보다 아래에 머물러 "부엌에 등 하나 켠" 밝기가 된다.
 const LAMP_KITCHEN := 0.45
+# 무대 배경색(_backdrop). 툰 라이팅을 타므로 낮엔 어둑한 회보라, 밤엔 거의 검정으로 내려간다 =
+# 승인된 밤 실내(램프 그라데이션)를 안 건드린다. 순검정이 아닌 이유는 마을 팔레트와 같다.
+const C_BACKDROP := Color(0.085, 0.075, 0.100)
 
 # 벽 조각: [glb, 축, 좌표] — 북(z=-HALF)은 x축으로, 동/서는 z축으로 늘어선다.
 # 남(+z)은 카메라 쪽이라 생략. 문은 북쪽 벽 중앙 = 방에 들어서면 정면에 보인다.
@@ -100,9 +103,10 @@ var _lamps: Array[OmniLight3D] = []
 
 func _ready() -> void:
 	add_to_group("interior")
-	_ground_pad()
+	_backdrop()
 	_floor()
 	_walls()
+	_eaves()
 	for f in FURNITURE:
 		_place(f[0], Vector3(f[1], FLOOR_Y + f[4], f[2]), f[3])
 	for s in SOLIDS:
@@ -132,29 +136,64 @@ func _place(name: String, rel: Vector3, rot_deg: float, sc := FSC, ysc := 0.0) -
 	add_child(n)
 
 func _floor() -> void:
-	# floorFull 원점이 +z 모서리라(로컬 z∈[-1,0]) 타일 중심을 맞추려면 반 칸 밀어 놓는다.
+	# floorFull 원점은 로컬 −x·+z 모서리(x∈[0,1], z∈[-1,0]) — 축마다 반대로 반 칸씩 민다.
 	for ix in 5:
 		for iz in 5:
-			_place("floorFull", Vector3(-4.0 + ix * TILE, 0, -4.0 + iz * TILE + TILE * 0.5), 0, TILE)
+			_place("floorFull", Vector3(-HALF + ix * TILE, 0, -HALF + (iz + 1) * TILE), 0, TILE)
 
+# 킷 조각은 원점이 로컬 -x 모서리(폭 1칸이 +x로 자란다)라 늘어놓는 축으로 반 칸씩 밀어야
+# 방 중앙에 맞는다. 이걸 안 해서 바닥·벽이 통째로 반 칸(1u) 어긋나 있었다(실측 AABB):
+# 바닥 x −4..+6, 북벽 x −4..+6, 서벽 z −6..+4, 동벽 z −4..+6. 그림에는 "바닥이 동벽 밖으로
+# 튀어나온 주황 삼각형"과 "북벽 문간이 방 중앙(IN_DOOR)에서 1u 비껴 있음"으로 나왔다.
+# ponytail: _place 자체를 고치면 원점 규약이 다른 가구(정면 +x 모서리)까지 전부 움직여
+# e2e_interior가 검증하는 배치 계약이 깨진다 — 셸(바닥·벽)만 축별로 보정한다.
 func _walls() -> void:
 	for i in 5:
-		var c := -4.0 + i * TILE
-		_place(WALL_N[i], Vector3(c, 0, -HALF), 0, TILE, WALL_YS)      # 북: 정면(+z)이 방 안쪽
-		_place(WALL_W[i], Vector3(-HALF, 0, c), 90, TILE, WALL_YS)     # 서: 정면이 +x
-		_place(WALL_E[i], Vector3(HALF, 0, c), -90, TILE, WALL_YS)     # 동: 정면이 -x
+		var c := -HALF + i * TILE
+		_place(WALL_N[i], Vector3(c, 0, -HALF), 0, TILE, WALL_YS)          # 북: 정면(+z)이 방 안쪽, +x로 자람
+		_place(WALL_W[i], Vector3(-HALF, 0, c + TILE), 90, TILE, WALL_YS)  # 서: 정면이 +x, −z로 자람
+		_place(WALL_E[i], Vector3(HALF, 0, c), -90, TILE, WALL_YS)         # 동: 정면이 −x, +z로 자람
 
-# 방 밖은 지형이 없다(Ground는 원점 80×80). 줌아웃·모서리에서 허공이 보이지 않게 넓은 받침을 깐다.
-func _ground_pad() -> void:
+# 무대 배경: 방을 통째로 감싸는 뒤집힌 상자(카메라가 안에 있으므로 안쪽 면만 보인다).
+# 실내는 지붕도 앞벽도 없는 컷어웨이라 3면 벽 너머로 실외 잔디와 하늘·달·별이 그대로 보였다
+# = "잔디밭에 놓인 인형집"(실측 audit2_0809/interior_h13·h21). 방 밖을 어둡게 덮어 그 단서를
+# 잘라낸다. 카메라 쪽(남·위)은 그대로 열려 있으니 방 안 시야·조명은 무변경이고, 이 상자가
+# 옛 초지 받침(방 밖 허공 가리개) 역할까지 겸한다.
+func _backdrop() -> void:
 	var mi := MeshInstance3D.new()
 	var bm := BoxMesh.new()
-	bm.size = Vector3(30, 0.5, 30)
+	bm.size = Vector3(60, 40, 60)  # 줌 상한(카메라 offset ×1.6 = 뒤 15·위 10)보다 넉넉히 크게
+	bm.flip_faces = true
 	mi.mesh = bm
-	# 초지색은 복제하지 않고 마을 팔레트에서 가져온다 — 직접 박아둔 (0.62,0.8,0.52)는 지면 상한
-	# 도입 전 값이라 정오에 G가 255로 포화했고(실측 (213,255,172)) 방 밖이 형광 초록으로 떴다.
-	mi.material_override = ToonChar.make_solid(Decor.C_GREEN, 0.0)
-	mi.position = ORIGIN + Vector3(0, -0.45, 0)
+	mi.material_override = ToonChar.make_solid(C_BACKDROP, 0.0)
+	mi.position = ORIGIN + Vector3(0, 20.0 - 0.2, 0)  # 밑면 = 실내 바닥(상면 0.10) 바로 아래
+	# 그림자를 켜두면 이 상자가 태양을 통째로 막아 방이 종일 그늘이 된다.
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mi.visibility_range_end = 60.0  # 실내 근처에서만 그린다 = 마을·해변 컷 지평선에 안 샌다
 	add_child(mi)
+
+# 얕은 처마 띠: 벽 3면 위에 두르는 지붕 가장자리(마을 집과 같은 보라 기와색). 벽이 위에서
+# 톱으로 잘린 듯 끝나던 것을 "앞을 걷어낸 컷어웨이"로 바꾼다 — 지붕을 통째로 덮으면 방 안이
+# 안 보이므로 띠만 두른다. 카메라(남·위, 피치 ~34°)는 벽 상단보다 높아 띠의 윗면만 본다.
+# 북쪽 띠 남단 z −3.6은 실측 상한 안쪽 값: 시선이 y=3.4를 지나는 z가 북벽 y2.6에서 −2.2,
+# 부엌 조리대(y1.27)에서 +1.8이므로 −3.6까지는 방 안 무엇도 안 가린다.
+const EAVE_Y := 3.43   # 벽 상단 실측 3.353 바로 위
+const EAVE_TH := 0.25
+func _eaves() -> void:
+	var out := HALF + 1.2  # 벽 바깥으로 1.2 내민 처마
+	for e in [[Vector3(0, EAVE_Y, -4.9), Vector3(out * 2.0, EAVE_TH, 2.6)],          # 북
+			[Vector3(5.55, EAVE_Y, 1.0), Vector3(1.3, EAVE_TH, 9.2)],                 # 동
+			[Vector3(-5.55, EAVE_Y, 1.0), Vector3(1.3, EAVE_TH, 9.2)]]:               # 서
+		# 안쪽 x는 4.9까지 = 벽 두께(5.0~5.1) 상면을 덮는다. 딱 5.0에서 끊으면 처마와 벽 사이로
+		# 크림색 벽 상면이 실선으로 새어 이음매가 톱니로 보인다(실측 1차 after).
+		var mi := MeshInstance3D.new()
+		var bm := BoxMesh.new()
+		bm.size = e[1]
+		mi.mesh = bm
+		mi.material_override = ToonChar.make_solid(Decor.C_ROOF, OUTLINE)
+		mi.position = ORIGIN + (e[0] as Vector3)
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF  # 방 안에 처마 그림자가 지면 안 된다
+		add_child(mi)
 
 # 바닥 + 4면 벽 충돌(남쪽은 보이지 않는 벽 — 문 없는 열린 면으로 나가 허공에 떨어지는 것 방지)
 func _shell_collision() -> void:
@@ -183,7 +222,7 @@ func _bed() -> void:
 	sh.size = BED_SIZE
 	cs.shape = sh
 	a.add_child(cs)
-	a.add_child(_label("침대", 1.2))
+	a.add_child(_label("침대", 0.65))  # 처마 띠(y3.43) 아래 벽면으로 — 옛 1.2는 띠 위에 겹쳐 읽기 어려웠다
 	add_child(a)
 
 # 요리 스토브: 그룹 "stove" Area3D. 침대와 같은 규약(그룹 + Label3D)이라 player.gd는 종류만 안다.
@@ -196,7 +235,7 @@ func _stove() -> void:
 	sh.radius = STOVE_R
 	cs.shape = sh
 	a.add_child(cs)
-	a.add_child(_label("부엌", 1.1))
+	a.add_child(_label("부엌", 0.55))  # 침대 라벨과 같은 이유(처마 띠 회피)
 	add_child(a)
 
 func _doors() -> void:

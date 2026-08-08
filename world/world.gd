@@ -18,18 +18,14 @@ const WINDOW_SHADER := preload("res://world/window.gdshader")
 
 var _vp_pinned := false  # 조망 시점(v_*) 하네스가 플레이어를 잡아 뒀다 = hour 하네스가 덮어쓰지 않는다
 var _sails: Node3D  # 풍차 날개 허브 — 아주 느리게 돈다(노드 하나 회전 = 프레임 비용 무시 가능)
-var _windows: Array[MeshInstance3D] = []  # 밤 창불빛 판 (아래 _window)
-var _win_mat: ShaderMaterial              # 전부 공유하는 머티리얼 1장 = 프레임당 쓰기 1회
+var _win_mat: ShaderMaterial              # 창 판 전부가 공유하는 머티리얼 1장 = 프레임당 쓰기 1회
 
 func _process(delta: float) -> void:
 	if _sails != null:
 		_sails.rotation.z += delta * 0.25  # ≈25초/바퀴
 	if _win_mat != null:
-		# 가로등·실내등과 같은 계수. 낮(f=0)엔 노드를 통째로 숨겨 그리지도 않는다 = 낮 룩 무변경.
-		var f := DayNight.night_factor(GameClock.game_min / 60.0)
-		_win_mat.set_shader_parameter("glow", f)
-		for w in _windows:
-			w.visible = f > 0.02
+		# 가로등·실내등과 같은 계수. 0=낮(유리+창틀) → 1=한밤(발광). 판은 낮에도 그린다.
+		_win_mat.set_shader_parameter("glow", DayNight.night_factor(GameClock.game_min / 60.0))
 
 # 바람의 지휘봉풍 애니메이션 물 머티리얼(연못·강·분수 공용, base=C_WATER 기본값).
 func _water_mat() -> ShaderMaterial:
@@ -464,6 +460,11 @@ const C_ROOF2 := Color(0.656, 0.572, 0.740)  # 보라 중 — 지붕 밝은면
 # (185,156,138) 갈색으로 떨어져 회관·집 근접 컷이 마을 파스텔 정체성을 잃는다(실측 스샷).
 # 즉 벽은 그늘면 기준으로 고정하고, 겨울 실루엣은 눈 지면 쪽에서 벌린다(C_SNOW 참조).
 const C_WALL  := Color(0.880, 0.844, 0.774)  # 크림 — 벽토/석재
+# 낮 창(window.gdshader day_tint/frame_tint). 창 판은 unshaded라 이 값이 화면에 거의 그대로 나온다 —
+# 벽토는 정오 직광에서 255로 포화하므로(위 주석) 창은 벽 albedo가 아니라 "포화한 흰 벽"을 상대로
+# 대비를 잡아야 한다. 유리는 문(C_WOOD)보다 어둡고 청기가 있어 목재 문과도 색으로 갈린다.
+const C_WIN_GLASS := Color(0.235, 0.300, 0.395, 1.0)  # 유리 — 어두운 청회(하늘 반사)
+const C_WIN_FRAME := Color(0.325, 0.245, 0.270, 1.0)  # 창틀·창살 — 지붕 보라 계열의 진한 목재
 const C_WOOD  := Color(0.590, 0.480, 0.362)  # 브라운 — 목재
 const C_ROAD  := Color(0.700, 0.619, 0.476)  # 흙길 — 파스텔 모래빛
 const C_ROAD_E := Color(0.720, 0.673, 0.590)  # 길 가장자리 — 풀로 옅어지는 톤(같은 hue, 채도만 낮춤)
@@ -584,8 +585,7 @@ func _house(parent: Node, base: Vector3, w: float, d: float, h: float, solid: bo
 	_box(parent, Vector3(cx, h + 0.2, cz), Vector3(w + 0.5, 0.5, d + 0.5), C_ROOF)   # 보라 기와 처마
 	_box(parent, Vector3(cx, h + 0.55, cz), Vector3(w * 0.6, 0.4, d * 0.6), C_ROOF2) # 지붕 마루 밝은면
 	_box(parent, Vector3(cx, 0.9, cz + door_sign * (d * 0.5 + 0.05)), Vector3(0.9, 1.8, 0.12), C_WOOD, 0.004)  # 문(목재)
-	# 밤 창불빛 — 4면 각 2짝. 마을이 밤에 "캄캄한 색박스 무리"로 죽어 있던 것의 직접 처방
-	# (실측 audit_0808/hall_h21·life_h21: 창 지오메트리가 아예 없다). 무충돌 = WORLD_VERSION 유지.
+	# 창 — 4면 각 2짝. 밤엔 발광, 낮엔 유리+창틀(window.gdshader). 무충돌 = WORLD_VERSION 유지.
 	var wy := h * 0.55  # 문(상단 1.8)보다 위, 회관 처마 등나무(y4.62)보다 아래
 	for sx in [-1.0, 1.0]:
 		for sz in [-1.0, 1.0]:
@@ -594,22 +594,23 @@ func _house(parent: Node, base: Vector3, w: float, d: float, h: float, solid: bo
 	if solid:
 		_collide(parent, Vector3(cx, h * 0.5, cz), Vector3(w, h, d))
 
-# 창불빛 판: 벽에 붙는 얇은 박스 + window.gdshader(unshaded + 월드 곡률). 낮엔 glow 0 +
-# visible=false라 그리지도 않는다. _convert_statics는 StandardMaterial3D만 보므로 통과한다.
+# 창 판: 벽에 붙는 얇은 박스 + window.gdshader(unshaded + 월드 곡률). 낮엔 유리+창틀,
+# 밤엔 같은 판이 발광한다. _convert_statics는 StandardMaterial3D만 보므로 통과한다.
 func _window(parent: Node, center: Vector3, size: Vector3) -> void:
 	if _win_mat == null:
 		_win_mat = ShaderMaterial.new()
 		_win_mat.shader = WINDOW_SHADER
+		_win_mat.set_shader_parameter("day_tint", C_WIN_GLASS)
+		_win_mat.set_shader_parameter("frame_tint", C_WIN_FRAME)
+		_win_mat.set_shader_parameter("frame_w", 0.14)
 	var mi := MeshInstance3D.new()
 	var bm := BoxMesh.new()
 	bm.size = size
 	mi.mesh = bm
 	mi.material_override = _win_mat
 	mi.position = center
-	mi.visible = false
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF  # 불 켜진 창이 제 벽에 그림자를 던지면 안 된다
 	parent.add_child(mi)
-	_windows.append(mi)
 
 func _clock_tower(parent: Node, base: Vector3) -> void:
 	# base=몸체 위(y=5). 탑 shaft 2.3각 h3(y5→8) + 보라 원뿔 지붕캡 + 남향 큰 시계면 + 깃발. 총고~9.7(≤10).
