@@ -444,6 +444,7 @@ const C_ROAD_E := Color(0.720, 0.673, 0.590)  # 길 가장자리 — 풀로 옅�
 # 길이 강에 닿는 자리에서 둑과 길이 한 덩어리로 뭉쳤다(실측 스샷). 목재 브라운(C_WOOD)을 쓰면
 # 둑이 "각목 두 줄"로 읽힌다(유저 실플레이 지적) — 울타리·다리 난간과 같은 색이라 더 그렇다.
 const C_BANK  := Color(0.622, 0.550, 0.422)
+const C_CHANNEL := Color(0.401, 0.572, 0.650)  # 침하 채널 바닥(강·연못 공용) — 물보다 어두운 청회
 const C_STONE := Color(0.770, 0.758, 0.735)  # 석재 회 — 다리/계단/분수
 const C_DRESSED := Color(0.700, 0.688, 0.667)  # 다듬돌(갓돌·이맛돌) — 같은 hue 한 단 아래
 # 그린 — decor.gd의 풀·덤불(수평면이라 0.72 이하로 묶는다). 풍차 언덕은 초지 셰이더로 옮겼다.
@@ -492,6 +493,7 @@ func _build_village() -> void:
 	# 정자(서, 집C와 ≥8) — footprint 4×4, 피벗(-26,14), 전고 3. DECOR(개방 퍼걸러).
 	_pavilion(v, Vector3(-26, 0, 14))
 	_river_and_bridges(v)
+	_pond_dig(v)
 	_windmill_hill(v)
 	# 드레싱: 소품·꽃 덤불·숲 띠(원통+구 나무를 대체). 자체 툰 변환 + 무충돌 감사를 하므로
 	# _convert_statics 이전/이후 어느 쪽이든 안전하지만, 규약대로 이전에 트리에 넣는다.
@@ -722,7 +724,7 @@ func _river_and_bridges(parent: Node) -> void:
 		var mid := (a + b) * 0.5
 		var span := (b - a).length()
 		var perp := Vector2((b - a).y, -(b - a).x).normalized()  # 강 수직(강둑 오프셋)
-		var floor_box := _box(parent, Vector3(mid.x, -0.02, mid.y), Vector3(3.2, 0.3, span + RIVER_PAD), Color(0.401, 0.572, 0.650), 0.0)
+		var floor_box := _box(parent, Vector3(mid.x, -0.02, mid.y), Vector3(3.2, 0.3, span + RIVER_PAD), C_CHANNEL, 0.0)
 		floor_box.rotation.y = ang  # 어두운 채널 바닥(깊이감)
 		var water := _box(parent, Vector3(mid.x, WATER_TOP - WATER_H * 0.5, mid.y), Vector3(RIVER_W, WATER_H, span + RIVER_PAD), C_WATER, 0.0)
 		water.rotation.y = ang      # 밝은 물면(강둑보다 낮게 inset), 폭3
@@ -765,6 +767,33 @@ static func _bank_ext(i: int, at_end: bool) -> float:
 	var p1: Vector2 = RIVER_PTS[j]
 	var p2: Vector2 = RIVER_PTS[j + 1]
 	return BANK_OFF * tan(absf((p1 - p0).angle_to(p2 - p1)) * 0.5)
+
+# 연못(world.tscn Pond)을 **강과 같은 문법**으로 판다: 어두운 채널 바닥 + 물 상면보다 높은 둑.
+# 옛 연못은 지면 위에 얹힌 파란 원반이라 물가에 선 캐릭터가 물 위에 서 있었다(audit_0808/pond_h12).
+# 수면 디스크·낚시 트리거·라벨은 손대지 않는다(세이브·프롬프트 계약) — 중심·반경은 수면 메시
+# AABB에서 읽으므로 tscn이 단일 출처다(weather.gd 파문 물영역이 쓰는 그 방식).
+# 강과 같은 값: 채널 바닥 상면 0.13 · 물과 둑 사이 틈 0.05(바닥이 실선으로 비침) · 둑 폭 BANK_W ·
+# 둑 상면 BANK_H. 다만 둑은 박스 줄이 아니라 토러스 한 장이다 — 원형 런에선 조각마다 마이터가
+# 겹쳐 이음매 외곽선이 이중선으로 뜬다(강둑 주석의 그 문제). 단면만 둥글고 폭·높이·색은 강과 같다.
+# 무충돌(강둑과 동일). NPC는 연못 keepout 2.9+BLOCK_PAD 0.3 = 3.2 밖으로만 다니므로 둑 바깥
+# 모서리(반경 3.15)를 밟지 않는다 — npc_system.BUILDING_KEEPOUT과의 계약.
+func _pond_dig(parent: Node) -> void:
+	var mi := get_node_or_null("Pond/PondMesh") as MeshInstance3D
+	if mi == null or mi.mesh == null:
+		push_warning("연못 수면 메시 없음 — 채널·둑 생략")
+		return
+	var box: AABB = mi.global_transform * mi.mesh.get_aabb()
+	var c := box.get_center()
+	var r := box.size.x * 0.5
+	_cyl(parent, Vector3(c.x, -0.02, c.z), r + 0.1, 0.3, C_CHANNEL, 0.0)  # 채널 바닥(상면 0.13)
+	var ring := MeshInstance3D.new()
+	var tm := TorusMesh.new()
+	tm.inner_radius = r + 0.05
+	tm.outer_radius = r + 0.05 + BANK_W
+	ring.mesh = tm
+	ring.material_override = ToonChar.make_solid(C_BANK, 0.004)
+	ring.position = Vector3(c.x, BANK_H - BANK_W * 0.5, c.z)  # 튜브 상면 = BANK_H
+	parent.add_child(ring)
 
 # 세그먼트를 ~1.4 간격 짧은 벽으로 채우되, 다리(BRIDGE_GAP) 근처 스텝은 비운다(다리로만 통과).
 func _river_wall_seg(parent: Node, a: Vector2, b: Vector2, ang: float) -> void:

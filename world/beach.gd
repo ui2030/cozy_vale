@@ -19,6 +19,7 @@ const Decor := preload("res://world/decor.gd")
 const WATER_SHADER := preload("res://world/water.gdshader")
 const GROUND_SHADER := preload("res://world/ground.gdshader")  # 마을 초지와 같은 절차 지면 패턴
 const ROAD_SHADER := preload("res://world/road.gdshader")      # 마을 흙길과 같은 침식 가장자리
+const CONTACT_SHADER := preload("res://world/contact.gdshader") # 접지 그림자(오브젝트 밑 타원 판)
 
 const ORIGIN := Vector3(-150, 0, 150)
 const GROUND_Y := 0.10   # 지면 상면 — 마을 Ground 상면과 같은 높이(플레이어 낙하·발높이 동일)
@@ -39,6 +40,9 @@ const SHORE_Z := -4.3     # 물가 충돌선. 바다로 걸어 들어가 허공�
 const WET_Z := SEA_REL.z + SEA_D * 0.5
 const WET_D := 3.6        # 띠 깊이. 반깊이 1.8 > WET_ERODE = 어떤 각도에서도 수면 모서리가 안 샌다
 const WET_ERODE := 1.2    # 물가선 물결 진폭(m). 반깊이보다 작아야 바다 판 남단이 안 드러난다
+# 접지 그림자 판 높이 — 젖은 모래 띠(WATER_Y+0.02)보다 위. 모래(GROUND_Y) 높이에 깔면 띠가
+# 덮은 자리(갯바위 절반이 그 안이다)에서 깊이 판정에 걸려 그림자가 통째로 사라진다.
+const SHADOW_Y := WATER_Y + 0.03
 const WALK_HALF_X := 24.0 # 걷는 영역 반폭
 const WALK_Z1 := 16.0     # 걷는 영역 남단
 const WALL_H := 3.0
@@ -142,6 +146,7 @@ func _props() -> void:
 		var s := rng.randf_range(0.7, 1.25)
 		_sphere(Vector3(r.x, GROUND_Y + 0.25 * s, r.y), 0.75 * s, C_ROCK)
 		_sphere(Vector3(r.x + 0.9 * s, GROUND_Y + 0.12 * s, r.y + 0.5 * s), 0.42 * s, C_ROCK)
+		_contact(r.x + 0.45 * s, r.y + 0.25 * s, 1.05 * s)  # 두 돌을 한 장으로 덮는다
 	# 해송은 |x|≥13에만: 도착 지점 정남(|x|<5)에 두면 카메라 코앞이라 화면을 통째로 가린다(실측).
 	# 걷는 영역(±24) 바깥 것들은 해안이 계속 이어져 보이게 하는 원경 장식 — 넓은 모래 판이
 	# 텅 빈 사막으로 읽히지 않게 한다(마을 숲 띠와 같은 역할).
@@ -159,6 +164,7 @@ func _pine(at: Vector2, s: float, rot: float) -> void:
 	mi.rotation.y = rot
 	mi.position = ORIGIN + Vector3(at.x, GROUND_Y, at.y)
 	add_child(mi)
+	_contact(at.x, at.y, 1.15 * s)  # 수관 반경(0.38 × 3.4s) 대역
 
 # 귀가 오두막: 문이 남향(+z)이라 카메라(플레이어 뒤 +Z·위)가 몸통에 가리지 않는다.
 # 마을 컬러박스 _house와 같은 조립(벽·처마·문짝) — 프리미티브 재사용.
@@ -169,6 +175,7 @@ func _hut() -> void:
 	_box(Vector3(c.x, HUT_H + 0.2 + GROUND_Y, c.z), Vector3(HUT_W + 0.5, 0.5, HUT_W + 0.5), Decor.C_ROOF)
 	_box(Vector3(c.x, 0.9 + GROUND_Y, c.z + half + 0.05), Vector3(0.9, 1.8, 0.12), Decor.C_WOOD, 0.004)
 	_collide(Vector3(c.x, HUT_H * 0.5 + GROUND_Y, c.z), Vector3(HUT_W, HUT_H, HUT_W))
+	_contact(c.x, c.z, half + 0.6)   # 처마(HUT_W+0.5) 밖으로 여유 — 벽 밑에만 깔면 오두막에 다 가린다
 
 # 보이지 않는 둘레 벽: 북=물가선(바다 진입 차단), 남/동/서=존 경계(허공 낙하 차단).
 func _walls() -> void:
@@ -255,6 +262,22 @@ func _box_at(at: Vector3, size: Vector3, color: Color, outline := 0.006) -> Mesh
 	mi.position = at
 	add_child(mi)
 	return mi
+
+# 접지 그림자: 오브젝트 밑 어두운 타원 판 하나(무충돌). r = 균일하게 어두운 코어 반경 —
+# 판은 1.25r까지 깔고 그 사이가 페이드다(셰이더 core 0.8).
+# 마을엔 이 처방이 없다(거긴 태양광 그림자가 실제로 나온다 — contact.gdshader 주석 참조).
+func _contact(x: float, z: float, r: float) -> void:
+	var mi := MeshInstance3D.new()
+	var pm := PlaneMesh.new()
+	pm.size = Vector2(r * 2.5, r * 2.5)
+	pm.subdivide_width = 4   # 곡률이 정점 단위 — 4장이면 판 안쪽도 지면 곡선을 탄다
+	pm.subdivide_depth = 4
+	mi.mesh = pm
+	var m := ShaderMaterial.new()
+	m.shader = CONTACT_SHADER
+	mi.material_override = m
+	mi.position = ORIGIN + Vector3(x, SHADOW_Y, z)
+	add_child(mi)
 
 func _sphere(rel: Vector3, r: float, color: Color) -> void:
 	var mi := MeshInstance3D.new()
