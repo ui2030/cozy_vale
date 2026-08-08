@@ -15,6 +15,11 @@ const BRIDGE_SHADER := preload("res://world/bridge.gdshader")
 @onready var _sun: DirectionalLight3D = $Sun
 
 var _vp_pinned := false  # 조망 시점(v_*) 하네스가 플레이어를 잡아 뒀다 = hour 하네스가 덮어쓰지 않는다
+var _sails: Node3D  # 풍차 날개 허브 — 아주 느리게 돈다(노드 하나 회전 = 프레임 비용 무시 가능)
+
+func _process(delta: float) -> void:
+	if _sails != null:
+		_sails.rotation.z += delta * 0.25  # ≈25초/바퀴
 
 # 바람의 지휘봉풍 애니메이션 물 머티리얼(연못·강·분수 공용, base=C_WATER 기본값).
 func _water_mat() -> ShaderMaterial:
@@ -83,6 +88,9 @@ func _ready() -> void:
 	# 마을 조망 시점(북향 고정 카메라) — 각 지점 남쪽에 플레이어를 두면 북쪽 구조물이 잡힘
 	var _vp := {
 		"v_windmill":  Vector3(29, 2, -15),   # 강 건너 풍차 언덕(29,-24)
+		# 언덕 위(대지 상면 y2.5). 살짝 띄워 두고 떨어뜨린다 — 대지 충돌체가 없으면 지면까지
+		# 꺼져 그림에 바로 드러난다(도보 등반 가능 여부의 촬영 검증).
+		"v_windmilltop": Vector3(29, 4.5, -22.6),
 		"v_bridge_ne": Vector3(23, 2, -9),    # 북동 다리(23,-16) 앞
 		"v_bridge_e":  Vector3(17, 2, 14),    # 동 다리(17,7) 앞
 		"v_bridge_sw": Vector3(-3.5, 2, 37),  # 남서 다리(-3.5,30) 앞
@@ -444,6 +452,9 @@ const C_ROAD_E := Color(0.720, 0.673, 0.590)  # 길 가장자리 — 풀로 옅�
 # 길이 강에 닿는 자리에서 둑과 길이 한 덩어리로 뭉쳤다(실측 스샷). 목재 브라운(C_WOOD)을 쓰면
 # 둑이 "각목 두 줄"로 읽힌다(유저 실플레이 지적) — 울타리·다리 난간과 같은 색이라 더 그렇다.
 const C_BANK  := Color(0.622, 0.550, 0.422)
+# 언덕 절개면(풍차 언덕 단차·사면). 강둑 흙 그대로 쓰면 정오에 흙길(0.700)과 명도가 붙어
+# 사면 전체가 옛 "탠 슬래브" 한 덩어리로 다시 뭉친다(실측 after 2차) — 한 단 어둡게.
+const C_CUT   := Color(0.510, 0.451, 0.346)
 const C_CHANNEL := Color(0.401, 0.572, 0.650)  # 침하 채널 바닥(강·연못 공용) — 물보다 어두운 청회
 const C_STONE := Color(0.770, 0.758, 0.735)  # 석재 회 — 다리/계단/분수
 const C_DRESSED := Color(0.700, 0.688, 0.667)  # 다듬돌(갓돌·이맛돌) — 같은 hue 한 단 아래
@@ -682,7 +693,7 @@ static func _trim_to_bridge(p: Vector2, q: Vector2, br: Vector2) -> Vector2:
 	var disc := fu * fu - (f.length_squared() - BRIDGE_TRIM * BRIDGE_TRIM)
 	return p + u * (-fu + sqrt(disc))  # 안쪽이면 disc>0·해>0 보장
 
-func _road(parent: Node, center: Vector3, size: Vector3, rot_deg: float) -> void:
+func _road(parent: Node, center: Vector3, size: Vector3, rot_deg: float) -> MeshInstance3D:
 	var mi := _box(parent, center, size, C_ROAD, 0.0)
 	mi.rotation.y = deg_to_rad(rot_deg)
 	# 하드 엣지 제거: 전용 셰이더가 라운드 사각 SDF − 노이즈로 가장자리를 갉아낸다(discard).
@@ -693,6 +704,7 @@ func _road(parent: Node, center: Vector3, size: Vector3, rot_deg: float) -> void
 	rm.set_shader_parameter("edge_color", C_ROAD_E)  # 팔레트 단일 출처 = 셰이더 기본값에 안 맡긴다
 	rm.set_shader_parameter("half_ext", Vector2(size.x * 0.5, size.z * 0.5))
 	mi.material_override = rm
+	return mi
 
 func _pavilion(parent: Node, base: Vector3) -> void:
 	# 정자 4×4 퍼걸러: 기둥4 + 등나무 지붕 + 테이블. 개방(무충돌).
@@ -956,38 +968,78 @@ func _arch_bridge(parent: Node, at: Vector2, ang: float) -> void:
 			v.rotation.z = -th  # 로컬 +Y가 원 중심 반대 방향(=반경 방향)을 향하게
 
 func _windmill_hill(parent: Node) -> void:
-	# 풍차 언덕(북동, 강 건너 — 북동 다리로 접근): 대지 4×4 피벗(29,-24) 전고2.5 + 램프(~17°) + 풍차.
-	# ponytail: 계단은 램프로 대체(P3 드레싱), 램프=경사길 도보 등반.
+	# 풍차 언덕(북동, 강 건너 — 북동 다리로 접근): 대지 4×4 피벗(29,-24) 전고2.5 + 남면 경사 + 풍차.
 	#
-	# 대지는 **초지 셰이더**(_ground_mat) — 주변 초지와 같은 절차 풀 패턴·같은 계절색.
-	# 옛 대지는 C_GREEN(올리브)의 민면이라 초지와 색·질감이 갈렸다.
+	# 대지·단은 **초지 셰이더**(_ground_mat) — 주변 초지와 같은 절차 풀 패턴·같은 계절색.
 	#
-	# 램프는 흙길(C_ROAD) — 발치까지 온 마을 흙길이 그대로 언덕을 올라간다. 옛 C_STONE(0.770)은
-	# 지면 계열 albedo 상한 0.76을 넘긴 데다 사면(~17°)이 정오 태양을 정면으로 받아 화면에서
-	# (255,255,253) 순백으로 포화했다(실측 windmill_h12) = "랜드마크가 흰 프리미티브" 원인.
-	# (램프까지 초지로 깔아 봤더니 초지와 완전히 같은 톤이 되어 언덕 실루엣이 사라지고, 지면 위에
-	#  떠 있는 슬래브라 외곽선만 점선으로 깨져 보였다 — 실측. 흙길이 경사로를 읽히게 한다.)
+	# ── 실루엣: 대지 하나(4×4 박스)는 "잔디 얹은 상자"였다(실측 windmill_h12). 남면(z=-22)을
+	#    맞춘 낮은 단 2개를 두르면 3단(0.6 / 1.25 / 2.5)이 되어 언덕으로 읽힌다. 단의 최대
+	#    코너 반경 3.89는 decor.gd 풍차 대지 keepout(r4.0) 안 — 소품이 단에 먹히지 않는다.
+	#    (대지 4×4×2.5 피벗(29,-24)은 좌표·치수 불변 — 다리 접근 동선과 충돌 계약.)
 	var px := 29.0
 	var pz := -24.0
 	var top := 2.5
-	var plat := _box(parent, Vector3(px, top * 0.5, pz), Vector3(4, top, 4), C_GRASS, 0.004)  # 초지 대지
-	_ground_mat(plat, 0.004)
-	_collide(parent, Vector3(px, top * 0.5, pz), Vector3(4, top, 4))
-	# 램프: 대지 남면(z=-22)→지면. 길이8 폭3 상승2.5 → ~17°. 가시+충돌(도보 등반).
+	for t in [[5.4, 4.8, 0.6], [4.7, 4.4, 1.25], [4.0, 4.0, 2.5]]:  # [폭x, 깊이z, 높이]
+		var s := Vector3(float(t[0]), float(t[2]), float(t[1]))
+		var c := Vector3(px, s.y * 0.5, pz + 2.0 - s.z * 0.5)
+		# 흙 절개면: 같은 상자를 0.06 넓고 0.06 낮게 겹쳐 **수직면만** 흙으로 덮는다(윗면은 초지).
+		# 툰 light()는 면 방향으로 명암이 거의 안 갈린다 — 초지끼리는 단차·경사를 줘도 같은 톤이라
+		# 언덕이 통째로 사라졌다(실측 after 1차). 강둑과 같은 계열의 흙(C_CUT)이라야 켜가 읽힌다.
+		_box(parent, Vector3(c.x, (s.y - 0.06) * 0.5, c.z), Vector3(s.x + 0.06, s.y - 0.06, s.z + 0.06), C_CUT, 0.004)
+		_ground_mat(_box(parent, c, s, C_GRASS, 0.004), 0.004)
+		_collide(parent, c, s)
+	# ── 남면 경사: 초지 쐐기 + 그 위 흙길. 옛 두께 0.3 슬래브는 지면 위에 떠 하드엣지로 잘린
+	#    "혓바닥"이었다(실측). 두께를 3.4로 키워 아랫면을 지면 밑에 묻으면 옆에서 본 단면이
+	#    삼각형 = 쐐기가 된다. **윗면(=걷는 면)·폭·각도는 옛 슬래브와 같은 평면**이라 동선 불변.
+	#    길은 마을 도로와 같은 road.gdshader(라운드 SDF − 노이즈 침식) — 하드엣지가 사라지고,
+	#    폭을 ROAD_W(2.4)로 줄여 쐐기 초지가 길 양옆에 0.3씩 남는다(= 풀언덕 위의 오솔길).
 	var ramp_len := 8.0
 	var ramp_ang := atan2(top, ramp_len - 1.0)
-	var rc := Vector3(px, top * 0.5, pz + 6.0)  # 중심 z=-18
-	var ramp := _box(parent, rc, Vector3(3, 0.3, ramp_len), C_ROAD, 0.004)
-	ramp.rotation.x = ramp_ang
-	_collide(parent, rc, Vector3(3, 0.3, ramp_len), 0.0, ramp_ang)
-	# 풍차: 탑(원통) + 지붕(_house와 같은 처마+마루 2톤) + 날개(십자).
-	_cyl(parent, Vector3(px, top + 1.8, pz), 1.1, 3.6, C_WALL)
-	_box(parent, Vector3(px, top + 3.9, pz), Vector3(2.6, 0.5, 2.6), C_ROOF)
-	# 보라 슬래브 한 장만 얹으면 "원통에 보라 뚜껑"으로 읽힌다 — 마을 집과 같은 마루 밝은면을
-	# 올려 지붕 문법을 맞춘다(_house의 h+0.2 처마 / h+0.55 마루와 같은 +0.35 · 0.6배 규격).
-	_box(parent, Vector3(px, top + 4.25, pz), Vector3(1.6, 0.4, 1.6), C_ROOF2)
-	_box(parent, Vector3(px, top + 2.6, pz - 1.2), Vector3(0.4, 4.0, 0.35), C_WOOD, 0.004)  # 날개 세로
-	_box(parent, Vector3(px, top + 2.6, pz - 1.2), Vector3(4.0, 0.4, 0.35), C_WOOD, 0.004)  # 날개 가로
+	var rc := Vector3(px, top * 0.5, pz + 6.0)  # 중심 z=-18 (옛 슬래브 중심 — 불변)
+	var up := Vector3(0, cos(ramp_ang), sin(ramp_ang))  # rotation.x=ang 후의 로컬 +Y
+	var wedge_c := rc - up * 1.55  # 윗면이 옛 슬래브 윗면(rc + up*0.15)과 같은 평면에 오게
+	# 외곽선은 0 — 대부분 지면 아래인 상자에 외곽선 셸을 씌우면 셸이 잔디를 뚫고 나와 사면 양옆에
+	# 점선 두 줄이 그어진다(실측 after 1차). 쐐기는 흙 절개면 색으로 갈린다.
+	# 덧폭은 0.04(면당 0.02)까지만 — 0.06이면 사면 발치(윗면이 지면과 같은 높이인 구간)에서
+	# 절개면이 잔디 밖으로 0.03 삐져나와 길 양옆에 갈색 실선 두 줄이 그어진다(실측 after 3차).
+	var wedge_e := _box(parent, wedge_c - up * 0.06, Vector3(3.04, 3.4, ramp_len + 0.04), C_CUT, 0.0)
+	wedge_e.rotation.x = ramp_ang
+	var wedge := _box(parent, wedge_c, Vector3(3, 3.4, ramp_len), C_GRASS, 0.0)
+	wedge.rotation.x = ramp_ang
+	_ground_mat(wedge)
+	_collide(parent, wedge_c, Vector3(3, 3.4, ramp_len), 0.0, ramp_ang)
+	var path := _road(parent, rc + up * 0.15, Vector3(ROAD_W, 0.1, ramp_len), 0.0)
+	path.rotation.x = ramp_ang  # 절반만 쐐기에 묻혀 동일면 z-fighting이 없다
+	# ── 풍차: 사다리꼴 탑 + 원뿔 지붕(_clock_tower 문법) + 문 + 4팔 격자 날개.
+	#    옛 조립은 원통 + 보라 슬래브 + 각목 십자 2개라 "방앗간 간판"으로 읽혔다(실측).
+	# 탑 높이 3.7 = 상한이다. 고정 게임카메라의 접근 시점(v_windmill)에서 프레임 상단이 월드
+	# y≈8.2다(실측) — 4.2로 올렸더니 보라 원뿔 지붕이 통째로 프레임 밖으로 잘려 "지붕 없는
+	# 원통"이 됐다. 3.7이면 원뿔 꼭짓점 7.72·꼭대기 장식 7.86이 프레임 안에 들어온다.
+	var th := 3.7
+	var tower := _cyl(parent, Vector3(px, top + th * 0.5, pz), 1.35, th, C_WALL)
+	(tower.mesh as CylinderMesh).top_radius = 0.95  # 아래가 넓은 몸통 = 풍차의 기본 실루엣
+	_cyl(parent, Vector3(px, top + th + 0.16, pz), 1.5, 0.32, C_ROOF, 0.004)  # 보라 처마 링
+	var cap := _cyl(parent, Vector3(px, top + th + 0.92, pz), 1.4, 1.2, C_ROOF)
+	(cap.mesh as CylinderMesh).top_radius = 0.0  # 원뿔 모자
+	_box(parent, Vector3(px, top + th + 1.66, pz), Vector3(0.34, 0.34, 0.34), C_ROOF2, 0.004)  # 마루 밝은면
+	_box(parent, Vector3(px, top + 0.9, pz + 1.24), Vector3(0.8, 1.8, 0.16), C_WOOD, 0.004)    # 문(경사 쪽 남면)
+	# 날개는 마을(남서)을 향한 **남면**에 단다 — 옛 위치(pz−1.2)는 탑 뒤라 팔 끝만 삐죽 나왔다.
+	# 대(spar) 하나로는 판자로 읽힌다: 살 4줄 + 돛천 한 폭이 있어야 풍차 날개가 된다.
+	# 날개 원판면은 z=-21.7 = 대지 남면(-22)보다 **밖**이다. 옛 십자는 대지 한가운데(pz−1.2)에
+	# 최저점 y3.1로 걸려 있어 대지 위에 선 플레이어(발2.5·캡슐1.6)를 상시 관통했다 — 원판을
+	# 대지 밖으로 빼면 걸어다니는 면과 겹치지 않는다. (램프 최상단 0.8폭 구간만 팔 끝이 스친다.)
+	_sails = Node3D.new()
+	_sails.position = Vector3(px, top + th - 0.2, pz + 2.3)
+	parent.add_child(_sails)
+	_cyl(_sails, Vector3(0, 0, -0.55), 0.3, 1.6, C_WOOD).rotation.x = PI * 0.5  # 풍축(탑까지 잇는다)
+	for i in 4:
+		var arm := Node3D.new()
+		arm.rotation.z = TAU * i / 4.0
+		_sails.add_child(arm)
+		_box(arm, Vector3(0, 1.05, 0), Vector3(0.17, 2.1, 0.13), C_WOOD, 0.004)       # 대
+		_box(arm, Vector3(0.33, 1.2, -0.06), Vector3(0.48, 1.6, 0.06), C_ROOF2, 0.004)  # 돛천
+		for j in 4:
+			_box(arm, Vector3(0.3, 0.6 + j * 0.42, 0.02), Vector3(0.66, 0.09, 0.07), C_WOOD, 0.0)  # 살
 
 # ══ 계절 표현 (지면 톤 + 식생) ═════════════════════════════════════
 # 조명(day_night.gd 키프레임)은 건드리지 않는다 — 승인된 룩. 계절은 지면색과 식생으로만 읽힌다.
