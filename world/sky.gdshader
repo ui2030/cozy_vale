@@ -233,7 +233,13 @@ void sky() {
 			cs += constellation(rd, normalize(CASSIO_C), 0.60, 1);
 			cs += constellation(rd, normalize(ORION_C), 0.45, 2);
 
-			float nv = night * sky_vis;   // 해질녘 등장 / 새벽 소멸(알파 페이드)
+			// 별·달 알파는 night(낮 램프)만으로는 부족하다. 새벽엔 day가 아직 0.10인데도 warm(dawn
+			// 피크 6.8시)이 지평선을 주황으로 통째로 밝혀서, 지면은 대낮인데 하늘엔 별이 남았다
+			// (실측 audit2_0809/bridgetop_h06). "하늘이 어두울 때만 별" = night × (밝지 않음).
+			// 문턱을 0.35~0.85로 둔 이유: 21시 warm=0.08 → 계수 정확히 1.0 = 승인된 밤 별 무변경.
+			// (18.3시 dusk 피크 warm=1.0 → 0 = 노을 한복판에 별 없음, 19.5시 0.61 → 0.48 = 황혼 등장)
+			float nf = night * (1.0 - smoothstep(0.35, 0.85, warm));
+			float nv = nf * sky_vis;   // 해질녘 등장 / 새벽 소멸(알파 페이드)
 			float occ = 1.0 - ca * 0.95;  // 구름이 별·은하수를 가림
 			col += vec3(0.55, 0.60, 0.75) * mw * nv * 0.06 * occ;  // 은하수 미광
 			col += vec3(0.95, 0.96, 1.00) * st * 1.4 * nv * occ;
@@ -242,8 +248,8 @@ void sky() {
 			// 달: 밝은 원반 하나 + 옅은 헤일로. 보이는 대역(약간 지평선 아래)에 배치.
 			vec3 moon_d = normalize(vec3(0.5, -0.10, -0.85));  // 게임 카메라(-Z 하향) 시야 안 상단
 			float md = distance(dir, moon_d);
-			col = mix(col, vec3(0.96, 0.96, 0.90), smoothstep(0.05, 0.035, md) * night * occ);
-			col += vec3(0.50, 0.55, 0.70) * smoothstep(0.13, 0.05, md) * night * 0.06 * occ;
+			col = mix(col, vec3(0.96, 0.96, 0.90), smoothstep(0.05, 0.035, md) * nf * occ);
+			col += vec3(0.50, 0.55, 0.70) * smoothstep(0.13, 0.05, md) * nf * 0.06 * occ;
 		}
 
 		col = mix(col, cloud_col, ca);

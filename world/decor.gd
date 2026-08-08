@@ -94,9 +94,11 @@ const HOME_KEEP := 4.5      # 집 앞 정지·배회 중심
 const PLAZA_R := 6.4        # 광장 판석 위엔 식생 금지(판석이 보여야 한다)
 # 종별 배율 [최소, 최대] — 원본 높이가 제각각이라 한 배율로 묶으면 풀포기가 갈대가 된다(실측).
 const FLORA_SCALE := {
-	"flower_yellowA": Vector2(2.4, 3.4),   # 원본 0.19 → 0.46~0.65
-	"flower_purpleA": Vector2(2.4, 3.4),   # 원본 0.24 → 0.58~0.82
-	"plant_bushSmall": Vector2(2.0, 3.0),  # 원본 0.21 → 0.42~0.63
+	# 꽃·덤불은 절차 메시(flower_mesh·BUSH_BLOB)로 갈아탔지만 전고를 킷 원본 대역에 맞춰 만들었으므로
+	# 이 배율표는 그대로다 — 배율은 외곽선 두께(오브젝트 공간)에도 곱해지니 함부로 못 바꾼다.
+	"flower_yellowA": Vector2(2.4, 3.4),   # 전고 0.19 → 0.46~0.65
+	"flower_purpleA": Vector2(2.4, 3.4),   # 전고 0.19 → 0.46~0.65
+	"plant_bushSmall": Vector2(2.0, 3.0),  # 전고 0.19 → 0.38~0.57
 	"grass": Vector2(1.3, 2.0),            # 원본 0.25 → 0.33~0.50 (꽃보다 낮게)
 }
 const WALK_HALF := 33.0     # 초지 스프링클 범위(숲 띠 안쪽)
@@ -172,6 +174,7 @@ var _lights: Array[OmniLight3D] = []
 var _glow: ShaderMaterial              # 가로등 유리 발광 판 공용 머티리얼 (_glow_mat)
 var _blooms: Array[Node3D] = []        # 겨울에 숨길 만개 노드(화분·꽃수레 꽃, 등나무 드레이프 루트)
 var _tree_mesh := {}                   # 활엽수 MMI 이름 → [원색 Mesh, 겨울 수관 서리 Mesh]
+var _flora_cache := {}                 # 식생 종 이름 → Mesh (MultiMesh·화분 꽃 공용)
 var _unknown_mats := {}                # 팔레트에 없는 킷 머티리얼 이름(로그용)
 # 검증 전용: 탑다운 도식용 좌표 수집 (headless는 MultiMesh 버퍼를 되읽지 못해 원본을 따로 남긴다)
 var _dumping := "decordump" in OS.get_cmdline_user_args()
@@ -413,9 +416,7 @@ func _planter(p: Node3D) -> void:
 	_box(p, Vector3(0, 0.54, 0), Vector3(0.7, 0.06, 0.7), C_WOOD_D, 0.0)
 	var kinds := ["flower_yellowA", "flower_purpleA", "flower_yellowA"]
 	for i in 3:
-		var f := _glb(kinds[i])
-		if f == null:
-			continue
+		var f := _flower_node(kinds[i])
 		var a := TAU * i / 3.0
 		f.position = Vector3(cos(a) * 0.2, 0.56, sin(a) * 0.2)
 		f.scale = Vector3.ONE * 2.6
@@ -432,9 +433,7 @@ func _cart(p: Node3D) -> void:
 		var w := _cyl(p, Vector3(0, 0.38, 0.5 * s), 0.36, 0.1, C_WOOD_D, 0.004)
 		w.rotation.x = PI * 0.5
 	for i in 5:
-		var f := _glb("flower_yellowA" if i % 2 == 0 else "flower_purpleA")
-		if f == null:
-			continue
+		var f := _flower_node("flower_yellowA" if i % 2 == 0 else "flower_purpleA")
 		f.position = Vector3(-0.5 + i * 0.25, 0.94, (i % 2) * 0.3 - 0.15)
 		f.scale = Vector3.ONE * 2.8
 		f.rotation.y = i * 1.1
@@ -515,7 +514,7 @@ func _place_flora() -> void:
 	for nm in buckets:
 		if (buckets[nm] as Array).is_empty():
 			continue
-		_multimesh(_mm_mesh(nm), buckets[nm], "Flora_" + nm)
+		_multimesh(_flora_mesh(nm), buckets[nm], "Flora_" + nm)
 		_n_flora += (buckets[nm] as Array).size()
 
 # 한 자리에 3~6포기를 뭉쳐 심는다 — 낱개로 흩뿌리면 "잡초 노이즈"로 보이고 화단으로 안 읽힌다.
@@ -591,16 +590,24 @@ const BLOB_KINDS := {
 	"cone_slim":  [0.32, 0.66, 1.70, 0.24, 0.066, 0.24, 0.13],  # 가는 침엽
 }
 const CONIFER := ["cone_tall", "cone_slim"]
+# 덤불 = 같은 문법(로브로 부푼 단일 폐곡면)을 작게. 킷 원본(plant_bushSmall)은 납작한 잎 카드
+# 몇 장이라 근경에서 초록 종잇조각으로 흩어져 보였다(실측 audit2_0809/hall_h12 우측 초지).
+# 나무보다 낮고 넓게, 로브는 세게(0.30) — 뭉툭한 덩어리 실루엣.
+# 전고 0.22 = 킷 원본 0.21과 같은 대역이라 FLORA_SCALE도, 외곽선 두께(오브젝트 공간)도 그대로 유효.
+# y스쿼시 0.78로 더 눌렀더니 초지 위에 **초록 웅덩이**가 깔린 것처럼 보였다(실측 1차 after) — 0.95로
+# 되세우고 색을 C_GREEN에서 C_LEAF로 내린다. 툰 light()가 면 방향을 안 가르므로 지면(0.627,0.72,
+# 0.576)과 값이 붙으면 외곽선만 남아 스티커가 된다 = 형태는 색으로 갈라야 한다(수관이 쓰는 그 색).
+const BUSH_BLOB := [0.098, 0.118, 0.95, 0.90, 0.012, 0.05, 0.30]
 # 로브 방향 — 수관을 몇 방향으로만 부풀려 완벽한 구가 아닌 뭉게구름 실루엣을 만든다.
 const LOBES := [Vector3(1, 0.3, 0.4), Vector3(-0.8, 0.15, 0.6), Vector3(0.25, 0.55, -1), Vector3(-0.45, -0.15, -0.85)]
 
 # static = 노드 없이도 만들 수 있다(beach.gd 해송이 같은 실루엣을 쓴다 — 나무 문법 단일 출처).
-static func blob_mesh(k: Array, leaf: Color) -> ArrayMesh:
+static func blob_mesh(k: Array, leaf: Color, seg := 22, rings := 12) -> ArrayMesh:
 	var sm := SphereMesh.new()
 	sm.radius = 1.0
 	sm.height = 2.0
-	sm.radial_segments = 22
-	sm.rings = 12
+	sm.radial_segments = seg
+	sm.rings = rings
 	var a := sm.surface_get_arrays(0)
 	var v: PackedVector3Array = a[Mesh.ARRAY_VERTEX]
 	for i in v.size():
@@ -640,6 +647,87 @@ static func blob_mesh(k: Array, leaf: Color) -> ArrayMesh:
 	out.surface_set_material(1, ToonChar.make_solid(C_WOOD, OUTLINE))
 	return out
 
+# ══ 절차 꽃 ════════════════════════════════════════════════════════
+# 킷 원본(flower_yellowA/purpleA)은 가는 줄기 위 정육면체 하나라 근경에서 "막대 위 상자"였다
+# (실측 audit2_0809/hall_h12). blob_mesh와 같은 수법 — 구를 로브로 부풀린다 — 을 쓰되 로브를
+# 3D 방향이 아니라 **방위각 5분할**로 돌려 접시형 꽃잎 로제트를 만든다. 카메라가 34° 내려보므로
+# 위에서는 꽃잎 5장, 옆에서는 납작한 돔으로 읽힌다(정육면체는 어느 각도에서도 정육면체였다).
+# 줄기는 blob_mesh 줄기와 같은 관계 — 꽃송이에 밑동이 잠겨 있어 inverted-hull 외곽선이 안 샌다.
+# 전고 0.19 = 킷 원본과 같은 대역 → FLORA_SCALE·화분/꽃수레 배율·외곽선 두께 전부 그대로 유효.
+const FLOWER_R := 0.055     # 꽃송이 반경(로브 최대) — 전폭 0.11 = 전고의 58%
+const FLOWER_Y := 0.145     # 꽃송이 중심 높이 = 줄기 길이
+
+# 방위각 로브 로제트 = blob_mesh의 로브를 방향이 아니라 방위각으로 돌린 것. 꽃송이(꽃잎 5장)와
+# 밑동 잎(3장)이 같은 함수를 쓴다. low = 꽃잎 사이 골의 깊이(1이면 그냥 구).
+# 골을 너무 깊게(0.58) 파고 납작하게(0.42) 누르면 꽃이 아니라 **종이 별**로 읽힌다(실측 1차 after) —
+# 0.70/0.55 = 꽃잎 끝이 둥글고 가운데가 봉긋한 로제트.
+static func _rosette(petals: int, seg: int, r: float, y: float, squash: float, low: float) -> Array:
+	var sm := SphereMesh.new()
+	sm.radius = 1.0
+	sm.height = 2.0
+	sm.radial_segments = seg
+	sm.rings = 5
+	var a := sm.surface_get_arrays(0)
+	var v: PackedVector3Array = a[Mesh.ARRAY_VERTEX]
+	for i in v.size():
+		var n := v[i].normalized()
+		var lobe: float = low + (1.0 - low) * pow(maxf(cos(atan2(n.z, n.x) * float(petals)), 0.0), 0.8)
+		v[i] = Vector3(n.x * lobe, n.y * squash, n.z * lobe) * r
+		v[i].y += y
+	var tmp := ArrayMesh.new()
+	var arr := []
+	arr.resize(Mesh.ARRAY_MAX)
+	arr[Mesh.ARRAY_VERTEX] = v
+	arr[Mesh.ARRAY_INDEX] = a[Mesh.ARRAY_INDEX]
+	tmp.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
+	var st := SurfaceTool.new()
+	st.create_from(tmp, 0)
+	st.generate_normals()  # 정점을 옮겼으니 법선 재생성(blob_mesh와 같은 이유)
+	return (st.commit() as ArrayMesh).surface_get_arrays(0)
+
+static func flower_mesh(petal: Color) -> ArrayMesh:
+	var out := ArrayMesh.new()
+	# 꽃잎 1장당 4분할(seg 20). 14면 골이 뭉개져 그냥 동그란 구가 된다.
+	out.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, _rosette(5, 20, FLOWER_R, FLOWER_Y, 0.55, 0.70))
+	# 밑동 잎 + 줄기를 **한 면으로 합친다**(둘 다 초록 = 면을 나눌 이유가 없다). 잎이 없으면
+	# 꽃송이가 막대 위에 꽂힌 채 떠 보인다 — 킷 원본에 있던 잎이 빠진 자리가 그대로 드러났다(실측 1차 after).
+	var leaf := ArrayMesh.new()
+	leaf.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, _rosette(3, 12, FLOWER_R * 0.95, 0.022, 0.22, 0.34))
+	var cm := CylinderMesh.new()
+	cm.top_radius = 0.008
+	cm.bottom_radius = 0.013
+	cm.height = FLOWER_Y
+	cm.radial_segments = 6
+	cm.rings = 1
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	st.append_from(leaf, 0, Transform3D())
+	st.append_from(cm, 0, Transform3D(Basis(), Vector3(0, FLOWER_Y * 0.5, 0)))
+	out.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, st.commit_to_arrays())
+	out.surface_set_material(0, ToonChar.make_solid(petal, OUTLINE))
+	out.surface_set_material(1, ToonChar.make_solid(C_LEAF, OUTLINE))
+	return out
+
+# 식생 버킷 이름 → Mesh. 꽃·덤불만 절차 메시로 갈아탔고 풀포기(grass)는 킷 원본 그대로다
+# — 얇은 잎날 다발이라 원본이 이미 맞는 형태고, 절차로 바꿀 이유가 없다.
+# 종당 1장을 캐시해 MultiMesh와 화분·꽃수레의 개별 꽃이 **같은 리소스**를 쓴다. _mm_mesh가
+# 캐시를 우회하던 이유(킷 머티리얼을 공유 변형할 위험)는 절차 메시엔 없다 — 만든 뒤 아무도 안 고친다.
+# 겨울 서리톤도 MultiMeshInstance3D의 material_override로만 걸리므로 Mesh는 불변이다.
+func _flora_mesh(nm: String) -> Mesh:
+	if not _flora_cache.has(nm):
+		match nm:
+			"flower_yellowA": _flora_cache[nm] = flower_mesh(C_YELLOW)
+			"flower_purpleA": _flora_cache[nm] = flower_mesh(C_LAV)
+			"plant_bushSmall": _flora_cache[nm] = blob_mesh(BUSH_BLOB, C_LEAF, 14, 7)  # 덤불은 작다 = 분할도 작게
+			_: _flora_cache[nm] = _mm_mesh(nm)
+	return _flora_cache[nm]
+
+# 화분·꽃수레의 개별 꽃 한 송이(만개 — 겨울엔 _blooms로 숨긴다).
+func _flower_node(kind: String) -> MeshInstance3D:
+	var mi := MeshInstance3D.new()
+	mi.mesh = _flora_mesh(kind)
+	return mi
+
 # ══ 숲 띠 (경계 |x| 또는 |z| ∈ [34,40] 저밀도, 절차 블롭 MultiMesh) ══
 func _place_forest() -> void:
 	var rng := RandomNumberGenerator.new()
@@ -664,6 +752,34 @@ func _place_forest() -> void:
 			var t := Transform3D()
 			t = t.scaled(Vector3.ONE * rng.randf_range(2.7, 4.0))
 			t = t.rotated(Vector3.UP, rng.randf() * TAU)
+			t.origin = Vector3(pos.x, GROUND_Y, pos.y)
+			(buckets[nm] as Array).append(t)
+	# 원경 띠 — 지평선 너머 숲. 옛 그림은 지평선이 잔디와 하늘의 **직선 경계**였다(실측
+	# audit2_0809/bridge_sw_h12). 툰 곡률(0.006·z²)이 시야 32.6 지점을 정점으로 지면을 도로
+	# 내리므로, 이 대역(44~56)의 밑동은 지평선 아래로 잠기고 **수관만** 띠로 떠오른다 = 원경 실루엣.
+	# 그래서 나무를 크게(4.0~6.0) 잡아야 한다 — 안쪽 띠 배율로는 통째로 잠긴다.
+	# 같은 버킷에 넣으므로 **드로우콜 증가 0**이고, MultiMesh는 노드 단위 컬링이라
+	# 곡률 변위-AABB 불일치(816286e 풍차 지붕)에도 걸리지 않는다.
+	# rng를 따로 쓴다 — 위 rng는 아래 강변 바위와 스트림을 공유하므로, 여기서 난수를 뽑으면
+	# 바위 자리가 통째로 밀린다(실측: 승인된 바위 2개가 금지 존으로 밀려 사라졌다).
+	var frng := RandomNumberGenerator.new()
+	frng.seed = 20260809
+	for edge in 4:
+		for _i in 30:
+			var along := frng.randf_range(-56.0, 56.0)
+			var band := frng.randf_range(44.0, 56.0)
+			var pos: Vector2
+			match edge:
+				0: pos = Vector2(along, -band)
+				1: pos = Vector2(along, band)
+				2: pos = Vector2(-band, along)
+				_: pos = Vector2(band, along)
+			if _blocked(pos):
+				continue
+			var nm: String = kinds[frng.randi() % kinds.size()]
+			var t := Transform3D()
+			t = t.scaled(Vector3.ONE * frng.randf_range(4.0, 6.0))
+			t = t.rotated(Vector3.UP, frng.randf() * TAU)
 			t.origin = Vector3(pos.x, GROUND_Y, pos.y)
 			(buckets[nm] as Array).append(t)
 	for nm in buckets:

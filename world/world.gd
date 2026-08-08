@@ -339,6 +339,10 @@ func _convert_statics(node: Node) -> void:
 		_convert_statics(c)
 
 # 초지 바닥(world.tscn Ground/GroundMesh) → 절차 풀 패턴 셰이더. albedo는 _apply_season이 구동한다.
+# 판 크기는 tscn이 단일 출처: **보이는 판 120 vs 충돌 판 80**으로 일부러 어긋나 있다. 추종 카메라가
+# 플레이어 뒤 9.5에 서므로 통행 끝(±40)에 서면 카메라는 ±49.5 = 옛 80판 밖이었고, 화면 하단에
+# 판 끝 너머 하늘(크림)이 띠로 드러났다(실측 audit2_0809/bridge_sw_h12). 통행 계약(80)은 손대지
+# 않았으므로 WORLD_VERSION과 무관하다 — 넓힌 건 그림뿐.
 func _ground_shader() -> void:
 	var gm := get_node_or_null("Ground/GroundMesh") as MeshInstance3D
 	if gm == null:

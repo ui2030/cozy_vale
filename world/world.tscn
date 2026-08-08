@@ -14,9 +14,9 @@
 [ext_resource type="Script" path="res://forage/forage_system.gd" id="8"]
 
 [sub_resource type="PlaneMesh" id="ground_mesh"]
-size = Vector2(80, 80)
-subdivide_width = 80
-subdivide_depth = 80
+size = Vector2(120, 120)
+subdivide_width = 120
+subdivide_depth = 120
 
 [sub_resource type="StandardMaterial3D" id="ground_mat"]
 albedo_color = Color(0.62, 0.8, 0.52, 1)
