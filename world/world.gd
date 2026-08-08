@@ -591,6 +591,11 @@ func _house(parent: Node, base: Vector3, w: float, d: float, h: float, solid: bo
 	_box(parent, Vector3(cx, h * 0.5, cz), Vector3(w, h, d), C_WALL)            # 벽토(크림)
 	_box(parent, Vector3(cx, h + 0.2, cz), Vector3(w + 0.5, 0.5, d + 0.5), C_ROOF)   # 보라 기와 처마
 	_box(parent, Vector3(cx, h + 0.55, cz), Vector3(w * 0.6, 0.4, d * 0.6), C_ROOF2) # 지붕 마루 밝은면
+	# 겨울 지붕 눈 — 처마·마루 윗면에 얹히는 얇은 띠 2장. 지면만 눈이고 지붕은 맨 보라라
+	# "눈이 안 쌓인 설경"으로 읽혔다(실측 audit2/snow_houses_h12). 무충돌 = WORLD_VERSION 유지.
+	# 살짝 안쪽으로 물려 처마 보라 테두리가 남는다(마을 아이덴티티 색은 덮지 않는다).
+	_roof_snow(parent, Vector3(cx, h + 0.49, cz), Vector3(w + 0.34, 0.09, d + 0.34))
+	_roof_snow(parent, Vector3(cx, h + 0.79, cz), Vector3(w * 0.6 - 0.12, 0.09, d * 0.6 - 0.12))
 	_box(parent, Vector3(cx, 0.9, cz + door_sign * (d * 0.5 + 0.05)), Vector3(0.9, 1.8, 0.12), C_WOOD, 0.004)  # 문(목재)
 	# 창 — 4면 각 2짝. 밤엔 발광, 낮엔 유리+창틀(window.gdshader). 무충돌 = WORLD_VERSION 유지.
 	var wy := h * 0.55  # 문(상단 1.8)보다 위, 회관 처마 등나무(y4.62)보다 아래
@@ -600,6 +605,13 @@ func _house(parent: Node, base: Vector3, w: float, d: float, h: float, solid: bo
 			_window(parent, Vector3(cx + sx * (w * 0.5 + 0.03), wy, cz + sz * d * 0.28), Vector3(0.06, 0.8, 0.7))
 	if solid:
 		_collide(parent, Vector3(cx, h * 0.5, cz), Vector3(w, h, d))
+
+# 지붕 눈 띠 — 겨울에만 보이는 무충돌 장식. 색은 지면 눈(C_SNOW)과 같은 단일 출처다.
+# 외곽선은 얇게(0.003): 0.006이면 9cm 두께 판이 테두리에 먹혀 검은 띠로 보인다.
+func _roof_snow(parent: Node, center: Vector3, size: Vector3) -> void:
+	var mi := _box(parent, center, size, C_SNOW, 0.003)
+	mi.add_to_group("roof_snow")
+	mi.visible = GameClock.season() == WINTER
 
 # 창 판: 벽에 붙는 얇은 박스 + window.gdshader(unshaded + 월드 곡률). 낮엔 유리+창틀,
 # 밤엔 같은 판이 발광한다. _convert_statics는 StandardMaterial3D만 보므로 통과한다.
@@ -1211,6 +1223,8 @@ func _apply_season(sea: int) -> void:
 		if rm != null:
 			rm.set_shader_parameter("albedo", C_ROAD_W if sea == WINTER else C_ROAD)
 			rm.set_shader_parameter("edge_color", C_ROAD_WE if sea == WINTER else C_ROAD_E)
+	for n in get_tree().get_nodes_in_group("roof_snow"):  # 지붕 눈 띠 = 겨울에만
+		(n as MeshInstance3D).visible = sea == WINTER
 	get_tree().call_group("decor", "apply_season", sea)
 
 # 마을 경계 숲 띠(|x| 또는 |z| ∈ [34,40])는 P3에서 실나무 GLB MultiMesh로 이관 — decor.gd _place_forest.

@@ -47,6 +47,13 @@ uniform vec2 water_ry[10];   // (반경, 수면 상면 y)
 uniform int water_n = 0;
 uniform float water_lift = 0.03;  // 수면 위 여유(지면 파문이 초지 위에 뜨는 폭과 같다)
 
+// 입자별 난수(0~1). 인스턴스 원점에서 뽑으므로 한 입자 안에선 상수다(VERTEX에서 뽑으면
+// 꼭짓점마다 달라져 면 위에서 뭉개진다). 고리마다 다른 위상을 주는 데만 쓴다.
+varying float seed;
+// 마른 지면에선 옅게, 수면에선 그대로. 잔디 위 파문은 물이 고인 자국이 아니라 튄 물방울이라
+// 같은 밝기로 찍으면 "흰 동그라미 도배"가 된다(실측 audit2/rain_pavilion_h18).
+varying float dim;
+
 // xz가 물이면 그 수면 상면 y, 아니면 -1000.0
 float water_top(vec2 p) {
 	for (int i = 0; i < water_n; i++) {
@@ -64,17 +71,25 @@ float water_top(vec2 p) {
 void vertex() {
 	vec4 w = MODEL_MATRIX * vec4(VERTEX, 1.0);   // 입자 인스턴스 변환 포함 = 월드 좌표
 	float wy = water_top(w.xz);
+	dim = 0.45;
 	if (wy > -999.0) {
 		w.y = wy + water_lift;
+		// 1.8 = 새로 곱해진 산포(입자별 밝기 평균 0.68 × 고리 끊김 평균 0.75)의 역수.
+		// 수면 파문의 화면 밝기를 옛 값 그대로 돌려놓는다 — 강·연못·바다 회귀 방지.
+		dim = 1.8;
 	}
+	seed = fract(sin(dot(MODEL_MATRIX[3].xz, vec2(12.9898, 78.233))) * 43758.5453);
 	vec4 v = VIEW_MATRIX * w;
 	v.y -= curve_strength * v.z * v.z;
 	POSITION = PROJECTION_MATRIX * v;
 }
 
 void fragment() {
+	// 완전한 원 대신 세 갈래로 성긴 고리. 위상이 입자마다 달라 같은 도장을 찍은 무늬가 안 된다.
+	vec2 d = UV - vec2(0.5);
+	float wob = 0.5 + 0.5 * sin(atan(d.y, d.x) * 3.0 + seed * 6.2831);
 	ALBEDO = tint.rgb;
-	ALPHA = tint.a * texture(ring, UV).a * COLOR.a;  // COLOR.a = 파티클 수명 페이드
+	ALPHA = tint.a * texture(ring, UV).a * COLOR.a * dim * mix(0.5, 1.0, wob);  // COLOR.a = 수명 페이드 × 입자별 밝기
 }
 """
 
@@ -121,7 +136,8 @@ func _make_precip(snow: bool) -> GPUParticles3D:
 	var bw := AREA if snow else RAIN_W
 	var bd := AREA if snow else RAIN_D
 	# 눈은 천천히 오래 떨어진다 — 같은 화면 밀도를 훨씬 적은 수로 채운다(체공시간이 길어서).
-	p.amount = 600 if snow else 3200
+	# 눈 600은 "같은 크기 흰 원"이라 산포를 준 뒤 평균 크기가 줄어 800으로 채운다.
+	p.amount = 800 if snow else 3200
 	# 비: v0 8 + 중력 6 → 0.85초면 TOP에서 지면 도달. 눈: v0 1.3 + 중력 0.5 → ~5초.
 	p.lifetime = 5.0 if snow else 0.9
 	# 켜자마자 화면이 차 있게 (위에서 스며드는 티 안 남).
@@ -153,6 +169,11 @@ func _make_precip(snow: bool) -> GPUParticles3D:
 		sm.radial_segments = 6
 		sm.rings = 3
 		p.draw_pass_1 = sm
+		# 눈송이가 전부 같은 크기 = 흰 점 도배(실측 audit2/snow_houses_h12). 굵은 함박눈과
+		# 가루눈이 섞여야 눈으로 읽힌다 — 낙하 속도 산포(체공시간)까지 같이 흐트러뜨린다.
+		pm.scale_min = 0.45
+		pm.scale_max = 1.35
+		pm.lifetime_randomness = 0.3
 		# 눈: 순백은 밤 하늘에서 튄다 — 아주 옅은 청기를 남긴 근백색(지면 눈 톤과 같은 결).
 		mat.albedo_color = Color(0.96, 0.97, 1.00, 0.92)
 		# 구는 어느 각도서도 둥글다 — 빌보드 불필요(승인된 그림, 손대지 않음).
@@ -196,7 +217,9 @@ func _make_precip(snow: bool) -> GPUParticles3D:
 # 지면 파문 — 비가 닿는 자리에 작은 링이 퍼지며 사라진다(코지 비의 관용구).
 func _make_splash() -> GPUParticles3D:
 	var p := GPUParticles3D.new()
-	p.amount = 220          # 비 1000줄기 대비 성긴 게 맞다 — 촘촘하면 지면이 얼룩덜룩해진다
+	# 220은 잔디를 흰 고리로 도배했다(실측). 밀도를 조금 내리고 남은 고리에 산포를 준다 —
+	# 밀도로만 해결하면 수면 파문(같은 에미터)까지 성겨진다. 지면 쪽은 알파(dim)로 죽인다.
+	p.amount = 200
 	p.lifetime = 0.42
 	p.emitting = false
 	p.local_coords = false
@@ -212,8 +235,9 @@ func _make_splash() -> GPUParticles3D:
 	pm.initial_velocity_min = 0.0   # 제자리에서 퍼지기만 한다(튀어오르지 않음 = 툰 평면)
 	pm.initial_velocity_max = 0.0
 	pm.gravity = Vector3.ZERO
-	pm.scale_min = 0.65             # 링 크기 변주
-	pm.scale_max = 1.0
+	pm.scale_min = 0.35             # 링 크기 변주 — 0.65~1.0은 눈에 다 같은 크기로 읽혔다
+	pm.scale_max = 1.2
+	pm.lifetime_randomness = 0.35   # 수명이 같으면 온 화면이 같은 박자로 깜빡인다
 	var grow := Curve.new()         # 수명 동안 0.35 → 1.0으로 퍼짐
 	grow.add_point(Vector2(0.0, 0.35))
 	grow.add_point(Vector2(1.0, 1.0))
@@ -228,6 +252,13 @@ func _make_splash() -> GPUParticles3D:
 	var ft := GradientTexture1D.new()
 	ft.gradient = fade
 	pm.color_ramp = ft
+	# 입자별 밝기 변주(무작위 샘플) — 빗줄기와 같은 처방. 균일한 알파가 "인쇄된 무늬"의 절반이었다.
+	var vary := Gradient.new()
+	vary.set_color(0, Color(1, 1, 1, 0.35))
+	vary.set_color(1, Color(1, 1, 1, 1.0))
+	var vt := GradientTexture1D.new()
+	vt.gradient = vary
+	pm.color_initial_ramp = vt
 	p.process_material = pm
 	var plane := PlaneMesh.new()    # 기본 방향이 +Y 향 수평면 — 지면에 눕는다
 	plane.size = Vector2(0.34, 0.34)
