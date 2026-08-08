@@ -22,6 +22,14 @@ const LANTERN_RANGE := 6.0
 const LANTERN_RING := 4.6
 const LANTERN_POST_H := 2.4
 const LANTERN_SHADE_Y := 1.45             # 기둥 로컬 (월드 y = POST_H/2 + 1.45 = 2.65)
+# 결혼식 꽃 아치. 신랑신부 축(플레이어가 보는 방향) 위, 배우자(플레이어 앞 1.6) 뒤에 세워
+# 추종 카메라에 둘을 감싸는 제단으로 잡히게 한다. 광장 기준으로 세우면 축이 어긋난다(실측).
+const ARCH_OFF := 2.8                     # 플레이어 → 아치 (배우자 1.6 뒤)
+# 카메라~아치 ~14m에서 1m는 58px — 폭 2.5m짜리는 화면에서 130px밖에 안 돼 장식으로 안 읽혔다(실측).
+const ARCH_HALF := 1.6                    # 기둥 반간격 = 상단 반원 반경 (개구부 3.2m)
+const ARCH_POST_H := 2.6                  # 총 높이 4.2 — 반원이 하객 머리(~1.7) 위로 떠야 뒤엉키지 않는다
+const ARCH_SEG := 7                       # 반원 각재 수
+const ARCH_WOOD := Color(0.80, 0.74, 0.70)  # 톤다운 화이트 — 포화된 크림 벽보다 낮게
 
 var _active_id := ""      # 현재 활성 축제 id ("" = 없음)
 var _decor: Node3D = null
@@ -89,6 +97,61 @@ func _build_decor(plaza: Vector2, kind: String) -> void:
 		"flower": _decor_flower()
 		"harvest": _decor_harvest()
 		"lantern": _decor_lantern()
+		# "wedding"은 여기서 빈 노드만 만든다 — 아치·꽃잎은 build_wedding이 방향까지 받아 세운다
+
+# ── 결혼식 장식 (NpcSystem이 축제 API를 재활용하듯 장식도 재활용) ──
+# 꽃 아치 하나 + 꽃축제와 같은 꽃잎. 전부 MeshInstance3D = 무충돌 장식이라 통행이 안 바뀐다
+# (WORLD_VERSION 무변경 근거 — decor.gd와 같은 규약).
+func build_wedding(plaza: Vector2, couple: Vector2, dir: Vector2) -> void:
+	_build_decor(plaza, "wedding")  # 꽃잎은 광장 위로 (_decor 원점 = plaza)
+	var at := couple + dir * ARCH_OFF
+	var arch := Node3D.new()
+	_decor.add_child(arch)
+	arch.position = Vector3(at.x - plaza.x, 0, at.y - plaza.y)
+	# look_at 규약(-Z가 통로 안쪽) → 로컬 +X가 통로 가로축 = 기둥이 좌우로 선다
+	arch.look_at(arch.global_position + Vector3(dir.x, 0, dir.y), Vector3.UP)
+	for sx in [-1.0, 1.0]:
+		var post := MeshInstance3D.new()
+		var cm := CylinderMesh.new()
+		cm.top_radius = 0.09
+		cm.bottom_radius = 0.11
+		cm.height = ARCH_POST_H
+		post.mesh = cm
+		post.material_override = ToonChar.make_solid(ARCH_WOOD, 0.004)
+		arch.add_child(post)
+		post.position = Vector3(sx * ARCH_HALF, ARCH_POST_H * 0.5, 0)
+	# 상단 반원 = 짧은 각재 이어붙이기 (반쪽 토러스 프리미티브가 없다)
+	for i in ARCH_SEG:
+		var a0 := PI * i / float(ARCH_SEG)
+		var a1 := PI * (i + 1) / float(ARCH_SEG)
+		var p0 := Vector2(cos(a0), sin(a0)) * ARCH_HALF
+		var p1 := Vector2(cos(a1), sin(a1)) * ARCH_HALF
+		var d := p1 - p0
+		var seg := MeshInstance3D.new()
+		var bm := BoxMesh.new()
+		bm.size = Vector3(d.length() + 0.06, 0.18, 0.18)
+		seg.mesh = bm
+		seg.material_override = ToonChar.make_solid(ARCH_WOOD, 0.004)
+		arch.add_child(seg)
+		var mid := (p0 + p1) * 0.5
+		seg.position = Vector3(mid.x, ARCH_POST_H + mid.y, 0)
+		seg.rotation.z = atan2(d.y, d.x)
+		var bud := MeshInstance3D.new()   # 이음매마다 꽃 한 송이 (파스텔 순환)
+		var sm := SphereMesh.new()
+		sm.radius = 0.24
+		sm.height = 0.42
+		bud.mesh = sm
+		bud.material_override = ToonChar.make_solid(PASTELS[i % PASTELS.size()], 0.006)
+		arch.add_child(bud)
+		bud.position = Vector3(p0.x, ARCH_POST_H + p0.y, 0)
+	# 꽃잎은 통로 위로 (광장 중심에 두면 신랑신부 머리 위엔 한 장도 안 떨어진다)
+	var petals := _make_petals()
+	_decor.add_child(petals)
+	petals.position = arch.position + Vector3(0, 4, 0)
+
+func clear_wedding() -> void:
+	if _active_id == "":  # 진행 중인 진짜 축제 장식은 건드리지 않는다
+		_build_decor(Vector2.ZERO, "")
 
 # 꽃축제: 파스텔 화단 링 + 꽃잎 파티클
 func _decor_flower() -> void:

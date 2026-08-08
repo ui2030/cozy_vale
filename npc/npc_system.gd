@@ -10,6 +10,8 @@ const HEART := 25       # 25포인트 = 하트 1칸
 const MAX_AFF := 250    # 10칸
 const FESTIVAL_MULT := 2  # 축제 중 대화 호감도 배율
 const FEST_RING := 2.3    # 광장 링 배치 반경
+const ROW_GAP := 1.25     # 하객 2열 좌우 간격 (몸통 폭보다 넓게 = 관통 없음)
+const ROW_DEPTH := 0.9    # 열 사이 앞뒤 간격 (뒷열 머리가 앞열 사이로 보이는 최소 깊이)
 const ToonChar := preload("res://common/toon_character.gd")
 
 const CAT_GLB := "res://assets/cat_anim.glb"  # idle/walk 애니 포함 (player와 공용 모델)
@@ -621,17 +623,43 @@ func _pool_line(id: String, key: String) -> String:
 	return "" if lines.is_empty() else lines[randi() % lines.size()]
 
 # ── 축제 (FestivalSystem이 상태만 설정, 호감도·이동은 여기 소유) ──
-func enter_festival(plaza: Vector2, fid := "") -> void:
+# focus를 주면(결혼식) 그쪽을 비운 2열 하객 배치, 없으면 기존 원형 링. 어느 쪽이든 기준점을
+# 바라보게 돌린다 — 제자리에 선 주민이 제각각 다른 데를 보면 모여 있는 그림이 안 된다.
+func enter_festival(plaza: Vector2, fid := "", focus := Vector2.INF) -> void:
 	_festival_active = true
 	_festival_id = fid
 	_spouse_indoor = false  # 축제 > 실내 동거 (배우자도 광장으로)
 	var ids := npc_nodes.keys()
 	var n := ids.size()
+	var look := focus if _has_focus(plaza, focus) else plaza
 	for i in n:
-		var ang := TAU * i / float(maxi(n, 1))
-		var pos := plaza + Vector2(cos(ang), sin(ang)) * FEST_RING
-		npc_nodes[ids[i]].position = Vector3(pos.x, 0, pos.y)
+		var pos := fest_slot(i, n, plaza, focus)
+		var node: Node3D = npc_nodes[ids[i]]
+		node.position = Vector3(pos.x, 0, pos.y)
+		var d := look - pos
+		if d.length() > 0.01:  # _wander_step과 같은 look_at 규약(비주얼 rotation.y=PI 보정 재사용)
+			node.look_at(node.global_position + Vector3(d.x, 0, d.y), Vector3.UP)
 		_set_hidden(ids[i], false)  # 밤 축제(결혼식 포함)에도 전원 보이게
+
+static func _has_focus(plaza: Vector2, focus: Vector2) -> bool:
+	return focus.is_finite() and plaza.distance_to(focus) > 1.0  # 광장 위에 겹치면 방향이 안 나온다
+
+# 집합 좌표 (순수 함수 — test_core 단위검증).
+# 원형 링은 남쪽 부감 카메라에서 앞뒤 줄 머리가 서로 겹쳐 뭉친 덩어리로 읽힌다(실측
+# audit2_0809/wedding). focus(신랑신부)가 있으면 그쪽을 향한 2열로 세우고, 뒷열은 앞열
+# 사이사이에 오도록 반 칸 어긋나게 둔다 — 전원 FEST_RING+0.5 안(결혼식 집합 계약).
+static func fest_slot(i: int, n: int, plaza: Vector2, focus := Vector2.INF) -> Vector2:
+	if not _has_focus(plaza, focus):
+		var ang := TAU * i / float(maxi(n, 1))
+		return plaza + Vector2(cos(ang), sin(ang)) * FEST_RING
+	var fwd := (focus - plaza).normalized()
+	var side := Vector2(-fwd.y, fwd.x)
+	var front := n / 2                      # 앞열(신랑신부 쪽) = 짝수몫, 뒷열이 한 명 더
+	var row := 0 if i < front else 1
+	var cnt := front if row == 0 else n - front
+	var k := i if row == 0 else i - front
+	var off := (k - (cnt - 1) * 0.5) * ROW_GAP
+	return plaza + side * off + fwd * (ROW_DEPTH if row == 0 else -ROW_DEPTH)
 
 func exit_festival() -> void:
 	_festival_active = false
@@ -737,6 +765,7 @@ func _check_wedding() -> void:
 	if _wedding_end >= 0 and _abs_min() >= _wedding_end:
 		_wedding_end = -1
 		exit_festival()
+		get_tree().call_group("festival_system", "clear_wedding")
 	if engaged.is_empty():
 		return
 	var wd := int(engaged["wedding_abs_day"])
@@ -750,7 +779,9 @@ func _wed() -> void:
 	engaged = {}
 	var nm: String = GameData.npcs[id]["name"]
 	if GameClock.abs_day == wd and GameClock.hour() < WEDDING_HOUR + WEDDING_WINDOW_H:
-		enter_festival(WEDDING_PLAZA)  # 주민 광장 집합 (축제 API 재활용)
+		var focus := _couple_focus()
+		enter_festival(WEDDING_PLAZA, "", focus)  # 주민 광장 집합 (축제 API 재활용)
+		get_tree().call_group("festival_system", "build_wedding", WEDDING_PLAZA, focus, _player_facing())
 		_stand_with_player(id)
 		_wedding_end = _abs_min() + WEDDING_HOLD_MIN
 		_toast("%s와 결혼했습니다!  “%s”" % [nm, _pool_line(id, "wedding")])
@@ -760,17 +791,30 @@ func _wed() -> void:
 		_toast("%s와의 결혼식을 마쳤습니다." % nm)
 	SaveManager.request_save("wedding")
 
+# 하객이 바라볼 지점 = 플레이어가 선 자리(= 신랑신부 자리). 아치 방향도 여기서 파생된다.
+func _couple_focus() -> Vector2:
+	var player := get_tree().get_first_node_in_group("player") as Node3D
+	if player == null:
+		return WEDDING_PLAZA + Vector2(0, 4.0)  # 방어: 광장 남쪽(기본 카메라 쪽)
+	return Vector2(player.global_position.x, player.global_position.z)
+
+# 식의 축 = 플레이어가 보는 방향 (배우자 자리·아치가 같은 축을 쓴다)
+func _player_facing() -> Vector2:
+	var player := get_tree().get_first_node_in_group("player") as Node3D
+	if player == null:
+		return Vector2(0, 1)
+	var f := -player.global_transform.basis.z
+	var flat := Vector2(f.x, f.z)
+	return Vector2(0, 1) if flat.length() < 0.01 else flat.normalized()
+
 # 식 연출: 배우자를 플레이어 앞에 세워 마주보게 (광장 링 배치 뒤에 덮어씀)
 func _stand_with_player(id: String) -> void:
 	var player := get_tree().get_first_node_in_group("player") as Node3D
 	var node: Node3D = npc_nodes.get(id)
 	if player == null or node == null:
 		return
-	var fwd := -player.global_transform.basis.z
-	fwd.y = 0.0
-	if fwd.length() < 0.01:
-		fwd = Vector3(0, 0, 1)
-	node.position = player.global_position + fwd.normalized() * 1.6
+	var f := _player_facing()
+	node.position = player.global_position + Vector3(f.x, 0, f.y) * 1.6
 	node.position.y = 0.0
 	_face_player(id)
 

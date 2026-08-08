@@ -865,6 +865,16 @@ func _test_marriage() -> void:
 		if Vector2(np.x, np.z).distance_to(_npcsys.WEDDING_PLAZA) < _npcsys.FEST_RING + 0.5:
 			at_plaza += 1
 	assert(at_plaza >= GameData.npcs.size() - 1, "주민 광장 링 집합 (%d명)" % at_plaza)
+	# ── 하객 2열 배치(순수 함수): 서로 안 겹치고 전원 집합 반경 안
+	var cn := GameData.npcs.size()
+	var slots := []
+	for i in cn:
+		slots.append(_npcsys.fest_slot(i, cn, _npcsys.WEDDING_PLAZA, _npcsys.WEDDING_PLAZA + Vector2(0, 5)))
+	for i in cn:
+		var si: Vector2 = slots[i]
+		assert(_npcsys.WEDDING_PLAZA.distance_to(si) < _npcsys.FEST_RING + 0.5, "하객이 집합 반경 밖 (%s)" % si)
+		for j in range(i + 1, cn):
+			assert(si.distance_to(slots[j]) > 1.0, "하객 관통 (%d-%d, %.2f)" % [i, j, si.distance_to(slots[j])])
 	# ── 집합 종료: 절대분 판정이라 식 중 자정을 넘겨도 풀린다
 	GameClock.abs_day += 1
 	GameClock.game_min = 6 * 60

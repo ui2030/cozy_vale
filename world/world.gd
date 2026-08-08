@@ -149,6 +149,7 @@ func _ready() -> void:
 		var pf := get_tree().get_first_node_in_group("player")
 		if pf != null:
 			pf.global_position = Vector3(10, 2, 3.8)
+			_vp_pinned = true  # pond와 같은 이유 — `-- hour N`이 광장으로 되돌리면 낚시 컷이 아니다
 		var fg := get_tree().get_first_node_in_group("fishing")
 		if fg != null:
 			fg.start("fish.bluegill", 0.4)
@@ -171,6 +172,7 @@ func _ready() -> void:
 		if pwd != null:  # 광장 집합 지점(0,-6) 남서 — 분수에 가리지 않게 비켜 섬
 			pwd.global_position = Vector3(-2.5, 2, -1.0)
 			pwd._face_dir(Vector3(0, 0, -1))  # 광장(북) 향해 = 배우자와 마주보기
+			_vp_pinned = true  # `-- wedding hour 9`로 시계를 얼려도 신랑신부 자리가 유지되게
 		var nwd := get_tree().get_first_node_in_group("npc_system")
 		if nwd != null:
 			nwd.engaged = {"id": "npc.mira", "wedding_abs_day": GameClock.abs_day}
