@@ -211,6 +211,11 @@ func _label(text: String, y: float) -> Label3D:
 	l.pixel_size = 0.0007
 	l.font_size = 96
 	l.outline_size = 24
+	# 마을·해변 라벨과 같은 거리 페이드(16까지 100%, 22 밖 소거). 실내는 방이 좁아 항상 100%지만,
+	# no_depth_test 라벨이 존 밖 컷에 새지 않는 규약을 세 곳이 같이 지킨다.
+	l.visibility_range_end = 22.0
+	l.visibility_range_end_margin = 6.0
+	l.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
 	return l
 
 # 실내등: 낮엔 태양광으로 충분하니 꺼두고 밤에만 켠다. 시각 판정은 day_night.sample()의

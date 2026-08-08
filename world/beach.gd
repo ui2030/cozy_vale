@@ -301,6 +301,18 @@ func _label(text: String, y: float) -> Label3D:
 	l.pixel_size = 0.0007
 	l.font_size = 96
 	l.outline_size = 24
+	# 거리 페이드 — world.tscn 마을 라벨과 같은 방식(FADE_SELF). no_depth_test=true + fixed_size라
+	# 라벨은 지형·거리를 무시하고 그려진다 → 해변의 "바다"가 150u 떨어진 마을 광장 컷 하늘에
+	# 그대로 떠 있었다(audit_0808/open_pav_h12). 거리 하나로 끊는다.
+	# 소거 거리는 마을과 같은 22, 페이드 폭만 6→3으로 좁혔다 — lookdev/shots/sky_label 실측
+	# (화면 알파에서 역산한 카메라~라벨 거리):
+	#   게이트 컷 "바닷가 ↓" ~10 / 물가(낚시 자리) "바다" 17.5 = 안내로 읽혀야 하는 근거리
+	#   해변 도착 컷 "바다" ~25 = 바다가 이미 화면 절반이라 잉여 / 마을 컷 150+ = 하늘 잡음
+	# 마을 값 22/6을 그대로 쓰면 페이드 시작(16)이 낚시 자리(17.5)를 먹어 "바다"가 75% 유령이 되고,
+	# end를 25~26으로 늘리면 이번엔 도착 컷에 4~7% 유령이 남는다. → 19까지 100%, 22 밖 소거.
+	l.visibility_range_end = 22.0
+	l.visibility_range_end_margin = 3.0
+	l.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
 	return l
 
 # ── 순수 판정 (test_core가 노드 없이 검증) ────────────────────────
