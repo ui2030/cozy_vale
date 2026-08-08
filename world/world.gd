@@ -325,9 +325,20 @@ func _ground_shader() -> void:
 	var gm := get_node_or_null("Ground/GroundMesh") as MeshInstance3D
 	if gm == null:
 		return
+	_ground_mat(gm)
+
+# 메시를 초지 셰이더(절차 풀 패턴)로 바꾸고 "ground_shader" 그룹에 넣는다 — 지면과 언덕이
+# 같은 문법·같은 계절색을 쓰게 하는 단일 출처(_apply_season이 그룹을 통째로 구동).
+func _ground_mat(mi: MeshInstance3D, outline := 0.0) -> void:
 	var m := ShaderMaterial.new()
 	m.shader = GROUND_SHADER
-	gm.material_override = m
+	if outline > 0.0:
+		var o := ShaderMaterial.new()
+		o.shader = ToonChar.OUTLINE
+		o.set_shader_parameter("width", outline)
+		m.next_pass = o
+	mi.material_override = m
+	mi.add_to_group("ground_shader")
 
 func _shot() -> void:
 	# 플레이어 착지 + 시계 진행 후 촬영
@@ -431,7 +442,8 @@ const C_ROAD_E := Color(0.720, 0.673, 0.590)  # 길 가장자리 — 풀로 옅�
 const C_BANK  := Color(0.622, 0.550, 0.422)
 const C_STONE := Color(0.770, 0.758, 0.735)  # 석재 회 — 다리/계단/분수
 const C_DRESSED := Color(0.700, 0.688, 0.667)  # 다듬돌(갓돌·이맛돌) — 같은 hue 한 단 아래
-const C_GREEN := Color(0.652, 0.710, 0.494)  # 그린 — 언덕(수평면이라 0.72 이하로 묶는다)
+# 그린 — decor.gd의 풀·덤불(수평면이라 0.72 이하로 묶는다). 풍차 언덕은 초지 셰이더로 옮겼다.
+const C_GREEN := Color(0.652, 0.710, 0.494)
 const C_WATER := Color(0.50, 0.72, 0.85)  # 물 — 강(연못과 통일). 승인 색 = 파스텔 시프트 예외.
 const C_WIST  := Color(0.720, 0.649, 0.790)  # 등나무 보라 — 퍼걸러
 # 지면(world.tscn Ground/GroundMesh) 계절색 = ground.gdshader의 albedo uniform을 구동한다.
@@ -909,21 +921,34 @@ func _arch_bridge(parent: Node, at: Vector2, ang: float) -> void:
 func _windmill_hill(parent: Node) -> void:
 	# 풍차 언덕(북동, 강 건너 — 북동 다리로 접근): 대지 4×4 피벗(29,-24) 전고2.5 + 램프(~17°) + 풍차.
 	# ponytail: 계단은 램프로 대체(P3 드레싱), 램프=경사길 도보 등반.
+	#
+	# 대지는 **초지 셰이더**(_ground_mat) — 주변 초지와 같은 절차 풀 패턴·같은 계절색.
+	# 옛 대지는 C_GREEN(올리브)의 민면이라 초지와 색·질감이 갈렸다.
+	#
+	# 램프는 흙길(C_ROAD) — 발치까지 온 마을 흙길이 그대로 언덕을 올라간다. 옛 C_STONE(0.770)은
+	# 지면 계열 albedo 상한 0.76을 넘긴 데다 사면(~17°)이 정오 태양을 정면으로 받아 화면에서
+	# (255,255,253) 순백으로 포화했다(실측 windmill_h12) = "랜드마크가 흰 프리미티브" 원인.
+	# (램프까지 초지로 깔아 봤더니 초지와 완전히 같은 톤이 되어 언덕 실루엣이 사라지고, 지면 위에
+	#  떠 있는 슬래브라 외곽선만 점선으로 깨져 보였다 — 실측. 흙길이 경사로를 읽히게 한다.)
 	var px := 29.0
 	var pz := -24.0
 	var top := 2.5
-	_box(parent, Vector3(px, top * 0.5, pz), Vector3(4, top, 4), C_GREEN, 0.004)  # 초지 대지
+	var plat := _box(parent, Vector3(px, top * 0.5, pz), Vector3(4, top, 4), C_GRASS, 0.004)  # 초지 대지
+	_ground_mat(plat, 0.004)
 	_collide(parent, Vector3(px, top * 0.5, pz), Vector3(4, top, 4))
 	# 램프: 대지 남면(z=-22)→지면. 길이8 폭3 상승2.5 → ~17°. 가시+충돌(도보 등반).
 	var ramp_len := 8.0
 	var ramp_ang := atan2(top, ramp_len - 1.0)
 	var rc := Vector3(px, top * 0.5, pz + 6.0)  # 중심 z=-18
-	var ramp := _box(parent, rc, Vector3(3, 0.3, ramp_len), C_STONE, 0.004)
+	var ramp := _box(parent, rc, Vector3(3, 0.3, ramp_len), C_ROAD, 0.004)
 	ramp.rotation.x = ramp_ang
 	_collide(parent, rc, Vector3(3, 0.3, ramp_len), 0.0, ramp_ang)
-	# 풍차: 탑(원통) + 지붕 + 날개(십자).
+	# 풍차: 탑(원통) + 지붕(_house와 같은 처마+마루 2톤) + 날개(십자).
 	_cyl(parent, Vector3(px, top + 1.8, pz), 1.1, 3.6, C_WALL)
 	_box(parent, Vector3(px, top + 3.9, pz), Vector3(2.6, 0.5, 2.6), C_ROOF)
+	# 보라 슬래브 한 장만 얹으면 "원통에 보라 뚜껑"으로 읽힌다 — 마을 집과 같은 마루 밝은면을
+	# 올려 지붕 문법을 맞춘다(_house의 h+0.2 처마 / h+0.55 마루와 같은 +0.35 · 0.6배 규격).
+	_box(parent, Vector3(px, top + 4.25, pz), Vector3(1.6, 0.4, 1.6), C_ROOF2)
 	_box(parent, Vector3(px, top + 2.6, pz - 1.2), Vector3(0.4, 4.0, 0.35), C_WOOD, 0.004)  # 날개 세로
 	_box(parent, Vector3(px, top + 2.6, pz - 1.2), Vector3(4.0, 0.4, 0.35), C_WOOD, 0.004)  # 날개 가로
 
@@ -943,11 +968,12 @@ static func ground_pattern(season: int) -> float:
 # 계절 상태 재적용. 신호가 없는 경로(세이브 로드·하네스의 시계 이동)에서도 한 번 명시 호출한다
 # — festival_system의 "로드 후 evaluate" 전례와 같은 규약.
 func _apply_season(sea: int) -> void:
-	var gm := get_node_or_null("Ground/GroundMesh") as MeshInstance3D
-	var m := (gm.material_override if gm != null else null) as ShaderMaterial
-	if m != null:  # _ground_shader()가 깔아 둔 ground.gdshader (albedo·pattern uniform 계약)
-		m.set_shader_parameter("albedo", ground_color(sea))
-		m.set_shader_parameter("pattern", ground_pattern(sea))
+	# _ground_mat()이 깔아 둔 ground.gdshader들 (albedo·pattern uniform 계약) = 지면 + 풍차 언덕
+	for n in get_tree().get_nodes_in_group("ground_shader"):
+		var m := (n as MeshInstance3D).material_override as ShaderMaterial
+		if m != null:
+			m.set_shader_parameter("albedo", ground_color(sea))
+			m.set_shader_parameter("pattern", ground_pattern(sea))
 	get_tree().call_group("decor", "apply_season", sea)
 
 # 마을 경계 숲 띠(|x| 또는 |z| ∈ [34,40])는 P3에서 실나무 GLB MultiMesh로 이관 — decor.gd _place_forest.

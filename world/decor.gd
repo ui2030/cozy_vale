@@ -672,7 +672,11 @@ func _wisteria() -> void:
 		var perp := Vector2(cos(ang), -sin(ang))
 		for fs in [-1.0, 1.0]:
 			for ps in [-1.0, 1.0]:
-				var q: Vector2 = br + flow * (1.5 * fs) + perp * (2.2 * ps)
+				# 흐름 방향 1.78 = 난간 바깥. 옛 1.5는 난간 중심선(world.gd 데크 z=±1.5)이라
+				# _drape이 아래로 늘어뜨리는 송이가 난간·갓돌 속에 파묻히고 끝만 석재를 뚫고 나왔다
+				# (실측 arch_h12: 보라 포인트가 다리를 관통해 떠 있음).
+				# 1.78 = 갓돌 바깥면 1.63(z 1.5 + 갓돌 반지름 0.13) + 송이 반폭 0.11 + 여유 0.04.
+				var q: Vector2 = br + flow * (1.78 * fs) + perp * (2.2 * ps)
 				# 1.10 = 풀 아치 데크 갓돌 상단 = world.gd deck_top(2.2) + 0.40
 				#      = (DECK_CROWN 1.30 − (DECK_ARC_R 4.35 − √(4.35² − 2.2²))) + 0.40 = 0.703 + 0.40.
 				# world.gd가 decor.gd를 preload하므로 역방향 preload는 순환 — 파생식을 주석으로
