@@ -6,6 +6,9 @@ shader_type sky;
 uniform float time_of_day = 12.0;
 // 구름량 레버(날씨 시스템이 비 올 때 올림). 0=거의 맑음, 1=거의 흐림.
 uniform float cloud_coverage : hint_range(0.0, 1.0) = 0.32;
+// 흐림 강도(비/눈 오는 날 day_night.gd가 cloud_coverage와 같은 램프로 올림). 0=맑음, 1=완전 흐림.
+// 구름량만 올리면 흰 구름이 더 많아져 비 오는 날이 맑은 날보다 화창해진다 — 색을 같이 죽여야 한다.
+uniform float overcast : hint_range(0.0, 1.0) = 0.0;
 
 // 지평선/천정 3구간. DAY_H는 기존 배경색(0.93,0.90,0.85) 유지 → 낮 지평선 룩 불변.
 const vec3 DAY_H = vec3(0.93, 0.90, 0.85);
@@ -148,6 +151,12 @@ float worley(vec2 p) {
 	return d;
 }
 
+// 흐림 처리: 채도를 회색 쪽으로 빼고 명도를 v배. k=0이면 원값 통과(맑은 날 코드 경로 불변).
+vec3 dull(vec3 c, float k, float v) {
+	float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+	return mix(c, vec3(l * v), clamp(k, 0.0, 1.0));
+}
+
 void sky() {
 	float h = time_of_day;
 	float day = smoothstep(5.5, 8.0, h) - smoothstep(17.5, 20.5, h);  // 0=밤,1=낮
@@ -175,6 +184,12 @@ void sky() {
 	// 노을·밤은 승인된 룩이라 warm(황혼/새벽 피크)·day로 게이트 — 18시 계수 0.03, 21시 0 = 값 불변.
 	col = mix(col, DAY_ZEN, smoothstep(-0.52, -0.06, dir.y) * day * (1.0 - warm));
 
+	// 흐림은 **여기 아래**에 걸어야 낮 상단 파랑(DAY_ZEN)과 분홍 노을(warm)이 같이 죽는다.
+	// 위쪽 hor/zen에만 걸면 둘이 그대로 남아 비 오는 날이 화창해 보였다(원래 증상).
+	// 밤은 이미 어두워 절반만 — 승인된 밤 룩을 회색으로 죽이지 않는다.
+	float oc = overcast * (0.45 + 0.55 * day);
+	col = dull(col, oc * 0.68, 0.76);
+
 	// 라디언스 큐브맵엔 별·구름 같은 고주파를 넣지 않는다(에일리어싱 + 낭비). 그라데이션만.
 	if (!AT_CUBEMAP_PASS) {
 		float cov = clamp(cloud_coverage, 0.0, 1.0);  // 날씨 시스템이 범위 밖 값을 넣어도 안전하게
@@ -194,6 +209,9 @@ void sky() {
 			vec3 csh = mix(CLD_NIT_S, CLD_DAY_S, day);
 			cl = mix(cl, CLD_SUN_L, warm * 0.85);
 			csh = mix(csh, CLD_SUN_S, warm * 0.85);
+			// 흐린 날 구름은 뭉게구름 흰색이 아니라 회색 덮개 — 심(cl)을 더 강하게 깎는다.
+			cl = dull(cl, oc, 0.56);
+			csh = dull(csh, oc, 0.60);
 			cloud_col = mix(csh, cl, core);
 		}
 

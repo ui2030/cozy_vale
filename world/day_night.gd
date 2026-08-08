@@ -22,10 +22,20 @@ const KEYS := [
 	{"h": 24.0, "sun_rot": Vector3(-58, -125, 0), "sun_col": Color(0.55, 0.62, 0.90), "sun_e": 0.18, "amb_col": Color(0.36, 0.40, 0.55), "amb_e": 0.40},
 ]
 
-# 날씨 → 하늘 흐림. 조명 키프레임(위 KEYS)은 건드리지 않는다 — 비 분위기는 구름량과 빗줄기로만.
+# 날씨 → 하늘 흐림 + 조도 저하. 키프레임(위 KEYS)과 sample()은 그대로 두고 **적용 시점에만** 곱한다
+# — sample()은 test_core가 핀한 순수 함수이고 승인된 낮/노을/밤 값 자체는 불변이어야 하기 때문.
 const CLOUD_CLEAR := 0.32   # sky.gdshader 기본값
 const CLOUD_RAIN := 0.85
 const CLOUD_RATE := 0.6     # 초당 전이량 (자정 날짜 전환 시 구름이 툭 튀지 않게)
+const RAIN_SUN := 0.55      # 흐린 날 태양 에너지 배율 (구름이 직사광을 먹는다)
+# 흐린 날 그림자: 번지고 + 옅어진다. blur만으론 경계폭이 24px→26px밖에 안 벌어져(실측) 체감이 없다 —
+# 직사광이 구름에 산란되면 그림자가 흐려지는 게 아니라 사실상 사라진다 → opacity가 실효 레버.
+const RAIN_BLUR := 4.5      # shadow_blur (기본 1.0)
+const RAIN_SHADOW := 0.45   # shadow_opacity (기본 1.0)
+const RAIN_AMB := 0.7       # 환경광을 청회색 쪽으로 끄는 비율 → 지면 채도가 같이 내려간다
+                            # (초지·흙길·판석 공통 경로 = 조명. 지면 셰이더는 손 안 댐)
+const RAIN_AMB_DIM := 0.88  # 그때의 감광폭. 고정 색으로 lerp하면 밤 환경광이 오히려 밝아진다 —
+                            # 키프레임 luminance 기준 **상대값**이라 낮·노을·밤 모두 어두워지는 방향.
 
 var _sun: DirectionalLight3D
 var _env: Environment
@@ -40,17 +50,25 @@ func _process(dt: float) -> void:
 	var h := GameClock.game_min / 60.0  # 연속값(분 단위 부드럽게, 스냅 없음)
 	RenderingServer.global_shader_parameter_set("time_of_day", h)  # 물 셰이더(연못·강·바다 공용 머티리얼 다수)
 	var p := sample(h)
+	# 흐림 전이 0~1. 구름량과 **같은 램프**를 공유해 하늘·태양·환경광이 한 몸으로 움직인다
+	# (하늘만 흐려지고 조명은 맑은 날이던 게 "비 오는 날이 더 화창"의 원인이었다).
+	var cov_t := CLOUD_RAIN if GameData.is_rainy(GameClock.abs_day) else CLOUD_CLEAR
+	_cov = cov_t if _cov < 0.0 else move_toward(_cov, cov_t, dt * CLOUD_RATE)
+	var oc := (_cov - CLOUD_CLEAR) / (CLOUD_RAIN - CLOUD_CLEAR)
 	_sun.rotation_degrees = p["sun_rot"]
 	_sun.light_color = p["sun_col"]
-	_sun.light_energy = p["sun_e"]
+	_sun.light_energy = p["sun_e"] * lerpf(1.0, RAIN_SUN, oc)
+	_sun.shadow_blur = lerpf(1.0, RAIN_BLUR, oc)
+	_sun.shadow_opacity = lerpf(1.0, RAIN_SHADOW, oc)
 	if _env != null:
-		_env.ambient_light_color = p["amb_col"]
+		var amb: Color = p["amb_col"]
+		var g: float = amb.get_luminance() * RAIN_AMB_DIM
+		_env.ambient_light_color = amb.lerp(Color(g * 0.94, g, g * 1.12), oc * RAIN_AMB)  # 청회색 편향
 		_env.ambient_light_energy = p["amb_e"]
 	if _sky_mat != null:
 		_sky_mat.set_shader_parameter("time_of_day", h)
-		var cov_t := CLOUD_RAIN if GameData.is_rainy(GameClock.abs_day) else CLOUD_CLEAR
-		_cov = cov_t if _cov < 0.0 else move_toward(_cov, cov_t, dt * CLOUD_RATE)
 		_sky_mat.set_shader_parameter("cloud_coverage", _cov)
+		_sky_mat.set_shader_parameter("overcast", oc)
 
 func _cache() -> void:
 	_sun = get_node_or_null("../Sun") as DirectionalLight3D

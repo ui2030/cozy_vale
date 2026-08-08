@@ -15,6 +15,14 @@ const Beach := preload("res://world/beach.gd")        # 바다 판 단일 출처
 const AREA := 14.0   # 플레이어 중심 강수 범위(한 변) — 고정 카메라 화각을 덮는 최소 크기
 const TOP := 9.0     # 낙하 시작 높이
 const WINTER := 3    # GameClock.SEASONS 인덱스
+# 빗줄기 원근용 낙하 부피(비 전용). AREA 상자 안에선 화면에 잡히는 비가 전부 카메라 8~17m라
+# 굵기·화면속도·밀도가 다 같아 "커튼"으로 읽혔다 — 실측으로 12m 하드컷을 걸어도 그림이 안 변한다,
+# 즉 애초에 **먼 비가 없었다**. 알파 커브만으로는 못 만드는 문제라 부피를 깊고 넓게 잡는다.
+# 상자를 -Z로 미는 건 카메라가 고정 방위(플레이어 +Z 뒤에서 -Z를 봄)라서 — 이 전제는
+# sky.gdshader 별자리 배치가 이미 쓰고 있다.
+const RAIN_W := 30.0   # 좌우 폭 (원경 30m에서 화각을 덮는 최소치)
+const RAIN_D := 30.0   # 앞뒤 깊이 → 카메라 거리 ~2.5m(프레임 하단) ~ ~33m(지평선)
+const RAIN_Z := -8.0   # 상자 중심 z(플레이어 기준): 근거리 +7, 원경 -23
 # 파문 높이 = 초지 상면 0.10 + 0.03. 스플래시 셰이더가 지면과 **같은 월드 곡률**을 쓰므로
 # 이 여유는 거리와 무관하게 일정하다(곡률을 빠뜨리면 먼 파문이 지면 위로 붕 뜬다).
 const SPLASH_Y := 0.13
@@ -108,8 +116,12 @@ func _process(_dt: float) -> void:
 # 비/눈 공통 에미터. 낙하 부피·추종·컬링 규약은 같고 속도·모양·색만 갈린다.
 func _make_precip(snow: bool) -> GPUParticles3D:
 	var p := GPUParticles3D.new()
+	# 눈은 AREA 상자로 충분하다(느려서 알갱이를 눈으로 따라가고, 원경 눈은 점이라 안 보인다).
+	# 비만 RAIN_* 깊은 상자를 쓴다 — 부피가 4.6배라 같은 근거리 밀도를 유지하려면 수도 올려야 한다.
+	var bw := AREA if snow else RAIN_W
+	var bd := AREA if snow else RAIN_D
 	# 눈은 천천히 오래 떨어진다 — 같은 화면 밀도를 훨씬 적은 수로 채운다(체공시간이 길어서).
-	p.amount = 600 if snow else 1000
+	p.amount = 600 if snow else 3200
 	# 비: v0 8 + 중력 6 → 0.85초면 TOP에서 지면 도달. 눈: v0 1.3 + 중력 0.5 → ~5초.
 	p.lifetime = 5.0 if snow else 0.9
 	# 켜자마자 화면이 차 있게 (위에서 스며드는 티 안 남).
@@ -118,13 +130,13 @@ func _make_precip(snow: bool) -> GPUParticles3D:
 	p.preprocess = p.lifetime
 	p.emitting = false
 	p.local_coords = false   # 전역 좌표: 에미터가 플레이어를 따라가도 이미 떨어지는 알갱이는 끌려오지 않음
-	p.position = Vector3(0, TOP, 0)
+	p.position = Vector3(0, TOP, 0.0 if snow else RAIN_Z)
 	# 추종 중 프러스텀 컬링으로 통째로 사라지지 않게 낙하 부피 전체를 수동 지정.
 	# 에미터 로컬 기준이라 y는 아래로 파야 한다(위가 아니라) — TOP만큼 내려가 지면까지 + 여유.
-	p.visibility_aabb = AABB(Vector3(-AREA, -(TOP + 1.0), -AREA), Vector3(AREA * 2.0, TOP + 2.0, AREA * 2.0))
+	p.visibility_aabb = AABB(Vector3(-bw, -(TOP + 1.0), -bd), Vector3(bw * 2.0, TOP + 2.0, bd * 2.0))
 	var pm := ParticleProcessMaterial.new()
 	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
-	pm.emission_box_extents = Vector3(AREA * 0.5, 0.1, AREA * 0.5)
+	pm.emission_box_extents = Vector3(bw * 0.5, 0.1, bd * 0.5)
 	pm.direction = Vector3(0, -1, 0)
 	pm.spread = 14.0 if snow else 0.0     # 눈은 수직으로 곧게 떨어지지 않는다(흩날림)
 	pm.initial_velocity_min = 1.0 if snow else 7.0
@@ -168,6 +180,13 @@ func _make_precip(snow: bool) -> GPUParticles3D:
 		mat.albedo_color = Color(0.62, 0.71, 0.85, 0.55)
 		mat.albedo_texture = _streak_tex()
 		mat.vertex_color_use_as_albedo = true  # 없으면 color_initial_ramp가 통째로 무시된다
+		# 원근 나머지 절반: 굵기·길이·화면속도는 투영이 낸다(RAIN_* 상자가 먼 비를 만들어 준 뒤부터).
+		# 대기 감쇄만 남으므로 네이티브 거리 페이드로 알파를 카메라 거리에 건다.
+		# min>max = 멀어질수록 옅어짐(반전 동작). 42/6은 프레임 하단 ~8m에서 알파 1.0,
+		# 지평선 ~33m에서 ~0.16 — 대역 안에서 0이 되지 않아 원경 비가 뚝 끊기지 않는다.
+		mat.distance_fade_mode = BaseMaterial3D.DISTANCE_FADE_PIXEL_ALPHA
+		mat.distance_fade_min_distance = 42.0
+		mat.distance_fade_max_distance = 6.0
 	# ponytail: 파티클은 네이티브 StandardMaterial (툰셰이더는 인스턴스 변환 미지원 — festival_system과 동일)
 	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
@@ -185,7 +204,9 @@ func _make_splash() -> GPUParticles3D:
 	p.visibility_aabb = AABB(Vector3(-AREA, -1.0, -AREA), Vector3(AREA * 2.0, 2.0, AREA * 2.0))
 	var pm := ParticleProcessMaterial.new()
 	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
-	pm.emission_box_extents = Vector3(AREA * 0.5, 0.01, AREA * 0.5)  # 빗줄기와 같은 발자국
+	# 파문은 근거리(AREA)만 — 빗줄기 상자(RAIN_D 30m)를 다 덮으면 30m 밖 링이 서브픽셀이라
+	# 입자만 낭비된다. 원경 파문 부재는 원근 자체가 가려 준다.
+	pm.emission_box_extents = Vector3(AREA * 0.5, 0.01, AREA * 0.5)
 	pm.direction = Vector3(0, 1, 0)
 	pm.spread = 0.0
 	pm.initial_velocity_min = 0.0   # 제자리에서 퍼지기만 한다(튀어오르지 않음 = 툰 평면)
