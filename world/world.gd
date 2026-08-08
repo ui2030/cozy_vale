@@ -5,21 +5,31 @@ const ToonChar := preload("res://common/toon_character.gd")
 const Interior := preload("res://world/interior.gd")  # 실내 스폰·침대 좌표 단일 출처
 const Beach := preload("res://world/beach.gd")        # 해변 스폰·게이트 좌표 단일 출처
 const Decor := preload("res://world/decor.gd")        # P3 드레싱(소품·꽃·숲) — 전부 무충돌
+const DayNight := preload("res://world/day_night.gd") # 창불빛 점등 판정(가로등·실내등과 같은 단일 출처)
 const WATER_SHADER := preload("res://world/water.gdshader")
 const SKY_SHADER := preload("res://world/sky.gdshader")
 const PLAZA_SHADER := preload("res://world/plaza.gdshader")
 const GROUND_SHADER := preload("res://world/ground.gdshader")
 const ROAD_SHADER := preload("res://world/road.gdshader")
 const BRIDGE_SHADER := preload("res://world/bridge.gdshader")
+const WINDOW_SHADER := preload("res://world/window.gdshader")
 
 @onready var _sun: DirectionalLight3D = $Sun
 
 var _vp_pinned := false  # 조망 시점(v_*) 하네스가 플레이어를 잡아 뒀다 = hour 하네스가 덮어쓰지 않는다
 var _sails: Node3D  # 풍차 날개 허브 — 아주 느리게 돈다(노드 하나 회전 = 프레임 비용 무시 가능)
+var _windows: Array[MeshInstance3D] = []  # 밤 창불빛 판 (아래 _window)
+var _win_mat: ShaderMaterial              # 전부 공유하는 머티리얼 1장 = 프레임당 쓰기 1회
 
 func _process(delta: float) -> void:
 	if _sails != null:
 		_sails.rotation.z += delta * 0.25  # ≈25초/바퀴
+	if _win_mat != null:
+		# 가로등·실내등과 같은 계수. 낮(f=0)엔 노드를 통째로 숨겨 그리지도 않는다 = 낮 룩 무변경.
+		var f := DayNight.night_factor(GameClock.game_min / 60.0)
+		_win_mat.set_shader_parameter("glow", f)
+		for w in _windows:
+			w.visible = f > 0.02
 
 # 바람의 지휘봉풍 애니메이션 물 머티리얼(연못·강·분수 공용, base=C_WATER 기본값).
 func _water_mat() -> ShaderMaterial:
@@ -565,8 +575,32 @@ func _house(parent: Node, base: Vector3, w: float, d: float, h: float, solid: bo
 	_box(parent, Vector3(cx, h + 0.2, cz), Vector3(w + 0.5, 0.5, d + 0.5), C_ROOF)   # 보라 기와 처마
 	_box(parent, Vector3(cx, h + 0.55, cz), Vector3(w * 0.6, 0.4, d * 0.6), C_ROOF2) # 지붕 마루 밝은면
 	_box(parent, Vector3(cx, 0.9, cz + door_sign * (d * 0.5 + 0.05)), Vector3(0.9, 1.8, 0.12), C_WOOD, 0.004)  # 문(목재)
+	# 밤 창불빛 — 4면 각 2짝. 마을이 밤에 "캄캄한 색박스 무리"로 죽어 있던 것의 직접 처방
+	# (실측 audit_0808/hall_h21·life_h21: 창 지오메트리가 아예 없다). 무충돌 = WORLD_VERSION 유지.
+	var wy := h * 0.55  # 문(상단 1.8)보다 위, 회관 처마 등나무(y4.62)보다 아래
+	for sx in [-1.0, 1.0]:
+		for sz in [-1.0, 1.0]:
+			_window(parent, Vector3(cx + sx * w * 0.28, wy, cz + sz * (d * 0.5 + 0.03)), Vector3(0.7, 0.8, 0.06))
+			_window(parent, Vector3(cx + sx * (w * 0.5 + 0.03), wy, cz + sz * d * 0.28), Vector3(0.06, 0.8, 0.7))
 	if solid:
 		_collide(parent, Vector3(cx, h * 0.5, cz), Vector3(w, h, d))
+
+# 창불빛 판: 벽에 붙는 얇은 박스 + window.gdshader(unshaded + 월드 곡률). 낮엔 glow 0 +
+# visible=false라 그리지도 않는다. _convert_statics는 StandardMaterial3D만 보므로 통과한다.
+func _window(parent: Node, center: Vector3, size: Vector3) -> void:
+	if _win_mat == null:
+		_win_mat = ShaderMaterial.new()
+		_win_mat.shader = WINDOW_SHADER
+	var mi := MeshInstance3D.new()
+	var bm := BoxMesh.new()
+	bm.size = size
+	mi.mesh = bm
+	mi.material_override = _win_mat
+	mi.position = center
+	mi.visible = false
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF  # 불 켜진 창이 제 벽에 그림자를 던지면 안 된다
+	parent.add_child(mi)
+	_windows.append(mi)
 
 func _clock_tower(parent: Node, base: Vector3) -> void:
 	# base=몸체 위(y=5). 탑 shaft 2.3각 h3(y5→8) + 보라 원뿔 지붕캡 + 남향 큰 시계면 + 깃발. 총고~9.7(≤10).
@@ -610,10 +644,12 @@ func _fountain(parent: Node, at: Vector3) -> void:
 	sb.add_child(cs)
 	parent.add_child(sb)
 
+const PLAZA_R := 6.0  # 판석 원반 반경 — 길 끝 겹침(_lap_to_plaza)이 같은 값을 읽는다(단일 출처)
+
 func _plaza(parent: Node) -> void:
 	# 크림 판석 원형 바닥 r6 — 시각 전용 교체(메시·좌표·높이·반경 불변, 충돌체 없음).
 	# 흰 디스크 → 절차 판석 패턴(world/plaza.gdshader, 텍스처 파일 0).
-	var mi := _cyl(parent, Vector3(0, 0.08, 0), 6.0, 0.12, C_WALL, 0.0)
+	var mi := _cyl(parent, Vector3(0, 0.08, 0), PLAZA_R, 0.12, C_WALL, 0.0)
 	var m := ShaderMaterial.new()
 	m.shader = PLAZA_SHADER
 	mi.material_override = m
@@ -644,6 +680,17 @@ const ROADS := [
 # 데크 리프트 소멸 지점(DECK_EDGE 3.4) + 0.2 — ROADS 데이터는 그대로 두고(decor 길가 판정 공유)
 # 빌드에서만 클립한다.
 const BRIDGE_TRIM := 3.6
+# 길 끝을 판석 안으로 밀어 넣는 깊이. 옛 길은 광장 림(r6)에서 딱 끝났는데, road.gdshader가
+# 끝단을 라운딩(corner 0.75)하고 노이즈로 최대 erode 0.45 갉아내므로 실제 끝은 r6.2~6.7에
+# 남았다 — 판석과 길 사이에 초승달 잔디가 그어진 이유(실측 audit_0808/open_pav_h12).
+# 0.7이면 침식 최악(0.45)에도 끝이 r5.75 = 판석 위라 잔디 틈이 생길 수 없고, 판석 위로 0.25~0.7
+# 물린 흙이 "판석 가장자리에 밟혀 올라온 흙"으로 읽힌다. 길 상면 0.185 > 판석 상면 0.14라
+# 겹친 구간은 길이 위로 오고, 길 박스 밑면 0.135는 판석 속이라 z-fighting도 없다.
+const PLAZA_LAP := 0.7
+# 다리 진입로 조각이 데크 축으로 파고드는 깊이(다리 로컬 x). 데크 상면은 x2.7에서 0.28,
+# x3.02(석재 끝)에서 0.10이라 길 상면 0.185가 이 구간에서 석재 밑으로 물린다 = 흙이 돌 밑으로
+# 이어진다. BRIDGE_TRIM(3.6)만으론 남던 0.6~1.0 잔디 띠가 사라진다.
+const APRON_X := 2.7
 # 강둑을 비우는 다리 중심 반경. 둑 오프셋 기준 흐름 방향 ±2.2가 비어 파라펫(z±1.6)을 넉넉히 벗어난다.
 const BANK_GAP := 3.0
 # ── 강 물면 ────────────────────────────────────────────────────
@@ -674,9 +721,17 @@ func _roads(parent: Node) -> void:
 		var u := Vector2(sin(deg_to_rad(r[2])), cos(deg_to_rad(r[2])))
 		var a: Vector2 = r[0] - u * (float(r[1]) * 0.5)
 		var b: Vector2 = r[0] + u * (float(r[1]) * 0.5)
+		a = _lap_to_plaza(a, b)
+		b = _lap_to_plaza(b, a)
 		for br in BRIDGES:
+			var a0 := a
 			a = _trim_to_bridge(a, b, br)
+			if a != a0:
+				_approach(parent, a, br)
+			var b0 := b
 			b = _trim_to_bridge(b, a, br)
+			if b != b0:
+				_approach(parent, b, br)
 		var seg_len := (b - a).length()
 		if seg_len < 0.5:
 			continue  # 통째로 다리 밑이면 생략
@@ -692,6 +747,31 @@ static func _trim_to_bridge(p: Vector2, q: Vector2, br: Vector2) -> Vector2:
 	var fu := f.dot(u)
 	var disc := fu * fu - (f.length_squared() - BRIDGE_TRIM * BRIDGE_TRIM)
 	return p + u * (-fu + sqrt(disc))  # 안쪽이면 disc>0·해>0 보장
+
+# 광장 림에서 끝나는 길 끝점 p를 판석 안쪽으로 PLAZA_LAP만큼 더 밀어 넣는다(_trim_to_bridge의 반대).
+# 길 직선 위에서만 움직이므로 ROADS의 회전각 r[2]가 그대로 유효하다. 방사형 길이라 이동 후
+# 반경은 r5.3±0.03 — 원-직선 정해를 풀 필요가 없다.
+static func _lap_to_plaza(p: Vector2, q: Vector2) -> Vector2:
+	if p.length() > PLAZA_R + 0.6:
+		return p  # 광장 림에서 시작하는 끝이 아니다(다리·집·해변 쪽 끝)
+	return p + (p - q).normalized() * (p.length() - (PLAZA_R - PLAZA_LAP))
+
+# 다리 진입로: 잘린 길 끝(반경 BRIDGE_TRIM)을 데크 발치에 잇는 짧은 흙길 조각.
+# 길 접근각이 데크 축과 최대 55° 어긋나 있어(NE 길·동안 남길) 원형 트림만으론 길 끝이
+# 다리 **옆** 잔디에 남는다(실측 audit_0808/bridge_ne_h12·bridge_e_h12). 조각은 그 끝을
+# 데크 축 위 로컬(±APRON_X, 0)까지 잇는다 = 흙길이 돌다리 발치로 모여드는 진입 마당.
+func _approach(parent: Node, from: Vector2, br: Vector2) -> void:
+	var ang := _river_dir_at(br)
+	var d := from - br
+	var lx := d.x * cos(ang) - d.y * sin(ang)   # deck_lift와 같은 로컬 투영 (로컬 +X = 강 횡단)
+	var side := 1.0 if lx >= 0.0 else -1.0
+	var to: Vector2 = br + Vector2(cos(ang), -sin(ang)) * (APRON_X * side)  # 로컬(±APRON_X,0)→월드
+	var v := to - from
+	var l := v.length()
+	if l < 0.5:
+		return  # 이미 데크 발치까지 와 있다(짧은 조각은 침식 때문에 오히려 얼룩이 된다)
+	var c := (from + to) * 0.5
+	_road(parent, Vector3(c.x, 0.16, c.y), Vector3(ROAD_W, 0.05, l), rad_to_deg(atan2(v.x, v.y)))
 
 func _road(parent: Node, center: Vector3, size: Vector3, rot_deg: float) -> MeshInstance3D:
 	var mi := _box(parent, center, size, C_ROAD, 0.0)

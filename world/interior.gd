@@ -244,8 +244,7 @@ func _lights() -> void:
 		_lamps.append(o)
 
 func _process(_dt: float) -> void:
-	var sun_e: float = DayNight.sample(GameClock.game_min / 60.0)["sun_e"]
-	var e: float = LAMP_E * (1.0 - smoothstep(0.25, 0.9, sun_e))
+	var e: float = LAMP_E * DayNight.night_factor(GameClock.game_min / 60.0)
 	for o in _lamps:
 		o.light_energy = e
 

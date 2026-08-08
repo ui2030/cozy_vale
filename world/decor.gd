@@ -12,6 +12,7 @@ extends Node3D
 
 const ToonChar := preload("res://common/toon_character.gd")
 const DayNight := preload("res://world/day_night.gd")  # 가로등 점등 시각 판정(단일 출처)
+const WINDOW_SHADER := preload("res://world/window.gdshader")  # 등 유리 발광 판(창불빛과 공용)
 const DIR := "res://assets/props/"
 const OUTLINE := 0.006   # world.gd 정적물과 같은 연필선 두께
 const GROUND_Y := 0.10   # 지면 상면 (world.tscn Ground / beach.gd GROUND_Y와 동일)
@@ -134,12 +135,30 @@ const FENCES = [
 ]
 const FENCE_S := 2.6        # fence_simple 원본 1.0 → 높이 0.35×2.6 = 0.91 (캐릭터 2.1의 절반)
 
-# ── 가로등 (밤에만 점등 — interior.gd 전례: DayNight.sample의 태양 에너지에서 파생) ──
-const LAMP_E := 1.1
-const LAMP_RANGE := 8.0
+# ── 가로등 (밤에만 점등 — interior.gd 전례: DayNight.night_factor 단일 출처) ──
+# 옛 값(에너지 1.1 · 반경 8.0 · 감쇠 1.0)은 등불 하나가 지름 15의 잔디를 고르게 덮어서
+# "마을 전체가 살짝 밝은 밤"이 됐다 — 등 발치에 빛 웅덩이가 안 생기니 등이 켜졌는지도 모른다
+# (실측 nightlife/before_open_pav_h21: 광장 전면이 균일 조도).
+#
+# 웅덩이는 **반경이 아니라 감쇠 지수로** 만든다. 반경을 8.0→6.5로 조였더니 웅덩이는 생겼지만
+# 광구 경계가 벽을 가로지르는 자리에서 Forward+ 클러스터 격자가 그대로 드러나 벽에 계단 모양
+# 블록이 찍혔다(실측 probe_e11_r65_a10 = 발생 / probe_e24_r80_a10·probe_e11_r80_a16 = 없음).
+# 그래서 반경은 오히려 9.0으로 넉넉히 두고(경계에선 이미 광량 ≈0), 감쇠 2.4로 발치에 모은다:
+# 등 발치 1.13(옛 0.69의 1.6배) · 광장 한복판 0.74(옛 1.0) — 발치:한복판 대비가 2.8배에서
+# 6.1배가 된다 = 웅덩이는 생기고 광장은 여전히 따뜻하다(감쇠 3.0은 한복판이 청회색으로 식었다).
+# **새 광원 0개** — 개수·비용 불변, 파라미터만 바뀐다.
+const LAMP_E := 3.0
+const LAMP_RANGE := 9.0
+const LAMP_ATT := 2.4      # omni_attenuation (1.0=선형) — 클수록 코어가 조이고 변두리가 빨리 죽는다
+# 등 기둥·등갓 전용 렌더 레이어. 세진 등불이 코앞(0.02)의 제 등갓을 때리면 크림 유리가
+# 흰색, 보라 갓지붕이 분홍으로 탄다(실측 probe_r90a30_pav). 광원 cull_mask에서 이 레이어만 빼면
+# 등갓은 태양·환경광으로만 칠해져 낮 룩 그대로다(카메라 cull_mask는 전 레이어라 보이는 건 불변).
+const LAMP_LAYER := 2
+const ALL_LAYERS := 0xFFFFF
 
 var _cache := {}                       # glb 이름 → 원본 노드(반복 로드 방지)
 var _lights: Array[OmniLight3D] = []
+var _glow: ShaderMaterial              # 가로등 유리 발광 판 공용 머티리얼 (_glow_mat)
 var _blooms: Array[Node3D] = []        # 겨울에 숨길 만개 노드(화분·꽃수레 꽃, 등나무 드레이프 루트)
 var _tree_mesh := {}                   # 활엽수 MMI 이름 → [원색 Mesh, 겨울 수관 서리 Mesh]
 var _unknown_mats := {}                # 팔레트에 없는 킷 머티리얼 이름(로그용)
@@ -333,17 +352,35 @@ func _place_props() -> void:
 
 # 가로등: 석재 받침 + 목재 기둥 + 크림 등갓 + 보라 갓지붕. 밤에만 켜지는 OmniLight 1개.
 func _lamp(p: Node3D) -> void:
-	_cyl(p, Vector3(0, 0.12, 0), 0.26, 0.24, C_STONE)
-	_cyl(p, Vector3(0, 1.5, 0), 0.09, 2.6, C_WOOD, 0.004)
-	_box(p, Vector3(0, 3.02, 0), Vector3(0.42, 0.5, 0.42), C_GLASS, 0.004)
-	_box(p, Vector3(0, 3.34, 0), Vector3(0.56, 0.14, 0.56), C_ROOF, 0.004)
+	for m in [_cyl(p, Vector3(0, 0.12, 0), 0.26, 0.24, C_STONE),
+			_cyl(p, Vector3(0, 1.5, 0), 0.09, 2.6, C_WOOD, 0.004),
+			_box(p, Vector3(0, 3.02, 0), Vector3(0.42, 0.5, 0.42), C_GLASS, 0.004),
+			_box(p, Vector3(0, 3.34, 0), Vector3(0.56, 0.14, 0.56), C_ROOF, 0.004)]:
+		m.layers = LAMP_LAYER  # 아래 light_cull_mask와 짝 — 등불이 제 등갓을 태우지 않게
+	# 등갓을 광원에서 뺐으니 유리는 스스로 빛나야 한다: 유리 박스를 0.02 감싸는 발광 판
+	# (world/window.gdshader = 창불빛과 같은 unshaded + 곡률). 낮엔 glow 0 = 완전 투명이라
+	# 툰 유리(C_GLASS)가 그대로 보인다 = 낮 룩 무변경.
+	var g := _box(p, Vector3(0, 3.02, 0), Vector3(0.46, 0.54, 0.46), C_GLASS, 0.0)
+	g.material_override = _glow_mat()
+	g.layers = LAMP_LAYER
+	g.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	var o := OmniLight3D.new()
 	o.position = Vector3(0, 3.0, 0)
 	o.light_color = Color(1.0, 0.86, 0.62)
 	o.omni_range = LAMP_RANGE
+	o.omni_attenuation = LAMP_ATT
+	o.light_cull_mask = ALL_LAYERS & ~LAMP_LAYER
 	o.light_energy = 0.0
 	p.add_child(o)
 	_lights.append(o)
+
+# 등 유리 발광 머티리얼 1장을 전 가로등이 공유 = 프레임당 파라미터 쓰기 1회.
+func _glow_mat() -> ShaderMaterial:
+	if _glow == null:
+		_glow = ShaderMaterial.new()
+		_glow.shader = WINDOW_SHADER
+		_glow.set_shader_parameter("tint", C_GLASS)
+	return _glow
 
 # 벤치: 등받이 있는 목재 벤치(로컬 -z가 등받이 = yaw로 정면을 정한다)
 func _bench(p: Node3D) -> void:
@@ -763,7 +800,8 @@ func _count_collision(node: Node) -> int:
 func _process(_dt: float) -> void:
 	if _lights.is_empty():
 		return
-	var sun_e: float = DayNight.sample(GameClock.game_min / 60.0)["sun_e"]
-	var e: float = LAMP_E * (1.0 - smoothstep(0.25, 0.9, sun_e))
+	var f := DayNight.night_factor(GameClock.game_min / 60.0)
 	for o in _lights:
-		o.light_energy = e
+		o.light_energy = LAMP_E * f
+	if _glow != null:
+		_glow.set_shader_parameter("glow", f)  # 유리 발광 판도 같은 계수로 함께 밝아진다

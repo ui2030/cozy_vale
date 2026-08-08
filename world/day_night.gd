@@ -86,6 +86,11 @@ func _cache() -> void:
 	if _env != null and _env.sky != null:
 		_sky_mat = _env.sky.sky_material as ShaderMaterial
 
+# 야간 등화 계수 0(대낮)~1(밤). 실내등·가로등·창불빛이 전부 여기서 파생한다 —
+# 시각 분기를 각자 발명하면 해질녘에 실내는 켜졌는데 마을은 안 켜지는 식으로 어긋난다.
+static func night_factor(h: float) -> float:
+	return 1.0 - smoothstep(0.25, 0.9, float(sample(h)["sun_e"]))
+
 # 순수 함수: 시각(0~24) → 조명 파라미터. 구간 lerp. static이라 테스트에서 노드 없이 호출.
 static func sample(h: float) -> Dictionary:
 	for i in KEYS.size() - 1:
