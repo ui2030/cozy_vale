@@ -3,6 +3,8 @@ extends Control
 # player.gold/inventory/selected_seed 단일 출처 조회 — 표시만 하고 세이브 표면 무변경.
 # 씨앗 목록은 all_seed_ids 전부(보유 0 포함): Q 순환과 같은 집합이라 상점 구매 대상도 고를 수 있다.
 
+const Hud := preload("res://ui/hud.gd")  # 패널 배경 단일 출처(여백·불투명도)
+
 const SEL_COLOR := Color(1.0, 0.85, 0.35)
 
 var _list: VBoxContainer
@@ -15,6 +17,7 @@ func _ready() -> void:
 	var panel := PanelContainer.new()
 	panel.set_anchors_preset(Control.PRESET_CENTER)
 	panel.position = Vector2(360, 100)
+	panel.add_theme_stylebox_override("panel", Hud.panel_style())
 	add_child(panel)
 	_list = VBoxContainer.new()
 	_list.add_theme_constant_override("separation", 6)
@@ -65,6 +68,7 @@ func _rebuild() -> void:
 		_list.add_child(none)
 	for sid in seeds:
 		_list.add_child(_seed_btn(p, sid))
+	_head("특별")  # 반지가 씨앗 목록 마지막 줄로 읽히던 것(실측 audit2_0809/inventory)을 제 섹션으로
 	_list.add_child(_ring_btn(p))
 	_head("소지품")
 	var any := false

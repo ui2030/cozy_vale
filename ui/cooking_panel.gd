@@ -3,6 +3,8 @@ extends Control
 # 만들 수 있는 것은 활성 + 강조, 재료가 모자란 것은 비활성 행에 "재료 보유/필요"를 그대로 보여준다
 # (무엇이 모자란지 패널을 나가지 않고 알 수 있게). 가방 패널 관례를 그대로 따른다.
 
+const Hud := preload("res://ui/hud.gd")  # 패널 배경 단일 출처(여백·불투명도)
+
 const OK_COLOR := Color(1.0, 0.85, 0.35)  # 가방 패널 선택색과 동일 = "지금 할 수 있는 것"
 
 var _list: VBoxContainer
@@ -15,6 +17,7 @@ func _ready() -> void:
 	var panel := PanelContainer.new()
 	panel.set_anchors_preset(Control.PRESET_CENTER)
 	panel.position = Vector2(300, 100)
+	panel.add_theme_stylebox_override("panel", Hud.panel_style())
 	add_child(panel)
 	_list = VBoxContainer.new()
 	_list.add_theme_constant_override("separation", 6)

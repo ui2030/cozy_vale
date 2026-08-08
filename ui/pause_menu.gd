@@ -3,6 +3,8 @@ extends Control
 # 조작키 화면은 InputMap을 실제로 읽어 표시 (하드코딩 금지, 리바인딩 넣어도 무변경).
 # 버튼 focus 네이티브 네비게이션으로 마우스+키보드(위아래/Enter) 둘 다 동작.
 
+const Hud := preload("res://ui/hud.gd")  # 패널 배경 단일 출처(여백·불투명도)
+
 enum View { MAIN, CONTROLS, CONFIRM }
 
 var _views := {}
@@ -13,7 +15,9 @@ func _ready() -> void:
 	visible = false
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	var dim := ColorRect.new()
-	dim.color = Color(0, 0, 0, 0.55)
+	# 0.55는 배경 꽃·풀이 버튼을 뚫고 읽힐 만큼 얕았다(실측 audit2_0809/pausemenu).
+	# 0.78이면 마을이 실루엣으로만 남아 "게임 위에 뜬 메뉴"로 읽힌다.
+	dim.color = Color(0, 0, 0, 0.78)
 	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
 	add_child(dim)
 	var cc := CenterContainer.new()
@@ -65,6 +69,7 @@ func _show(view: int) -> void:
 # ── 뷰 빌드 ────────────────────────────────────────────────────
 func _panel(title: String) -> Array:  # [PanelContainer, VBoxContainer]
 	var p := PanelContainer.new()
+	p.add_theme_stylebox_override("panel", Hud.panel_style())
 	var vb := VBoxContainer.new()
 	vb.add_theme_constant_override("separation", 10)
 	vb.custom_minimum_size = Vector2(320, 0)

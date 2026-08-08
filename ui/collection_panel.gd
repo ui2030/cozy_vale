@@ -2,6 +2,8 @@ extends Control
 # 도감 패널 (B키 토글). 카테고리별(작물/물고기/채집물) 전체 슬롯 — 발견=이름, 미발견="???".
 # 발견 현황은 player.collection 단일 출처 조회. 낚시 중엔 열지 않음.
 
+const Hud := preload("res://ui/hud.gd")  # 패널 배경 단일 출처(여백·불투명도)
+
 var _list: VBoxContainer
 
 func _ready() -> void:
@@ -12,6 +14,7 @@ func _ready() -> void:
 	var panel := PanelContainer.new()
 	panel.set_anchors_preset(Control.PRESET_CENTER)
 	panel.position = Vector2(360, 100)
+	panel.add_theme_stylebox_override("panel", Hud.panel_style())
 	add_child(panel)
 	_list = VBoxContainer.new()
 	_list.add_theme_constant_override("separation", 8)

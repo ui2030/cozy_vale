@@ -12,8 +12,21 @@ const WD_EN := ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 var _player: Node
 
 # 흰 글자 + 검은 외곽선. 겨울 눈 지면(화면 ~248)·크림 하늘 위에서 순백 글자는 사라진다(실측).
-# world.tscn Label3D 마을 라벨과 같은 방식·같은 비율(font 96 / outline 24 = 0.25).
+# world.tscn Label3D 마을 라벨과 같은 방식·같은 비율(font 36 / outline 9 = 0.25).
 const OUTLINE_PX := 6  # 폰트 22~24px 기준
+
+# 패널 공통 배경. 기본 테마의 PanelContainer는 안쪽 여백 0 + 알파 ~0.6이라
+# ① 제목이 상단 경계에 붙고 목록이 좌측 경계에서 시작하며(버튼 행만 안으로 들어가 목록이
+#    패널 밖으로 삐져나온 것처럼 읽힌다) ② 배경 꽃·풀이 글자를 뚫고 올라온다(실측 audit2_0809).
+# 값만 잡아 주는 헬퍼 하나로 다섯 패널이 같은 여백·같은 불투명도를 쓴다(ToonChar.make_solid 전례).
+static func panel_style() -> StyleBoxFlat:
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.17, 0.15, 0.19, 0.95)   # 파스텔 톤을 유지하되 글자 대비를 확보
+	sb.border_color = Color(1.0, 0.94, 0.86, 0.30)  # 크림 테두리 = 밝은 지면 위에서도 패널 경계가 선다
+	sb.set_border_width_all(2)
+	sb.set_corner_radius_all(10)
+	sb.set_content_margin_all(18)
+	return sb
 
 func _ready() -> void:
 	add_to_group("hud")  # sleep_screen 등이 토스트 호출

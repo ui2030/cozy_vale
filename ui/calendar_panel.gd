@@ -2,6 +2,8 @@ extends Control
 # 달력 패널 (C키 토글). 현재 계절 그리드 + 생일·축제·오늘 표시.
 # 이벤트 데이터는 GameData(생일=npcs.json, 축제=calendar.json) 단일 출처 조회.
 
+const Hud := preload("res://ui/hud.gd")  # 패널 배경 단일 출처(여백·불투명도)
+
 const WD_EN := ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 const SEASON_EN := ["Spring", "Summer", "Autumn", "Winter"]
 const TODAY_BG := Color(1.0, 0.85, 0.35, 0.55)
@@ -18,6 +20,7 @@ func _ready() -> void:
 	var panel := PanelContainer.new()
 	panel.set_anchors_preset(Control.PRESET_CENTER)
 	panel.position = Vector2(340, 90)
+	panel.add_theme_stylebox_override("panel", Hud.panel_style())
 	add_child(panel)
 	var vb := VBoxContainer.new()
 	vb.add_theme_constant_override("separation", 8)

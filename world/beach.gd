@@ -137,7 +137,15 @@ func _sea() -> void:
 	m.set_shader_parameter("foam_z", ORIGIN.z + WET_Z)  # 위상 0 = 물가선(젖은 모래 띠 한가운데)
 	# ③ 하이라이트 패치를 좁힌다: 연못 값(0.60)이면 수면 절반이 흰 얼룩이라 파도선이 묻힌다.
 	m.set_shader_parameter("coverage", 0.74)
-	_plane(SEA_REL + Vector3(0, WATER_Y, 0), SEA_W, SEA_D, 40, C_SAND).material_override = m  # 색은 물 셰이더로 덮음
+	var sea := _plane(SEA_REL + Vector3(0, WATER_Y, 0), SEA_W, SEA_D, 40, C_SAND)
+	sea.material_override = m  # 색은 물 셰이더로 덮음
+	# 캡의 대가: 이 판만 툰 곡률로 말려 내려가지 않으니 150 떨어진 마을 컷 하늘에 물비늘 리본으로
+	# 남는다(실측 audit2_0809/open_pav_h12 좌상단). 판을 좁히면 수평선이 깨지고, 캡을 거리로
+	# 게이팅하면 원경 볼륨 자체가 흔들린다 → 존 밖에선 그냥 안 그린다(라벨과 같은 네이티브 거리 컬링).
+	# 70인 근거(카메라 = 플레이어 + offset(0,6.5,9.5)): 걷는 영역 어디서 봐도 판 중심까지 최대 57
+	# (남동 구석 컷 55), 가장 가까운 마을 시점인 남서 숲(-30,26)조차 판 **동쪽 끝**까지 82다.
+	# 페이드 없이 자른다 — 존 왕복은 좌표 텔레포트라 경계를 걸어서 넘는 프레임이 없다.
+	sea.visibility_range_end = 70.0
 	# 낚시 트리거: 물가 앞 띠만 덮는다(원경까지 덮으면 Area 중심이 멀어져 문 판정과 경합).
 	# z ∈ [-17, -3] — 물가 충돌선(-4.3)에서 플레이어가 서면 InteractArea(1.3)가 넉넉히 닿는다.
 	var a := Area3D.new()
@@ -359,13 +367,12 @@ func _label(text: String, y: float) -> Label3D:
 	l.text = text
 	l.position = Vector3(0, y, 0)
 	l.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	l.no_depth_test = true
 	l.fixed_size = true
 	l.pixel_size = 0.0007
-	l.font_size = 96
-	l.outline_size = 24
-	# 거리 페이드 — world.tscn 마을 라벨과 같은 방식(FADE_SELF). no_depth_test=true + fixed_size라
-	# 라벨은 지형·거리를 무시하고 그려진다 → 해변의 "바다"가 150u 떨어진 마을 광장 컷 하늘에
+	l.font_size = 36   # 화면 ~20px(fov 48·720p) = HUD 프롬프트(24px) 한 단 아래. world.tscn과 같은 값
+	l.outline_size = 9  # 96/24와 같은 0.25 비율
+	# 거리 페이드 — world.tscn 마을 라벨과 같은 방식(FADE_SELF). fixed_size라 라벨은 거리를
+	# 무시하고 같은 크기로 그려진다 → 해변의 "바다"가 150u 떨어진 마을 광장 컷 하늘에
 	# 그대로 떠 있었다(audit_0808/open_pav_h12). 거리 하나로 끊는다.
 	# 소거 거리는 마을과 같은 22, 페이드 폭만 6→3으로 좁혔다 — lookdev/shots/sky_label 실측
 	# (화면 알파에서 역산한 카메라~라벨 거리):

@@ -223,13 +223,12 @@ func _label(text: String, y: float) -> Label3D:
 	l.text = text
 	l.position = Vector3(0, y, 0)
 	l.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	l.no_depth_test = true
 	l.fixed_size = true
 	l.pixel_size = 0.0007
-	l.font_size = 96
-	l.outline_size = 24
+	l.font_size = 36    # 마을·해변 라벨과 같은 값 = 화면 ~20px
+	l.outline_size = 9
 	# 마을·해변 라벨과 같은 거리 페이드(16까지 100%, 22 밖 소거). 실내는 방이 좁아 항상 100%지만,
-	# no_depth_test 라벨이 존 밖 컷에 새지 않는 규약을 세 곳이 같이 지킨다.
+	# 라벨이 존 밖 컷에 새지 않는 규약을 세 곳이 같이 지킨다.
 	l.visibility_range_end = 22.0
 	l.visibility_range_end_margin = 6.0
 	l.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF

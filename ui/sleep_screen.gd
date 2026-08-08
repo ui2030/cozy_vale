@@ -68,6 +68,7 @@ func _build_confirm() -> Control:
 	cc.set_anchors_preset(Control.PRESET_FULL_RECT)
 	cc.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var p := PanelContainer.new()
+	p.add_theme_stylebox_override("panel", preload("res://ui/hud.gd").panel_style())
 	var vb := VBoxContainer.new()
 	vb.add_theme_constant_override("separation", 10)
 	vb.custom_minimum_size = Vector2(300, 0)
