@@ -1017,8 +1017,11 @@ func _test_winter_pass() -> void:
 	# 통째로 날아가므로 지면 계열 채널 상한을 테스트로 못박는다. 상한을 0.76→0.75로 조인 근거:
 	# 0.76은 "클리핑 직전"이 아니라 실측에서 이미 B가 255였다(눈 지면 (241,247,255)).
 	var B2 := preload("res://world/beach.gd")  # 해변 모래도 같은 수평 지면 = 같은 상한을 받는다
-	for gc in [W.C_GRASS, W.C_SNOW, W.C_ROAD, W.C_GREEN, B2.C_SAND, B2.C_WET]:
+	for gc in [W.C_GRASS, W.C_SNOW, W.C_ROAD, W.C_ROAD_W, W.C_GREEN, B2.C_SAND, B2.C_WET]:
 		assert(maxf(maxf(gc.r, gc.g), gc.b) <= 0.75, "지면/길 albedo가 정오 클리핑 한계 초과: %s" % gc)
+	# 겨울 길은 설원보다 어두워야 길로 읽힌다(밝으면 눈에 묻히고, 여름 톤이면 설원 위 노란 띠).
+	assert(W.C_ROAD_W.g < W.C_SNOW.g and W.C_ROAD_W.g > W.C_CUT.g, "겨울 길 톤이 설원↔진흙 사이가 아님")
+	assert(W.C_ROAD_WE.g > W.C_ROAD_W.g, "겨울 길 가장자리는 길보다 밝게(설원으로 스밈)")
 	# 겨울 실루엣: 크림 벽토의 직광면은 어차피 255로 포화한다(C_WALL은 그늘면 파스텔 기준으로
 	# 고정 — 내리면 근접 컷이 갈색이 된다). 그래서 눈 지면이 벽토보다 확실히 어두워야 눈밭에서
 	# 집·판매상자 윤곽이 떠오른다. 0.76이던 동안 명도차가 없어 실루엣이 통째로 소실됐다(실측).

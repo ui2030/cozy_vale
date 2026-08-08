@@ -94,9 +94,11 @@ func _ready() -> void:
 	# 마을 조망 시점(북향 고정 카메라) — 각 지점 남쪽에 플레이어를 두면 북쪽 구조물이 잡힘
 	var _vp := {
 		"v_windmill":  Vector3(29, 2, -15),   # 강 건너 풍차 언덕(29,-24)
-		# 언덕 위(대지 상면 y2.5). 살짝 띄워 두고 떨어뜨린다 — 대지 충돌체가 없으면 지면까지
-		# 꺼져 그림에 바로 드러난다(도보 등반 가능 여부의 촬영 검증).
-		"v_windmilltop": Vector3(29, 4.5, -22.6),
+		# 언덕 위(램프 최상단, 대지 남면 바로 앞). 살짝 띄워 두고 떨어뜨린다 — 대지 충돌체가
+		# 없으면 지면까지 꺼져 그림에 바로 드러난다(도보 등반 가능 여부의 촬영 검증).
+		# 옛 z=−22.6은 탑 축에서 1.4 = 탑 충돌체(r1.35)+캡슐(0.4) 안이라 순간이동 스폰이
+		# 탑에 박힌 채 찍혔다(실측). −21.8은 축에서 2.2 = 여유 0.45.
+		"v_windmilltop": Vector3(29, 4.5, -21.8),
 		"v_bridge_ne": Vector3(23, 2, -9),    # 북동 다리(23,-16) 앞
 		"v_bridge_e":  Vector3(17, 2, 14),    # 동 다리(17,7) 앞
 		"v_bridge_sw": Vector3(-3.5, 2, 37),  # 남서 다리(-3.5,30) 앞
@@ -468,6 +470,11 @@ const C_WIN_FRAME := Color(0.325, 0.245, 0.270, 1.0)  # 창틀·창살 — 지�
 const C_WOOD  := Color(0.590, 0.480, 0.362)  # 브라운 — 목재
 const C_ROAD  := Color(0.700, 0.619, 0.476)  # 흙길 — 파스텔 모래빛
 const C_ROAD_E := Color(0.720, 0.673, 0.590)  # 길 가장자리 — 풀로 옅어지는 톤(같은 hue, 채도만 낮춤)
+# 겨울 흙길 — 눈에 덮여 밟힌 길. 여름 톤 그대로 두면 설원 위에 노란 띠만 남는다(실측
+# audit2/winter_hall_h12). 설원(C_SNOW 0.66/0.68/0.71)보다 한 단 어둡고 살짝 따뜻하게 =
+# "다져진 눈". 더 밝게 하면 길이 사라지고, 더 어둡게 하면 진창으로 읽힌다.
+const C_ROAD_W  := Color(0.612, 0.622, 0.638)
+const C_ROAD_WE := Color(0.640, 0.655, 0.678)  # 겨울 길 가장자리 — 설원으로 스밈
 # 강둑 흙 — C_ROAD(흙길) × 0.889. hue 보존, 한 단 눅눅한 흙. ×0.94는 흙길과 거의 같은 밝기라
 # 길이 강에 닿는 자리에서 둑과 길이 한 덩어리로 뭉쳤다(실측 스샷). 목재 브라운(C_WOOD)을 쓰면
 # 둑이 "각목 두 줄"로 읽힌다(유저 실플레이 지적) — 울타리·다리 난간과 같은 색이라 더 그렇다.
@@ -644,12 +651,16 @@ func _fountain(parent: Node, at: Vector3) -> void:
 	_cyl(parent, at + Vector3(0, 0.75, 0), 0.8, 0.4, C_STONE)
 	_cyl(parent, at + Vector3(0, 1.15, 0), 0.35, 0.5, C_STONE)
 	_cyl(parent, at + Vector3(0, 0.62, 0), 1.0, 0.1, C_WATER, 0.0).material_override = _water_mat()  # 수면(애니 물)
+	_collide_cyl(parent, at + Vector3(0, 1, 0), 1.0, 2.0)
+
+# 보이지 않는 정적 원통 충돌체(분수·풍차 탑). 원통 가시물에 상자를 씌우면 대각선에 보이지 않는 벽이 남는다.
+func _collide_cyl(parent: Node, center: Vector3, radius: float, height: float) -> void:
 	var sb := StaticBody3D.new()
-	sb.position = at + Vector3(0, 1, 0)
+	sb.position = center
 	var cs := CollisionShape3D.new()
 	var sh := CylinderShape3D.new()
-	sh.radius = 1.0
-	sh.height = 2.0
+	sh.radius = radius
+	sh.height = height
 	cs.shape = sh
 	sb.add_child(cs)
 	parent.add_child(sb)
@@ -792,6 +803,7 @@ func _road(parent: Node, center: Vector3, size: Vector3, rot_deg: float) -> Mesh
 	rm.set_shader_parameter("edge_color", C_ROAD_E)  # 팔레트 단일 출처 = 셰이더 기본값에 안 맡긴다
 	rm.set_shader_parameter("half_ext", Vector2(size.x * 0.5, size.z * 0.5))
 	mi.material_override = rm
+	mi.add_to_group("road_shader")  # _apply_season이 겨울에 눈 덮인 길 톤으로 통째로 구동
 	return mi
 
 func _pavilion(parent: Node, base: Vector3) -> void:
@@ -1101,11 +1113,12 @@ func _windmill_hill(parent: Node) -> void:
 	var up := Vector3(0, cos(ramp_ang), sin(ramp_ang))  # rotation.x=ang 후의 로컬 +Y
 	var wedge_c := rc - up * 1.55  # 윗면이 옛 슬래브 윗면(rc + up*0.15)과 같은 평면에 오게
 	# 외곽선은 0 — 대부분 지면 아래인 상자에 외곽선 셸을 씌우면 셸이 잔디를 뚫고 나와 사면 양옆에
-	# 점선 두 줄이 그어진다(실측 after 1차). 쐐기는 흙 절개면 색으로 갈린다.
-	# 덧폭은 0.04(면당 0.02)까지만 — 0.06이면 사면 발치(윗면이 지면과 같은 높이인 구간)에서
-	# 절개면이 잔디 밖으로 0.03 삐져나와 길 양옆에 갈색 실선 두 줄이 그어진다(실측 after 3차).
-	var wedge_e := _box(parent, wedge_c - up * 0.06, Vector3(3.04, 3.4, ramp_len + 0.04), C_CUT, 0.0)
-	wedge_e.rotation.x = ramp_ang
+	# 점선 두 줄이 그어진다(실측 after 1차).
+	# 흙 절개면 셸(옛 C_CUT 덧상자)도 **뺐다**. 같은 증상의 다른 원인이었다 — 덧폭 0.04(면당
+	# 0.02)가 사면 길이 내내 잔디 밖으로 반 픽셀만 삐져나와 길 양옆에 **갈색 점선 두 줄**로
+	# 앨리어싱됐다(실측 audit2/windmill_h12·bridge_ne_h12). 0.06→0.04로 한 번 좁혔던 이력이
+	# 말해 주듯 값 조정으로는 못 고친다(실측: 2.90으로 좁히면 점선 소멸 = 셸이 아예 안 보임).
+	# 사면은 잔디 언덕이고, 언덕 실루엣은 대지 3단의 절개면과 하드엣지 흙길이 그린다.
 	var wedge := _box(parent, wedge_c, Vector3(3, 3.4, ramp_len), C_GRASS, 0.0)
 	wedge.rotation.x = ramp_ang
 	_ground_mat(wedge)
@@ -1114,24 +1127,51 @@ func _windmill_hill(parent: Node) -> void:
 	path.rotation.x = ramp_ang  # 절반만 쐐기에 묻혀 동일면 z-fighting이 없다
 	# ── 풍차: 사다리꼴 탑 + 원뿔 지붕(_clock_tower 문법) + 문 + 4팔 격자 날개.
 	#    옛 조립은 원통 + 보라 슬래브 + 각목 십자 2개라 "방앗간 간판"으로 읽혔다(실측).
-	# 탑 높이 3.7 = 상한이다. 고정 게임카메라의 접근 시점(v_windmill)에서 프레임 상단이 월드
-	# y≈8.2다(실측) — 4.2로 올렸더니 보라 원뿔 지붕이 통째로 프레임 밖으로 잘려 "지붕 없는
-	# 원통"이 됐다. 3.7이면 원뿔 꼭짓점 7.72·꼭대기 장식 7.86이 프레임 안에 들어온다.
+	# 탑 높이 3.7 = 상한이다. 고정 게임카메라의 접근 시점(v_windmill)에서 프레임이 위를 자른다.
+	# (옛 주석은 "3.7이면 원뿔 꼭짓점 7.72가 프레임 안"이라 적었지만, 지붕이 원경에서 컬링돼
+	#  아예 안 그려지던 탓에 검증이 안 된 값이었다 — 지붕을 되살려 보니 v_windmill에서 꼭짓점
+	#  근처가 여전히 잘린다. 프레임/카메라 조정은 별도 카드.)
 	var th := 3.7
-	var tower := _cyl(parent, Vector3(px, top + th * 0.5, pz), 1.35, th, C_WALL)
+	# 외곽선 0. 탑은 접근 시점(bridge_ne·windmill)에서 화면 폭 ~110px이라 셸 0.006이 반 픽셀,
+	# 0.014로 넓혀도 0.8 픽셀이다 — 어느 쪽이든 실루엣 좌우에 **점선 헤어라인**으로 앨리어싱된다
+	# (실측 audit2/bridge_ne_h12, after 1차). 이어지게 하려면 0.035+가 필요한데 그건 근접
+	# 시점에서 굵은 테두리가 된다. 램프 쐐기와 같은 판단 — 원통 실루엣은 셸을 빼는 쪽이 깨끗하다.
+	var tower := _cyl(parent, Vector3(px, top + th * 0.5, pz), 1.35, th, C_WALL, 0.0)
 	(tower.mesh as CylinderMesh).top_radius = 0.95  # 아래가 넓은 몸통 = 풍차의 기본 실루엣
-	_cyl(parent, Vector3(px, top + th + 0.16, pz), 1.5, 0.32, C_ROOF, 0.004)  # 보라 처마 링
+	# 탑 충돌체. 없으면 대지 위(상면 2.5)에 선 플레이어가 탑 안으로 걸어 들어가 몸이 반쯤 박힌다
+	# (실측 audit2/windmilltop_h12). 원통이라야 한다 — 상자면 밑동 반경(1.35)에 맞춘 반폭이
+	# 대각선에서 1.91까지 부풀어 보이지 않는 벽이 생긴다(분수와 같은 이유·같은 셰이프).
+	# ── WORLD_VERSION 범프 불필요: 세이브는 취침(실내 침대)·데이트·청혼·결혼식에서만 쓰이고,
+	#    뒤 셋은 주민 옆에서만 발생한다. 주민은 BUILDING_KEEPOUT의 (29,-24) r3.9 / (29,-18.5) r3.4로
+	#    풍차 대지·램프 전체가 배제돼 있어(npc_system) 애초에 언덕에 올라오지 않는다. 즉 구세이브의
+	#    플레이어 좌표가 이 충돌체 안일 수 없다 → 로드 폴백이 필요 없다(test_core 트립와이어 유지).
+	_collide_cyl(parent, Vector3(px, top + th * 0.5, pz), 1.35, th)
+	var ring := _cyl(parent, Vector3(px, top + th + 0.16, pz), 1.5, 0.32, C_ROOF, 0.004)  # 보라 처마 링
 	var cap := _cyl(parent, Vector3(px, top + th + 0.92, pz), 1.4, 1.2, C_ROOF)
 	(cap.mesh as CylinderMesh).top_radius = 0.0  # 원뿔 모자
-	_box(parent, Vector3(px, top + th + 1.66, pz), Vector3(0.34, 0.34, 0.34), C_ROOF2, 0.004)  # 마루 밝은면
+	var finial := _box(parent, Vector3(px, top + th + 1.66, pz), Vector3(0.34, 0.34, 0.34), C_ROOF2, 0.004)  # 마루 밝은면
+	# 지붕 3종만 컬링 여유를 준다. 곡률(v.y -= 0.006·z²)은 **정점 셰이더** 변위라 CPU 프러스텀
+	# 컬링이 쓰는 AABB에 안 들어간다 — 원경에서 원본 AABB가 화면 위로 벗어나면, 셰이더가
+	# 화면 안으로 끌어내렸을 조각도 그리기 전에 잘린다. 그래서 접근 시점(bridge_ne z≈21,
+	# 침하 ≈2.6)에서 풍차가 **지붕 없는 원통**으로 찍혔다(실측 audit2/bridge_ne_h12·windmill_h12
+	# — 이번 카드 전부터 있던 결함). 6.0은 z≈31까지 커버한다.
+	# 같은 함정이 다른 높은 물체에도 있다(회관 시계탑 등) — 전역 처방은 별도 카드.
+	for r in [ring, cap, finial]:
+		r.extra_cull_margin = 6.0
 	_box(parent, Vector3(px, top + 0.9, pz + 1.24), Vector3(0.8, 1.8, 0.16), C_WOOD, 0.004)    # 문(경사 쪽 남면)
 	# 날개는 마을(남서)을 향한 **남면**에 단다 — 옛 위치(pz−1.2)는 탑 뒤라 팔 끝만 삐죽 나왔다.
 	# 대(spar) 하나로는 판자로 읽힌다: 살 4줄 + 돛천 한 폭이 있어야 풍차 날개가 된다.
 	# 날개 원판면은 z=-21.7 = 대지 남면(-22)보다 **밖**이다. 옛 십자는 대지 한가운데(pz−1.2)에
 	# 최저점 y3.1로 걸려 있어 대지 위에 선 플레이어(발2.5·캡슐1.6)를 상시 관통했다 — 원판을
-	# 대지 밖으로 빼면 걸어다니는 면과 겹치지 않는다. (램프 최상단 0.8폭 구간만 팔 끝이 스친다.)
+	# 대지 밖으로 빼면 걸어다니는 면과 겹치지 않는다.
+	# 원판면(z=−21.7±0.07)과 탑 앞면(허브 높이에서 z≈−23.0)은 실제로는 1.26 떨어져 있다 —
+	# 관통이 아니라 **투영 겹침**이다. 앞으로 더 빼면 화면에서 오히려 더 크게 덮으므로(원근),
+	# 겹침 폭은 원판을 처마 위로 올려서 줄인다(아래 허브 높이).
+	# 허브 높이: 옛 top+th−0.2(=6.0)는 처마(6.2)보다 **아래**라 원판 위 절반까지 탑 몸통에 겹쳐
+	# "탑에 못박은 사다리"로 읽혔다. top+th(=6.2) = 처마 = 원판 위 절반이 통째로 하늘·모자 쪽으로
+	# 나온다. 더 올리면(+0.3) v_windmill 고정 프레임 위로 날개가 잘린다(실측 after 1차) — 상한이다.
 	_sails = Node3D.new()
-	_sails.position = Vector3(px, top + th - 0.2, pz + 2.3)
+	_sails.position = Vector3(px, top + th, pz + 2.3)
 	parent.add_child(_sails)
 	_cyl(_sails, Vector3(0, 0, -0.55), 0.3, 1.6, C_WOOD).rotation.x = PI * 0.5  # 풍축(탑까지 잇는다)
 	for i in 4:
@@ -1165,6 +1205,12 @@ func _apply_season(sea: int) -> void:
 		if m != null:
 			m.set_shader_parameter("albedo", ground_color(sea))
 			m.set_shader_parameter("pattern", ground_pattern(sea))
+	# _road()가 깔아 둔 road.gdshader들 (albedo·edge_color uniform 계약) = 마을 길 + 풍차 램프
+	for n in get_tree().get_nodes_in_group("road_shader"):
+		var rm := (n as MeshInstance3D).material_override as ShaderMaterial
+		if rm != null:
+			rm.set_shader_parameter("albedo", C_ROAD_W if sea == WINTER else C_ROAD)
+			rm.set_shader_parameter("edge_color", C_ROAD_WE if sea == WINTER else C_ROAD_E)
 	get_tree().call_group("decor", "apply_season", sea)
 
 # 마을 경계 숲 띠(|x| 또는 |z| ∈ [34,40])는 P3에서 실나무 GLB MultiMesh로 이관 — decor.gd _place_forest.

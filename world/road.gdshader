@@ -15,7 +15,12 @@ uniform vec4 edge_color : source_color = vec4(0.720, 0.673, 0.590, 1.0);  // 가
 uniform vec2 half_ext = vec2(1.2, 6.0);  // 길 박스 반크기(모델 xz). world.gd _road가 박스마다 설정.
 uniform float corner = 0.75;   // 끝단 모서리 라운딩 반경(m) — 반폭 1.2보다 작아야 한다
 uniform float erode = 0.45;    // 노이즈 침식 최대 깊이(m)
-uniform float fade = 0.55;     // 가장자리 색 스밈 폭(m)
+// 가장자리 색 스밈 폭(m). 흙길은 **하드엣지**여야 한다 — 0.55는 폭2.4 길의 반폭(1.2)에 육박해
+// 길 전체가 edge_color로 번진 에어브러시 얼룩이 됐다(실측 audit2/hall·windmill·open_res_h12).
+// 0.10이면 edge_color가 discard 경계에 붙은 얇은 림으로만 남아 플랫 2톤 툰과 붙는다.
+// 물결치는 윤곽은 fade가 아니라 erode(노이즈 침식 + 불투명 discard)가 만든다 — 그쪽은 불변.
+// 부드러워야 하는 판(해변 젖은 모래 띠)은 beach.gd가 이 uniform을 직접 올려 쓴다(0.35).
+uniform float fade = 0.10;
 uniform float curve_strength = 0.006;
 
 // toon.gdshader와 같은 수채 단조
