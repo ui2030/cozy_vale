@@ -448,7 +448,7 @@ const C_CHANNEL := Color(0.401, 0.572, 0.650)  # 침하 채널 바닥(강·연�
 const C_STONE := Color(0.770, 0.758, 0.735)  # 석재 회 — 다리/계단/분수
 const C_DRESSED := Color(0.700, 0.688, 0.667)  # 다듬돌(갓돌·이맛돌) — 같은 hue 한 단 아래
 # 그린 — decor.gd의 풀·덤불(수평면이라 0.72 이하로 묶는다). 풍차 언덕은 초지 셰이더로 옮겼다.
-const C_GREEN := Color(0.652, 0.710, 0.494)
+const C_GREEN := Color(0.552, 0.645, 0.508)  # 값 근거는 decor.gd 같은 상수 주석(노란 종이조각 풀)
 const C_WATER := Color(0.50, 0.72, 0.85)  # 물 — 강(연못과 통일). 승인 색 = 파스텔 시프트 예외.
 const C_WIST  := Color(0.720, 0.649, 0.790)  # 등나무 보라 — 퍼걸러
 # 지면(world.tscn Ground/GroundMesh) 계절색 = ground.gdshader의 albedo uniform을 구동한다.

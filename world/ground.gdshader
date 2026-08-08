@@ -1,4 +1,4 @@
-// 초지 바닥: 은은한 2톤 풀 패턴(둥근 체커 + 칸별 명도 변주). 텍스처 파일 0(절차 패턴).
+// 초지 바닥: 은은한 2톤 풀 패턴(비정렬 사인 합 = 유기적 얼룩). 텍스처 파일 0(절차 패턴).
 // plaza.gdshader와 같은 결 — 곡률 vertex + toon light()를 그대로 쓴다(빠뜨리면 바닥만 지평선에서 뜬다).
 //
 // 계약: base color는 uniform `albedo` — world.gd _apply_season의 ground_color()(초지/눈)가 구동한다.
@@ -21,16 +21,8 @@ uniform float shadow_level : hint_range(0.0, 1.0) = 0.55;
 uniform vec4 shadow_tint : source_color = vec4(0.78, 0.66, 0.72, 1.0);
 uniform float terminator_soft : hint_range(0.01, 0.4) = 0.18;
 
-const float PI_C = 3.14159265359;
-
 varying vec3 mpos;
 varying float vdist;  // 카메라까지 거리(뷰 공간) — 패턴 거리 페이드
-
-float hash2(vec2 p) {
-	p = fract(p * vec2(123.34, 345.45));
-	p += dot(p, p + 34.345);
-	return fract(p.x * p.y);
-}
 
 void vertex() {
 	mpos = VERTEX;
@@ -42,11 +34,15 @@ void vertex() {
 
 void fragment() {
 	vec2 c = mpos.xz / cell;
-	// sin·sin = 1칸 간격 체커. smoothstep으로 모서리를 둥글려 각진 격자가 안 보이게 한다.
-	float k = sin(c.x * PI_C) * sin(c.y * PI_C);
-	float t = smoothstep(-0.5, 0.5, k);
-	float h = hash2(floor(c));
-	float d = pattern * (shade_depth * (1.0 - t) + mottle * h)
+	// 옛 sin(x)·sin(z) 체커는 축이 월드 xz에 정렬돼 있어 둥글려도 정사각 타일로 읽혔고(임시 그리드),
+	// 칸별 hash(mottle)가 그 격자를 한 번 더 그렸다. 대신 각도·주기가 서로 안 맞는 사인 3겹을 더한다
+	// — 합의 주기가 화면 밖으로 밀려나 유기적 얼룩이 된다. 격자 hash 없음 = 모래에서도 셀 경계 0.
+	float w = sin(c.x * 2.9 + c.y * 1.1)
+		+ 0.80 * sin(c.x * -1.6 + c.y * 3.3)
+		+ 0.55 * sin((c.x + c.y) * 1.9 + 2.1);
+	float t = smoothstep(-1.2, 1.2, w);
+	float fine = 0.5 + 0.5 * sin(c.x * 6.1 - c.y * 4.7);  // mottle = 더 잔 결(모래는 0이라 무영향)
+	float d = pattern * (shade_depth * (1.0 - t) + mottle * fine)
 		* (1.0 - smoothstep(fade_dist.x, fade_dist.y, vdist));
 	ALBEDO = albedo.rgb * (1.0 - d);
 	ROUGHNESS = 1.0;
