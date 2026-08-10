@@ -38,10 +38,7 @@ func _bridge_mat(uv_shift := 0.0) -> ShaderMaterial:
 	var m := ShaderMaterial.new()
 	m.shader = BRIDGE_SHADER
 	m.set_shader_parameter("uv_shift", Vector2(uv_shift, 0.0))  # 휜 데크 세그먼트의 벽돌 켜 이어붙이기
-	var o := ShaderMaterial.new()
-	o.shader = ToonChar.OUTLINE
-	o.set_shader_parameter("width", 0.004)
-	m.next_pass = o
+	m.next_pass = ToonChar.outline_mat(0.004)  # 전역 스위치(ToonChar.OUTLINE_ON)를 함께 탄다
 	return m
 
 func _ready() -> void:
@@ -354,11 +351,7 @@ func _ground_shader() -> void:
 func _ground_mat(mi: MeshInstance3D, outline := 0.0) -> void:
 	var m := ShaderMaterial.new()
 	m.shader = GROUND_SHADER
-	if outline > 0.0:
-		var o := ShaderMaterial.new()
-		o.shader = ToonChar.OUTLINE
-		o.set_shader_parameter("width", outline)
-		m.next_pass = o
+	m.next_pass = ToonChar.outline_mat(outline)  # 전역 스위치(ToonChar.OUTLINE_ON)를 함께 탄다
 	mi.material_override = m
 	mi.add_to_group("ground_shader")
 

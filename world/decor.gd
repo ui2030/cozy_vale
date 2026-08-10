@@ -55,6 +55,11 @@ const C_LAV    := Color(0.656, 0.572, 0.740)  # 라벤더/보라 중
 const C_LILAC  := Color(0.840, 0.758, 0.840)  # 라일락
 const C_WIST   := Color(0.720, 0.649, 0.790)  # 등나무 보라
 const C_GLASS  := Color(1.00, 0.90, 0.62)  # 가로등 유리(옐로 창불빛)
+# ── 겨울 서리 톤 기준값 ────────────────────────────────────────────
+# 식생이 킷 텍스처로 바뀌면서 이 두 색을 **직접 칠하지는 않는다**(단색으로 덮으면 겨울에만 다시
+# 통짜가 된다). 대신 FLORA_WINTER_* / TREE_WINTER_GAIN을 **이 두 톤의 화면값에 맞춰 튜닝**했다 —
+# 즉 여전히 겨울 룩의 기준점이고, 둘 사이 서열은 test_core가 박아둔다. C_FROST는 에셋 누락 폴백에도 쓴다.
+#
 # 서리 앉은 마른 풀. 눈 지면(world.gd C_SNOW 0.66~0.71)보다 확실히 아래여야 실루엣이 읽힌다 —
 # 비슷한 값으로 두면 흰 바탕에 흰 낙서가 되어 풀포기가 사라진다(실측).
 # 옛 (0.48,0.54,0.56)은 B>R인 청록이라 얇은 판 지오메트리가 "유리조각"으로 읽혔다(실측
@@ -112,15 +117,56 @@ const NPC_HOMES := [  # data/npcs.json home 9곳
 const ANCHOR_KEEP := 3.6    # ANCHOR_R_MAX 3.0 + 여유
 const HOME_KEEP := 4.5      # 집 앞 정지·배회 중심
 const PLAZA_R := 6.4        # 광장 판석 위엔 식생 금지(판석이 보여야 한다)
-# 종별 배율 [최소, 최대] — 원본 높이가 제각각이라 한 배율로 묶으면 풀포기가 갈대가 된다(실측).
+# ── 식생 = Tiny Treats Pretty Park 킷 모델 (CC0) ─────────────────────
+# 절차 메시(blob_mesh 수관·BUSH_BLOB 덤불·_rosette 꽃)를 전부 버렸다. 유저 판정:
+# "너무 통짜야. 난 디테일을 원해" — 절차 폐곡면은 단색 덩어리 하나라 어느 각도에서도 실루엣이
+# 하나뿐이고, 킷 모델은 잎·꽃잎·꽃심·수피가 아틀라스에 구워져 있어 근경에서 형태가 갈린다
+# (참고 이미지: 동물의 숲 꽃밭 — 종류별로 꽃잎·중심부가 뚜렷이 구분된다).
+#
+# 종별 배율 [최소, 최대]. 원본 전고가 제각각이라 한 배율로 묶으면 풀포기가 갈대가 된다.
+# 근거는 전부 **옛 절차 전고 대역을 그대로 계승**한 값 — 배치 밀도·금지 존이 그 크기 전제로
+# 승인돼 있어서 크기를 바꾸면 화단이 통째로 다시 튜닝 대상이 된다.
+# 꽃만 예외다: 킷 꽃은 줄기 위 한 송이가 아니라 **납작하고 넓은 지피 꽃**(native 0.45폭 × 0.14고)이라
+# 옛 전고(0.46~0.65)를 맞추면 폭이 1.5m짜리 괴물이 된다. 그래서 전고가 아니라 34° 카메라의
+# **투영 면적**을 맞춘다: 옛 꽃 0.30폭×0.55고의 투영이 ≈0.17㎡ = 킷 배율 1.0 지점.
 const FLORA_SCALE := {
-	# 꽃·덤불은 절차 메시(flower_mesh·BUSH_BLOB)로 갈아탔지만 전고를 킷 원본 대역에 맞춰 만들었으므로
-	# 이 배율표는 그대로다 — 배율은 외곽선 두께(오브젝트 공간)에도 곱해지니 함부로 못 바꾼다.
-	"flower_yellowA": Vector2(2.4, 3.4),   # 전고 0.19 → 0.46~0.65
-	"flower_purpleA": Vector2(2.4, 3.4),   # 전고 0.19 → 0.46~0.65
-	"plant_bushSmall": Vector2(2.0, 3.0),  # 전고 0.19 → 0.38~0.57
-	"grass": Vector2(1.3, 2.0),            # 원본 0.25 → 0.33~0.50 (꽃보다 낮게)
+	# 꽃 배율은 두 번 실측했다. 1차(1.20~1.70 / 1.35~1.90 = 투영 면적 등가)는 근경에선 좋았지만
+	# 광장 화단 링 거리(카메라 ~20)에서 흰 점으로 흩어져 "꽃밭"이 안 읽혔다(after_life_h12) —
+	# 납작한 지피 꽃은 거리가 붙으면 투영 높이가 먼저 죽는다. 그래서 한 단 더 키운 값이 아래다.
+	"flower_A":   Vector2(1.55, 2.15),  # native 0.138고/0.45폭 → 0.21~0.30고 · 0.70~0.97폭 (데이지+노란 꽃심)
+	"flower_B":   Vector2(1.75, 2.45),  # native 0.111고/0.31폭 → 0.19~0.27고 · 0.55~0.76폭 (푸른 꽃)
+	"bush":       Vector2(0.75, 1.10),  # native 0.538 → 0.40~0.59 (옛 덤불 0.38~0.57)
+	"bush_large": Vector2(0.55, 0.80),  # native 0.759 → 0.42~0.61
+	"grass_A":    Vector2(0.85, 1.25),  # native 0.402 → 0.34~0.50 (옛 풀 0.33~0.50)
+	"grass_B":    Vector2(0.90, 1.35),  # native 0.406 → 0.37~0.55
 }
+# 킷 식생 아틀라스는 마을 파스텔보다 훨씬 어둡다 — 수관 화면 실측 (72,128,76) vs 옛 절차 수관
+# (195,212,169). 218그루를 그대로 심으면 파스텔 마을에 진초록 숲이 붙여넣기 된 것처럼 읽힌다.
+# toon 셰이더 val_gain(순수 곱, hue·비율 보존)으로 마을 대역까지 끌어올린다. 값은 실측 튜닝.
+const VEG_GAIN := 1.85
+# 종별 색조 곱(없으면 KIT_TINT). 파크 킷 꽃은 **흰 데이지(flower_A)와 푸른 꽃(flower_B) 두 색뿐**이라
+# 그대로 심으면 마을 화단의 노랑(C_YELLOW)이 통째로 사라진다 — 중경이 눈에 띄게 비어 보였다
+# (실측 before/after_life_h12 대조: 옛 노랑·보라 점들이 흰 티끌로 바뀜).
+# 흰 꽃잎은 **곱으로 색을 입힐 수 있다**: KIT_TINT × (C_YELLOW를 최대 채널로 정규화한 비율)
+# = (0.760, 0.662, 0.354). 밝기 천장(KIT_TINT가 잡아둔 정오 클리핑 상한)은 그대로 두고 색상만 준다.
+# 다만 **끝까지 주면 안 된다**: flower_A는 흰 꽃잎 + 노란 꽃심이라, 완전 노랑을 곱하면 둘이 같은
+# 색으로 붙어 꽃심이 사라지고 노란 덩어리가 된다(실측 근접 크롭) — 유저가 원한 "꽃잎·중심부 구분"의
+# 정반대다. KIT_TINT에서 완전 노랑 쪽으로 0.70만 간다 = 꽃잎은 버터색, 꽃심은 한 단 진한 호박색.
+# 푸른 꽃은 곱으로 보라가 못 된다(R 텍셀 자체가 없다) → 원색 유지 = 연못·하늘과 같은 계열의 시원한 악센트.
+const FLORA_TINT := {"flower_A": Color(0.760, 0.688, 0.464)}
+# ── 겨울 서리 (텍스처를 죽이지 않고 채도만 지우고 밝기를 올린다 = 잎 결이 남은 "얹힌 눈") ──
+# 옛 방식(albedo를 C_FROST/C_FROST_LEAF 단색으로 교체)을 그대로 쓰면 겨울에만 다시 통짜가 된다.
+# **나무와 지피 식생은 밝기 목표가 반대다** — 옛 두 상수(C_FROST_LEAF vs C_FROST)가 갈려 있던 이유:
+#   수관은 크림 하늘을 배경으로 서 있어 밝아야 눈 덮인 나무로 읽힌다(어두우면 바위 덩어리).
+#   풀포기는 흰 눈 지면 위에 놓여 **확실히 어두워야** 실루엣이 남는다(비슷하면 흰 바탕의 흰 낙서).
+# 1차 실측에서 둘을 같은 값(2.6)으로 묶었더니 정확히 그 실패가 났다: 서리 풀 화면 (209,198,189)이
+# 설원 (213,215,220)에 붙어 중경이 통째로 비었다 — 옛 값은 (166,164,133)이었다.
+const VEG_WINTER_SAT := 0.06
+const TREE_WINTER_GAIN := 2.35   # 수관 목표 = 옛 C_FROST_LEAF 화면값 (236,239,244)
+const FLORA_WINTER_GAIN := 2.15  # 지피 목표 = 옛 C_FROST 화면값 (166,164,133) 대역
+# 서리 풀은 청록이 아니라 **마른 풀**이어야 한다(옛 C_FROST 주석: B>R 청록은 "유리조각"으로 읽혔다).
+# KIT_TINT × C_FROST를 최대 채널로 정규화한 비율 = 명도 천장은 그대로, 색상만 R>G>B로 돌린다.
+const FLORA_WINTER_TINT := Color(0.760, 0.711, 0.608)
 const WALK_HALF := 33.0     # 초지 스프링클 범위(숲 띠 안쪽)
 
 # ── 소품 배치표 [종류, x, z, yaw(도)] ────────────────────────────────
@@ -192,6 +238,8 @@ const ALL_LAYERS := 0xFFFFF
 var _cache := {}                       # glb 이름 → 원본 노드(반복 로드 방지)
 var _lights: Array[OmniLight3D] = []
 var _glow: ShaderMaterial              # 가로등 유리 발광 판 공용 머티리얼 (_glow_mat)
+var _frost: ShaderMaterial             # 겨울 식생 서리 override 공용 머티리얼 (_frost_mat)
+var _atlas: Texture2D                  # 파크 킷 아틀라스 — 전 식생이 공유(서리 머티리얼이 재사용)
 var _blooms: Array[Node3D] = []        # 겨울에 숨길 만개 노드(화분·꽃수레 꽃, 등나무 드레이프 루트)
 var _tree_mesh := {}                   # 활엽수 MMI 이름 → [원색 Mesh, 겨울 수관 서리 Mesh]
 var _flora_cache := {}                 # 식생 종 이름 → Mesh (MultiMesh·화분 꽃 공용)
@@ -241,44 +289,46 @@ func _glb(nm: String) -> Node3D:
 # 텍스처 킷 로드 (전체 res:// 경로 + 배율 확정). world.gd 분수도 이걸 쓴다 = 킷 규약 단일 출처.
 # 외곽선 두께는 오브젝트 공간이라 배율로 나눠 넣어야 월드에서 굵기가 일정하다
 # (ToonChar.set_outline_width 주석의 규약 — 기존 _glb는 이 보정이 없어 sign이 ×3.6만큼 굵었다).
-static func load_kit(path: String, sc: float, outline := OUTLINE) -> Node3D:
+static func load_kit(path: String, sc: float, outline := OUTLINE, gain := 1.0) -> Node3D:
 	var n := ToonChar.load_glb(path, outline / sc, KIT_TINT)
 	if n == null:
 		return null  # 에셋 누락(vendor는 gitignore) 폴백: 그 자리만 빈다
-	_grade_kit(n)
+	_grade_kit(n, gain)
 	n.scale = Vector3.ONE * sc
 	return n
 
 # 채도 상한을 **텍스처 표면에만** 건다. use_tex는 ToonChar.apply가 원본에 albedo_texture가
 # 있을 때만 켜므로 그 자체가 "구운 아틀라스냐" 판정이다 — 단색 표면(마을 팔레트로 지정한
 # 색이거나 _glb 경로에서 _repaint가 칠한 색)까지 당기면 팔레트값이 흔들린다.
-static func _grade_kit(node: Node) -> void:
+# gain은 같은 판정(구운 아틀라스냐)에 얹는 밝기 곱 — 식생 킷만 1.0을 넘겨 쓴다(VEG_GAIN 주석).
+static func _grade_kit(node: Node, gain := 1.0) -> void:
 	if node is MeshInstance3D:
 		var mi := node as MeshInstance3D
 		for i in mi.get_surface_override_material_count():
 			var m := mi.get_surface_override_material(i) as ShaderMaterial
 			if m != null and m.get_shader_parameter("use_tex"):
 				m.set_shader_parameter("sat_cap", KIT_SAT_CAP)
+				m.set_shader_parameter("val_gain", gain)
 	for c in node.get_children():
-		_grade_kit(c)
+		_grade_kit(c, gain)
 
-func _kit(path: String, sc: float) -> Node3D:
+func _kit(path: String, sc: float, gain := 1.0) -> Node3D:
 	if not _cache.has(path):
-		var n := load_kit(path, sc)
+		var n := load_kit(path, sc, OUTLINE, gain)
 		if n == null:
 			return null
 		_strip_collision(n)  # 데코 무충돌 계약 (_audit이 런타임에 증명한다)
 		_cache[path] = n
 	return (_cache[path] as Node3D).duplicate() as Node3D
 
-# MultiMesh용 Mesh: 인스턴스별 surface override가 없으므로 머티리얼을 Mesh에 박는다.
-# 캐시를 우회해 새로 로드 = 개별 노드가 쓰는 Mesh 리소스를 공유 변형하지 않는다(Codex MUST-FIX).
-# swap = 팔레트 위에 덧씌울 {킷 머티리얼 이름: 색} — 계절 사본(겨울 수관)을 별도 Mesh로 뽑는 데 쓴다.
-func _mm_mesh(nm: String, swap := {}) -> Mesh:
-	var n := ToonChar.load_glb(DIR + nm + ".glb", OUTLINE)
+# MultiMesh용 킷 Mesh: 인스턴스별 surface override가 없으므로 머티리얼을 Mesh에 박는다.
+# 캐시를 우회해 매번 새로 로드한다 = 개별 노드(화분·꽃수레 꽃)가 쓰는 Mesh 리소스를 공유
+# 변형하지 않는다(Codex MUST-FIX). 겨울 사본도 이 함수로 따로 뽑는다(sat/gain만 다른 별개 Mesh).
+# 배율은 인스턴스 transform이 지므로 여기선 항상 native(1.0)로 굽는다.
+func _kit_mesh(nm: String, gain := VEG_GAIN, sat := KIT_SAT_CAP) -> Mesh:
+	var n := load_kit(TT_PARK + nm + ".gltf", 1.0, 0.0, gain)
 	if n == null:
 		return null
-	_repaint(n, swap)
 	var mi := _first_mesh(n)
 	if mi == null:
 		n.free()
@@ -288,7 +338,14 @@ func _mm_mesh(nm: String, swap := {}) -> Mesh:
 		n.free()
 		return null
 	for i in mesh.get_surface_count():
-		mesh.surface_set_material(i, mi.get_surface_override_material(i))
+		var m := mi.get_surface_override_material(i) as ShaderMaterial
+		if m != null:
+			m.set_shader_parameter("sat_cap", sat)  # 겨울 사본은 여기만 다르다
+			if FLORA_TINT.has(nm) and sat >= KIT_SAT_CAP:  # 겨울 서리 사본엔 종별 색조를 안 입힌다
+				m.set_shader_parameter("char_tint", FLORA_TINT[nm])
+			if _atlas == null:
+				_atlas = m.get_shader_parameter("albedo_tex")  # 서리 override가 재사용
+		mesh.surface_set_material(i, m)
 	n.free()  # Mesh는 RefCounted라 여기 참조로 살아 있다
 	return mesh
 
@@ -417,22 +474,34 @@ func _place_props() -> void:
 			"cart": _cart(n)
 		_n_props += 1
 
-# 가로등: 석재 받침 + 목재 기둥 + 크림 등갓 + 보라 갓지붕. 밤에만 켜지는 OmniLight 1개.
+# 가로등 — Tiny Treats Pretty Park (CC0). 옛 절차 스택(석재 받침 + 목재 기둥 + 크림 유리 박스 +
+# 보라 갓지붕 = 프리미티브 4개)을 대체한다. 원본 전고 4.30, 원점 = 지면(밑동 −0.20 스커트는 땅에 잠긴다).
+# **전고가 아니라 등 머리 높이를 옛 값에 맞춘다**: 광원 파라미터(LAMP_E·RANGE·ATT)가 등 발치
+# 웅덩이를 y3.0 기준으로 실측 튜닝한 값이라, 머리를 옛 자리에서 크게 옮기면 그 튜닝이 통째로 무효다.
+# 정점 Y 실측(391정점 히스토그램): 기둥 −0.20~3.00 → 유리 3.05~3.30(반경 0.43) → 갓지붕 3.30~3.99
+# → 첨두 4.30. 유리 중심 native 3.17 × 0.90 = 2.85 (옛 3.02에서 −0.17 = 발치 광량 +7%, 무시 가능).
+const LAMP_S := 0.90
+const LAMP_HEAD_Y := 2.85   # 3.17(native 유리 중심) × LAMP_S — 발광 셸·광원이 공유하는 단일 값
+# 킷 등주는 아틀라스가 어두운 금속이라 그대로 심으면 파스텔 마을에서 **화면에서 제일 어두운 물체**가
+# 되어 광장 컷의 시선을 통째로 가져간다(실측 after_life_h12: 등 4기가 프레임을 지배). 식생과 같은
+# 레버로 마을 대역까지만 올린다(식생 1.85보다 낮은 1.40 = 석재·금속으로는 읽히되 검게 뜨지 않는 선).
+const LAMP_GAIN := 1.40
 func _lamp(p: Node3D) -> void:
-	for m in [_cyl(p, Vector3(0, 0.12, 0), 0.26, 0.24, C_STONE),
-			_cyl(p, Vector3(0, 1.5, 0), 0.09, 2.6, C_WOOD, 0.004),
-			_box(p, Vector3(0, 3.02, 0), Vector3(0.42, 0.5, 0.42), C_GLASS, 0.004),
-			_box(p, Vector3(0, 3.34, 0), Vector3(0.56, 0.14, 0.56), C_ROOF, 0.004)]:
-		m.layers = LAMP_LAYER  # 아래 light_cull_mask와 짝 — 등불이 제 등갓을 태우지 않게
-	# 등갓을 광원에서 뺐으니 유리는 스스로 빛나야 한다: 유리 박스를 0.02 감싸는 발광 판
+	var n := _kit(TT_PARK + "street_lantern.gltf", LAMP_S, LAMP_GAIN)
+	if n != null:
+		p.add_child(n)
+		_set_layers(n, LAMP_LAYER)  # 아래 light_cull_mask와 짝 — 등불이 제 등갓을 태우지 않게
+	# 등갓을 광원에서 뺐으니 유리는 스스로 빛나야 한다: 등 머리를 감싸는 발광 셸
 	# (world/window.gdshader = 창불빛과 같은 unshaded + 곡률). 낮엔 glow 0 = 완전 투명이라
-	# 툰 유리(C_GLASS)가 그대로 보인다 = 낮 룩 무변경.
-	var g := _box(p, Vector3(0, 3.02, 0), Vector3(0.46, 0.54, 0.46), C_GLASS, 0.0)
+	# 킷 등갓이 그대로 보인다 = 낮 룩 무변경.
+	# 옛 유리가 정육면체라 박스로 감쌌지만 킷 등갓은 8각기둥(native 반경 0.43 → 0.39)이다 —
+	# 박스로 감싸면 네 모서리가 빛나는 쐐기로 삐져나온다. 원통으로 감싼다(0.41 = 0.39 + 여유).
+	var g := _cyl(p, Vector3(0, LAMP_HEAD_Y, 0), 0.41, 0.36, C_GLASS, 0.0)
 	g.material_override = _glow_mat()
 	g.layers = LAMP_LAYER
 	g.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	var o := OmniLight3D.new()
-	o.position = Vector3(0, 3.0, 0)
+	o.position = Vector3(0, LAMP_HEAD_Y, 0)
 	o.light_color = Color(1.0, 0.86, 0.62)
 	o.omni_range = LAMP_RANGE
 	o.omni_attenuation = LAMP_ATT
@@ -440,6 +509,13 @@ func _lamp(p: Node3D) -> void:
 	o.light_energy = 0.0
 	p.add_child(o)
 	_lights.append(o)
+
+# 킷 노드 트리 전체를 한 렌더 레이어로 (가로등 전용 — 등불 cull_mask에서 통째로 빼기 위함).
+func _set_layers(node: Node, layers: int) -> void:
+	if node is VisualInstance3D:
+		(node as VisualInstance3D).layers = layers
+	for c in node.get_children():
+		_set_layers(c, layers)
 
 # 등 유리 발광 머티리얼 1장을 전 가로등이 공유 = 프레임당 파라미터 쓰기 1회.
 func _glow_mat() -> ShaderMaterial:
@@ -473,12 +549,15 @@ func _sign(p: Node3D) -> void:
 func _planter(p: Node3D) -> void:
 	_box(p, Vector3(0, 0.26, 0), Vector3(0.88, 0.52, 0.88), C_WOOD, 0.004)
 	_box(p, Vector3(0, 0.54, 0), Vector3(0.7, 0.06, 0.7), C_WOOD_D, 0.0)
-	var kinds := ["flower_yellowA", "flower_purpleA", "flower_yellowA"]
+	# 킷 꽃은 줄기 위 한 송이가 아니라 납작하고 넓은 지피 꽃이라(native 0.45폭 × 0.14고) 옛 배율
+	# 2.6을 그대로 쓰면 폭 1.17이 되어 0.88 화분을 통째로 덮는다. 폭 기준으로 다시 잡는다:
+	# 0.78 → 폭 0.35 · 고 0.11. 3송이가 반경 0.18에서 살짝 겹쳐 화분 하나를 채운 무더기가 된다.
+	var kinds := ["flower_A", "flower_B", "flower_A"]
 	for i in 3:
 		var f := _flower_node(kinds[i])
 		var a := TAU * i / 3.0
-		f.position = Vector3(cos(a) * 0.2, 0.56, sin(a) * 0.2)
-		f.scale = Vector3.ONE * 2.6
+		f.position = Vector3(cos(a) * 0.18, 0.56, sin(a) * 0.18)
+		f.scale = Vector3.ONE * 0.78
 		f.rotation.y = a
 		p.add_child(f)
 		_blooms.append(f)  # 겨울엔 빈 화분만 남는다
@@ -492,9 +571,9 @@ func _cart(p: Node3D) -> void:
 		var w := _cyl(p, Vector3(0, 0.38, 0.5 * s), 0.36, 0.1, C_WOOD_D, 0.004)
 		w.rotation.x = PI * 0.5
 	for i in 5:
-		var f := _flower_node("flower_yellowA" if i % 2 == 0 else "flower_purpleA")
+		var f := _flower_node("flower_A" if i % 2 == 0 else "flower_B")
 		f.position = Vector3(-0.5 + i * 0.25, 0.94, (i % 2) * 0.3 - 0.15)
-		f.scale = Vector3.ONE * 2.8
+		f.scale = Vector3.ONE * 0.85  # 화분과 같은 이유 — 폭 0.38짜리가 0.25 간격으로 겹쳐 무더기가 된다
 		f.rotation.y = i * 1.1
 		p.add_child(f)
 		_blooms.append(f)  # 겨울엔 빈 수레만 남는다
@@ -528,7 +607,9 @@ func _place_fences() -> void:
 func _place_flora() -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 20260731
-	var buckets := {"flower_yellowA": [], "flower_purpleA": [], "plant_bushSmall": [], "grass": []}
+	# 버킷 = 킷 모델 1종 = MultiMesh 1개 = 드로우콜 1. 옛 4종에서 6종으로 늘렸다(덤불·풀에 큰
+	# 변종 추가) — 같은 모델이 반복되는 게 "통짜"로 읽히던 원인의 절반이라, 드로우콜 +2로 산다.
+	var buckets := {"flower_A": [], "flower_B": [], "bush": [], "bush_large": [], "grass_A": [], "grass_B": []}
 
 	# ① 길가 띠 — 길 중심선에서 2.3~4.2 벗어난 양쪽
 	for r in _roads:
@@ -542,14 +623,14 @@ func _place_flora() -> void:
 				if rng.randf() < 0.28:
 					continue
 				var c: Vector2 = a + dir * ((k + rng.randf()) * 2.6) + perp * (s * rng.randf_range(2.3, 4.2))
-				_add_flora(buckets, c, rng, ["flower_yellowA", "flower_yellowA", "flower_purpleA", "flower_purpleA", "plant_bushSmall", "grass"])
+				_add_flora(buckets, c, rng, ["flower_A", "flower_A", "flower_B", "flower_B", "bush", "grass_A"])
 
 	# ② 광장 둘레 화단 — 판석 바깥 링(방사길 사이 구간만 남는다)
 	for _i in 220:
 		var ang := rng.randf() * TAU
 		var rad := rng.randf_range(6.6, 9.6)
 		_add_flora(buckets, Vector2(cos(ang), sin(ang)) * rad, rng,
-			["flower_yellowA", "flower_purpleA", "flower_purpleA", "plant_bushSmall"])
+			["flower_A", "flower_B", "flower_B", "bush"])
 
 	# ③ 강변 양안 — 물폭3 + 강둑 바깥
 	for i in _river.size() - 1:
@@ -563,12 +644,12 @@ func _place_flora() -> void:
 				if rng.randf() < 0.30:
 					continue
 				var c: Vector2 = a + dir * ((k + rng.randf()) * 3.0) + perp * (s * rng.randf_range(3.2, 5.2))
-				_add_flora(buckets, c, rng, ["flower_purpleA", "flower_purpleA", "flower_yellowA", "grass", "plant_bushSmall"])
+				_add_flora(buckets, c, rng, ["flower_B", "flower_B", "flower_A", "grass_B", "bush_large"])
 
 	# ④ 초지 스프링클 — 풀포기·덤불만 옅게(꽃은 위 세 존에서만)
 	for _i in 190:
 		var c := Vector2(rng.randf_range(-WALK_HALF, WALK_HALF), rng.randf_range(-WALK_HALF, WALK_HALF))
-		_add_flora(buckets, c, rng, ["grass", "grass", "grass", "plant_bushSmall"])
+		_add_flora(buckets, c, rng, ["grass_A", "grass_B", "grass_A", "bush_large"])
 
 	for nm in buckets:
 		if (buckets[nm] as Array).is_empty():
@@ -596,11 +677,12 @@ func _add_flora(buckets: Dictionary, at: Vector2, rng: RandomNumberGenerator, ki
 # 꽃(개나리·라벤더)은 겨울에 숨긴다: 눈 지면 위에 만개한 꽃이 계절 감각을 통째로 깬다.
 # 풀·덤불은 숨기는 대신 서리톤으로 남긴다 — 통째로 지우면 마을이 민짜 눈판이 되고
 # 길가 띠·광장 화단 링·강변의 밀도와 실루엣이 같이 사라진다(꽃만 빼도 계절은 읽힌다).
-# 침엽수는 겨울에도 초록 — 눈 마을의 실루엣을 지고 있는 건 이쪽이다. 활엽수는 수관만 서리톤으로
-# 내린다(줄기는 원색): 겨울 설원에 초록 수관이 떠 있으면 계절이 통째로 안 읽힌다(실측).
+# 나무는 킷 교체로 전부 활엽이 됐다(Tiny Treats 파크 킷에 침엽수가 없다) → 겨울엔 전 그루가
+# 서리톤이다. 옛 규약("침엽수는 겨울에도 초록으로 실루엣을 진다")은 이제 해변 해송만 진다.
+# 겨울에 초록 나무가 남는 실패 모드 쪽이 더 위험하므로(계절이 통째로 안 읽힌다) 전면 서리가 안전한 방향.
 const WINTER := 3
-const FLORA_HIDE_WINTER := ["Flora_flower_yellowA", "Flora_flower_purpleA"]
-const DECIDUOUS := ["Forest_blob_wide", "Forest_blob_round"]  # 절차 블롭 나무 중 활엽 버킷
+const FLORA_HIDE_WINTER := ["Flora_flower_A", "Flora_flower_B"]
+const DECIDUOUS := ["Forest_tree", "Forest_tree_large"]
 
 static func flora_visible(nm: String, season: int) -> bool:
 	return not (season == WINTER and nm in FLORA_HIDE_WINTER)
@@ -631,32 +713,38 @@ func apply_season(sea: int) -> void:
 			continue
 		mmi.visible = flora_visible(nm, sea)
 		# 색은 MultiMeshInstance3D의 material_override로만 바꾼다. MultiMesh의 Mesh 표면
-		# 머티리얼을 고쳐 쓰면 같은 GLB를 쓰는 개별 소품(화분 꽃·꽃수레)과 리소스를 공유할
+		# 머티리얼을 고쳐 쓰면 같은 킷을 쓰는 개별 소품(화분 꽃·꽃수레)과 리소스를 공유할
 		# 위험 + 원색 복구용 백업 보관까지 딸려온다. override는 null로 지우면 원색이 돌아온다.
-		mmi.material_override = ToonChar.make_solid(C_FROST, OUTLINE) if flora_frosted(nm, sea) else null
+		mmi.material_override = _frost_mat() if flora_frosted(nm, sea) else null
 	for b in _blooms:
 		b.visible = bloom_visible(sea)
 
-# ══ 절차 블롭 나무 ═════════════════════════════════════════════════
-# 각진 로우폴리 수관 대신 둥근 뭉게 수관. 겹친 구 여러 개가 아니라 **로브로 부풀린 단일 폐곡면** —
-# 구를 겹치면 inverted-hull 외곽선이 교차 곡선을 따라 내부 헤일로를 그린다(Codex MUST-FIX 5).
-# 줄기는 별도 표면(별도 색)이지만 수관 안에 완전히 잠겨 있어 헐이 밖으로 새지 않는다.
+# 겨울 식생 서리 머티리얼 1장을 전 식생 버킷이 공유한다 — 파크 킷은 종이 달라도 **같은 아틀라스**를
+# 쓰므로 override 한 장으로 전부 덮인다. 옛 단색(make_solid(C_FROST))을 쓰면 겨울에만 다시
+# 통짜가 되므로 텍스처는 살리고 채도만 지운 뒤 밝기를 올린다 = 잎 결이 남은 "서리 앉은 풀".
+func _frost_mat() -> ShaderMaterial:
+	if _frost == null:
+		_frost = ShaderMaterial.new()
+		_frost.shader = ToonChar.TOON
+		_frost.set_shader_parameter("char_tint", FLORA_WINTER_TINT)
+		_frost.set_shader_parameter("sat_cap", VEG_WINTER_SAT)
+		_frost.set_shader_parameter("val_gain", FLORA_WINTER_GAIN)
+		if _atlas != null:
+			_frost.set_shader_parameter("use_tex", true)
+			_frost.set_shader_parameter("albedo_tex", _atlas)
+		else:
+			_frost.set_shader_parameter("albedo", C_FROST)  # 에셋 누락 폴백
+	return _frost
+
+# ══ 절차 블롭 나무 (해변 해송 전용으로 축소) ══════════════════════════
+# 마을 나무 218그루는 킷 모델로 전면 교체했다(_place_forest). 여기 남은 건 **해변 해송 한 종뿐**이다
+# — 파크 킷에 침엽수가 없어서 beach.gd가 계속 이 문법을 쓴다. 마을에서 안 쓰는 활엽 블롭 2종과
+# cone_tall은 지웠다(죽은 코드).
 # 파라미터 [수관 반경, 수관 y중심, y스쿼시, 상단 테이퍼(1=구/0.25=침엽), 줄기 반경, 줄기 높이, 로브 세기]
 const BLOB_KINDS := {
-	"blob_wide":  [0.44, 0.62, 0.72, 0.92, 0.085, 0.38, 0.22],  # 낮고 넓은 활엽 (동숲 비율)
-	"blob_round": [0.36, 0.78, 0.94, 0.86, 0.070, 0.50, 0.26],  # 동글동글한 활엽
-	"cone_tall":  [0.38, 0.74, 1.50, 0.30, 0.078, 0.28, 0.15],  # 부드러운 원뿔 침엽
-	"cone_slim":  [0.32, 0.66, 1.70, 0.24, 0.066, 0.24, 0.13],  # 가는 침엽
+	"cone_slim":  [0.32, 0.66, 1.70, 0.24, 0.066, 0.24, 0.13],  # 가는 침엽 — beach.gd 해송
 }
-const CONIFER := ["cone_tall", "cone_slim"]
-# 덤불 = 같은 문법(로브로 부푼 단일 폐곡면)을 작게. 킷 원본(plant_bushSmall)은 납작한 잎 카드
-# 몇 장이라 근경에서 초록 종잇조각으로 흩어져 보였다(실측 audit2_0809/hall_h12 우측 초지).
-# 나무보다 낮고 넓게, 로브는 세게(0.30) — 뭉툭한 덩어리 실루엣.
-# 전고 0.22 = 킷 원본 0.21과 같은 대역이라 FLORA_SCALE도, 외곽선 두께(오브젝트 공간)도 그대로 유효.
-# y스쿼시 0.78로 더 눌렀더니 초지 위에 **초록 웅덩이**가 깔린 것처럼 보였다(실측 1차 after) — 0.95로
-# 되세우고 색을 C_GREEN에서 C_LEAF로 내린다. 툰 light()가 면 방향을 안 가르므로 지면(0.627,0.72,
-# 0.576)과 값이 붙으면 외곽선만 남아 스티커가 된다 = 형태는 색으로 갈라야 한다(수관이 쓰는 그 색).
-const BUSH_BLOB := [0.098, 0.118, 0.95, 0.90, 0.012, 0.05, 0.30]
+const CONIFER := ["cone_slim"]
 # 로브 방향 — 수관을 몇 방향으로만 부풀려 완벽한 구가 아닌 뭉게구름 실루엣을 만든다.
 const LOBES := [Vector3(1, 0.3, 0.4), Vector3(-0.8, 0.15, 0.6), Vector3(0.25, 0.55, -1), Vector3(-0.45, -0.15, -0.85)]
 
@@ -706,79 +794,12 @@ static func blob_mesh(k: Array, leaf: Color, seg := 22, rings := 12) -> ArrayMes
 	out.surface_set_material(1, ToonChar.make_solid(C_WOOD, OUTLINE))
 	return out
 
-# ══ 절차 꽃 ════════════════════════════════════════════════════════
-# 킷 원본(flower_yellowA/purpleA)은 가는 줄기 위 정육면체 하나라 근경에서 "막대 위 상자"였다
-# (실측 audit2_0809/hall_h12). blob_mesh와 같은 수법 — 구를 로브로 부풀린다 — 을 쓰되 로브를
-# 3D 방향이 아니라 **방위각 5분할**로 돌려 접시형 꽃잎 로제트를 만든다. 카메라가 34° 내려보므로
-# 위에서는 꽃잎 5장, 옆에서는 납작한 돔으로 읽힌다(정육면체는 어느 각도에서도 정육면체였다).
-# 줄기는 blob_mesh 줄기와 같은 관계 — 꽃송이에 밑동이 잠겨 있어 inverted-hull 외곽선이 안 샌다.
-# 전고 0.19 = 킷 원본과 같은 대역 → FLORA_SCALE·화분/꽃수레 배율·외곽선 두께 전부 그대로 유효.
-const FLOWER_R := 0.055     # 꽃송이 반경(로브 최대) — 전폭 0.11 = 전고의 58%
-const FLOWER_Y := 0.145     # 꽃송이 중심 높이 = 줄기 길이
-
-# 방위각 로브 로제트 = blob_mesh의 로브를 방향이 아니라 방위각으로 돌린 것. 꽃송이(꽃잎 5장)와
-# 밑동 잎(3장)이 같은 함수를 쓴다. low = 꽃잎 사이 골의 깊이(1이면 그냥 구).
-# 골을 너무 깊게(0.58) 파고 납작하게(0.42) 누르면 꽃이 아니라 **종이 별**로 읽힌다(실측 1차 after) —
-# 0.70/0.55 = 꽃잎 끝이 둥글고 가운데가 봉긋한 로제트.
-static func _rosette(petals: int, seg: int, r: float, y: float, squash: float, low: float) -> Array:
-	var sm := SphereMesh.new()
-	sm.radius = 1.0
-	sm.height = 2.0
-	sm.radial_segments = seg
-	sm.rings = 5
-	var a := sm.surface_get_arrays(0)
-	var v: PackedVector3Array = a[Mesh.ARRAY_VERTEX]
-	for i in v.size():
-		var n := v[i].normalized()
-		var lobe: float = low + (1.0 - low) * pow(maxf(cos(atan2(n.z, n.x) * float(petals)), 0.0), 0.8)
-		v[i] = Vector3(n.x * lobe, n.y * squash, n.z * lobe) * r
-		v[i].y += y
-	var tmp := ArrayMesh.new()
-	var arr := []
-	arr.resize(Mesh.ARRAY_MAX)
-	arr[Mesh.ARRAY_VERTEX] = v
-	arr[Mesh.ARRAY_INDEX] = a[Mesh.ARRAY_INDEX]
-	tmp.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
-	var st := SurfaceTool.new()
-	st.create_from(tmp, 0)
-	st.generate_normals()  # 정점을 옮겼으니 법선 재생성(blob_mesh와 같은 이유)
-	return (st.commit() as ArrayMesh).surface_get_arrays(0)
-
-static func flower_mesh(petal: Color) -> ArrayMesh:
-	var out := ArrayMesh.new()
-	# 꽃잎 1장당 4분할(seg 20). 14면 골이 뭉개져 그냥 동그란 구가 된다.
-	out.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, _rosette(5, 20, FLOWER_R, FLOWER_Y, 0.55, 0.70))
-	# 밑동 잎 + 줄기를 **한 면으로 합친다**(둘 다 초록 = 면을 나눌 이유가 없다). 잎이 없으면
-	# 꽃송이가 막대 위에 꽂힌 채 떠 보인다 — 킷 원본에 있던 잎이 빠진 자리가 그대로 드러났다(실측 1차 after).
-	var leaf := ArrayMesh.new()
-	leaf.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, _rosette(3, 12, FLOWER_R * 0.95, 0.022, 0.22, 0.34))
-	var cm := CylinderMesh.new()
-	cm.top_radius = 0.008
-	cm.bottom_radius = 0.013
-	cm.height = FLOWER_Y
-	cm.radial_segments = 6
-	cm.rings = 1
-	var st := SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	st.append_from(leaf, 0, Transform3D())
-	st.append_from(cm, 0, Transform3D(Basis(), Vector3(0, FLOWER_Y * 0.5, 0)))
-	out.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, st.commit_to_arrays())
-	out.surface_set_material(0, ToonChar.make_solid(petal, OUTLINE))
-	out.surface_set_material(1, ToonChar.make_solid(C_LEAF, OUTLINE))
-	return out
-
-# 식생 버킷 이름 → Mesh. 꽃·덤불만 절차 메시로 갈아탔고 풀포기(grass)는 킷 원본 그대로다
-# — 얇은 잎날 다발이라 원본이 이미 맞는 형태고, 절차로 바꿀 이유가 없다.
-# 종당 1장을 캐시해 MultiMesh와 화분·꽃수레의 개별 꽃이 **같은 리소스**를 쓴다. _mm_mesh가
-# 캐시를 우회하던 이유(킷 머티리얼을 공유 변형할 위험)는 절차 메시엔 없다 — 만든 뒤 아무도 안 고친다.
-# 겨울 서리톤도 MultiMeshInstance3D의 material_override로만 걸리므로 Mesh는 불변이다.
+# 식생 버킷 이름 → Mesh (= 킷 파일명). 종당 1장을 캐시해 MultiMesh와 화분·꽃수레의 개별 꽃이
+# **같은 리소스**를 쓴다 — 구운 뒤 아무도 안 고치므로(겨울 서리는 MultiMeshInstance3D의
+# material_override로만 걸린다) 공유가 안전하다.
 func _flora_mesh(nm: String) -> Mesh:
 	if not _flora_cache.has(nm):
-		match nm:
-			"flower_yellowA": _flora_cache[nm] = flower_mesh(C_YELLOW)
-			"flower_purpleA": _flora_cache[nm] = flower_mesh(C_LAV)
-			"plant_bushSmall": _flora_cache[nm] = blob_mesh(BUSH_BLOB, C_LEAF, 14, 7)  # 덤불은 작다 = 분할도 작게
-			_: _flora_cache[nm] = _mm_mesh(nm)
+		_flora_cache[nm] = _kit_mesh(nm)
 	return _flora_cache[nm]
 
 # 화분·꽃수레의 개별 꽃 한 송이(만개 — 겨울엔 _blooms로 숨긴다).
@@ -787,11 +808,21 @@ func _flower_node(kind: String) -> MeshInstance3D:
 	mi.mesh = _flora_mesh(kind)
 	return mi
 
-# ══ 숲 띠 (경계 |x| 또는 |z| ∈ [34,40] 저밀도, 절차 블롭 MultiMesh) ══
+# ══ 숲 띠 (경계 |x| 또는 |z| ∈ [34,40] 저밀도, 킷 나무 MultiMesh) ══
+# 나무 = Tiny Treats Pretty Park 킷 2종(CC0). 옛 절차 블롭 4종을 전부 대체한다.
+# 배율 근거 — **옛 전고 대역을 계승**한다(배치 밀도·keepout이 그 크기 전제로 승인돼 있다).
+#   옛 마을 띠: 블롭 전고 0.96~1.34 × 배율 2.7~4.0 = 2.6~5.3m
+#   옛 원경 띠: 같은 블롭 × 4.0~6.0 = 3.8~8.0m
+#   킷 native 전고: tree 3.42 / tree_large 4.78 (원점 = 지면, 밑동 −0.20 스커트는 땅에 잠긴다)
+const TREE_KIT := {  # 킷 파일명 → [마을 띠 배율, 원경 띠 배율]
+	"tree":       [Vector2(0.80, 1.15), Vector2(1.25, 1.80)],  # 2.7~3.9m / 4.3~6.2m
+	"tree_large": [Vector2(0.70, 0.95), Vector2(1.05, 1.50)],  # 3.3~4.5m / 5.0~7.2m
+}
+
 func _place_forest() -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 20260724  # 컬러박스와 같은 시드 = 띠 실루엣 연속성
-	var kinds := BLOB_KINDS.keys()
+	var kinds := TREE_KIT.keys()
 	var buckets := {}
 	for k in kinds:
 		buckets[k] = []
@@ -807,9 +838,12 @@ func _place_forest() -> void:
 				_: pos = Vector2(band, along)
 			if _blocked(pos):
 				continue
+			# rng 소비 개수·순서를 옛 코드와 글자 그대로 맞춘다(along·band·randi·scale·rot = 5,
+			# 금지 존이면 2) — 이 스트림은 아래 강변 바위와 공유라 소비가 어긋나면 바위가 통째로 밀린다.
 			var nm: String = kinds[rng.randi() % kinds.size()]
+			var sc: Vector2 = TREE_KIT[nm][0]
 			var t := Transform3D()
-			t = t.scaled(Vector3.ONE * rng.randf_range(2.7, 4.0))
+			t = t.scaled(Vector3.ONE * rng.randf_range(sc.x, sc.y))
 			t = t.rotated(Vector3.UP, rng.randf() * TAU)
 			t.origin = Vector3(pos.x, GROUND_Y, pos.y)
 			(buckets[nm] as Array).append(t)
@@ -836,8 +870,9 @@ func _place_forest() -> void:
 			if _blocked(pos):
 				continue
 			var nm: String = kinds[frng.randi() % kinds.size()]
+			var sc: Vector2 = TREE_KIT[nm][1]
 			var t := Transform3D()
-			t = t.scaled(Vector3.ONE * frng.randf_range(4.0, 6.0))
+			t = t.scaled(Vector3.ONE * frng.randf_range(sc.x, sc.y))
 			t = t.rotated(Vector3.UP, frng.randf() * TAU)
 			t.origin = Vector3(pos.x, GROUND_Y, pos.y)
 			(buckets[nm] as Array).append(t)
@@ -845,14 +880,14 @@ func _place_forest() -> void:
 		if (buckets[nm] as Array).is_empty():
 			continue
 		var full: String = "Forest_" + nm
-		var kp: Array = BLOB_KINDS[nm]
-		var summer := blob_mesh(kp, C_CONIF if nm in CONIFER else C_LEAF)
+		var summer := _kit_mesh(nm)
 		_multimesh(summer, buckets[nm], full)
 		_n_trees += (buckets[nm] as Array).size()
 		if tree_frosted(full, WINTER):
-			# 겨울용 사본을 빌드 때 미리 뽑아 둔다. MultiMeshInstance3D엔 표면별 override가 없어
-			# material_override로 물들이면 줄기까지 서리색이 된다 — 수관 색만 바꾼 Mesh를 스왑한다.
-			_tree_mesh[full] = [summer, blob_mesh(kp, C_FROST_LEAF)]
+			# 겨울용 사본을 빌드 때 미리 뽑아 둔다(전환 때 로드하지 않게). 텍스처는 그대로 두고
+			# 채도만 지우고 밝기를 올린 별개 Mesh — 옛 방식(수관 albedo를 단색으로 교체)은
+			# 킷 나무에선 잎 결까지 통째로 뭉개져 겨울에만 다시 통짜가 된다.
+			_tree_mesh[full] = [summer, _kit_mesh(nm, TREE_WINTER_GAIN, VEG_WINTER_SAT)]
 
 	# 강변 바위 몇 개 — 물길이 지형에 박혀 보이게(개별 노드, 무충돌)
 	var rocks := Node3D.new()
@@ -943,6 +978,10 @@ func _multimesh(mesh: Mesh, xforms: Array, nm: String) -> void:
 	var mmi := MultiMeshInstance3D.new()
 	mmi.name = nm
 	mmi.multimesh = mm
+	# 곡률(toon.gdshader v.y -= 0.006·z²)은 정점을 **셰이더에서** 내리므로 AABB가 그 변위를 모른다.
+	# 키 큰 물체가 프레임 상단에 걸리면 통째로 컬링될 수 있다(816286e 풍차 지붕 전례).
+	# MultiMesh는 노드 하나가 띠 전체를 덮어 실질적으로 컬링 대상이 아니지만, 여유는 공짜다.
+	mmi.extra_cull_margin = 8.0
 	add_child(mmi)
 
 # MUST-FIX 1: 데코 루트 아래 충돌체가 하나도 없음을 런타임 로그로 증명한다.
@@ -950,6 +989,7 @@ func _audit() -> void:
 	var bodies := _count_collision(self)
 	print("decor: props=%d flora=%d trees=%d lights=%d collision_bodies=%d"
 		% [_n_props, _n_flora, _n_trees, _lights.size(), bodies])
+	print("decor perf: " + _perf())
 	if bodies > 0:
 		push_error("decor: 충돌체 %d개가 데코 트리에 남았다 — 통행 계약 위반" % bodies)
 	if not _unknown_mats.is_empty():
@@ -973,6 +1013,47 @@ func _dump() -> void:
 			pts.append([snappedf(v.x, 0.01), snappedf(v.y, 0.01)])
 		out["mm"][nm] = pts
 	print("DECOR_DUMP ", JSON.stringify(out))
+
+# 식생 예산 트립와이어. 킷 모델은 텍스처가 있어 **메시별로 버킷(=드로우콜)이 갈리므로**
+# 종을 늘리면 조용히 드로우콜이 는다 — 인스턴스·드로우콜·삼각형을 빌드 로그에 한 줄로 남긴다.
+# 드로우콜은 노드 수가 아니라 **surface 수**다: 노드/MultiMesh 하나여도 Mesh에 surface가 여럿이면
+# 그만큼 따로 제출된다(절차 메시는 1~2면이었지만 킷 glTF는 재질별로 갈린다) — 노드로 세면 과소 집계.
+# (mm_draws = MultiMesh 드로우콜, node_draws = 개별 소품 MeshInstance 드로우콜)
+func _perf() -> String:
+	var mm_b := 0
+	var mm_i := 0
+	var mm_t := 0
+	for c in get_children():
+		var mmi := c as MultiMeshInstance3D
+		if mmi == null:
+			continue
+		mm_b += _surfs(mmi.multimesh.mesh)
+		mm_i += mmi.multimesh.instance_count
+		mm_t += mmi.multimesh.instance_count * _tris(mmi.multimesh.mesh)
+	var nm_n := [0, 0]
+	_node_meshes(self, nm_n)
+	return "mm_draws=%d mm_inst=%d mm_tris=%d | node_draws=%d node_tris=%d | total_tris=%d" \
+		% [mm_b, mm_i, mm_t, nm_n[0], nm_n[1], mm_t + nm_n[1]]
+
+func _surfs(m: Mesh) -> int:
+	return 0 if m == null else m.get_surface_count()
+
+func _tris(m: Mesh) -> int:
+	if m == null:
+		return 0
+	var n := 0
+	for i in m.get_surface_count():
+		var a := m.surface_get_arrays(i)
+		var idx: PackedInt32Array = a[Mesh.ARRAY_INDEX]
+		n += (idx.size() if idx.size() > 0 else (a[Mesh.ARRAY_VERTEX] as PackedVector3Array).size()) / 3
+	return n
+
+func _node_meshes(node: Node, acc: Array) -> void:
+	if node is MeshInstance3D:
+		acc[0] += _surfs((node as MeshInstance3D).mesh)
+		acc[1] += _tris((node as MeshInstance3D).mesh)
+	for c in node.get_children():
+		_node_meshes(c, acc)
 
 func _count_collision(node: Node) -> int:
 	var n := 0

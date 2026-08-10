@@ -212,11 +212,14 @@ func _litter(rng: RandomNumberGenerator) -> void:
 			var p: Vector2 = g + Vector2(rng.randf_range(-0.5, 0.5), rng.randf_range(-0.35, 0.35))
 			_sphere(Vector3(p.x, WATER_Y + 0.04, p.y), rng.randf_range(0.16, 0.28), C_WEED)
 
-# 해송: 마을 숲 띠와 같은 절차 블롭 침엽(decor.gd 단일 출처). 각진 원뿔은 소프트닝 v1에서
-# 마을이 이미 버린 문법이라 해변에만 남으면 존을 넘을 때 그림체가 갈린다.
+# 해송: 절차 블롭 침엽(decor.gd 단일 출처).
+# **미해결 격차**: 마을 나무는 킷 모델로 전면 교체했는데 해변만 절차 블롭이 남았다 — 파크 킷에
+# 침엽수가 없어서다. 존을 넘으면 나무 그림체가 갈린다. 침엽 킷을 구하면 여기도 같이 넘긴다.
 func _pine(at: Vector2, s: float, rot: float) -> void:
 	var mi := MeshInstance3D.new()
-	mi.mesh = Decor.blob_mesh(Decor.BLOB_KINDS["cone_slim"], Decor.C_CONIF)  # 해송 = 홀쭉한 침엽(cone_tall은 침엽치곤 둥긂)
+	# 해송 = 홀쭉한 침엽. 마을 나무가 파크 킷으로 전면 교체된 뒤 BLOB_KINDS에 남은 유일한 종이다
+	# (킷에 침엽수가 없다) — 즉 지금은 이 호출부가 blob_mesh의 단독 사용처다.
+	mi.mesh = Decor.blob_mesh(Decor.BLOB_KINDS["cone_slim"], Decor.C_CONIF)
 	mi.scale = Vector3.ONE * (s * 3.4)  # 옛 원뿔 전고(~4.4s)와 같은 키 = 마을 숲 띠 스케일 대역
 	mi.rotation.y = rot
 	mi.position = ORIGIN + Vector3(at.x, GROUND_Y, at.y)

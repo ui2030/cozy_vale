@@ -26,6 +26,26 @@ const CONTACT_R := 0.55
 # 확정한 뒤 set_outline_width(node, OUTLINE_WORLD / 스케일)로 나눠 넣는다.
 const OUTLINE_WORLD := 0.002
 
+# ── 외곽선 전역 스위치 (기본 off) ────────────────────────────────────
+# 유저 판정: "윤곽선 넣어두니 너무 없어보여 없는 게 나아". inverted-hull 선을 마을 전반에서 끈다.
+# 덤으로 "물체마다 선 굵기가 달라 보이던" 것도 같이 사라진다 — width가 **오브젝트 공간**이라
+# 노드 배율에 그대로 비례했기 때문이고(같은 0.006이 배율 3.6짜리 표지판에선 화면상 3.6배),
+# 배율로 나눠 넣던 보정 규약 자체가 필요 없어진다.
+#
+# 호출부(make_solid·load_glb·load_kit·_box/_cyl…)는 두께 인자를 그대로 넘긴 채 둔다 —
+# **머티리얼 생산 지점 한 곳**에서만 차단하는 게 최소 diff이고, 되돌릴 땐 이 값만 true로 준다.
+# next_pass가 null이면 패스 자체가 안 돌아 드로우콜도 같이 빠진다(= 그냥 안 보이게 하는 게 아니다).
+const OUTLINE_ON := false
+
+# 외곽선 머티리얼의 단일 생산 지점. 꺼져 있거나 두께 0이면 null(= next_pass 없음).
+static func outline_mat(w: float) -> ShaderMaterial:
+	if not OUTLINE_ON or w <= 0.0:
+		return null
+	var o := ShaderMaterial.new()
+	o.shader = OUTLINE
+	o.set_shader_parameter("width", w)
+	return o
+
 # GLB 로드해 툰 적용된 씬 반환 (실패시 null). tint = 개체 색조 곱(기본 흰=무변경)
 static func load_glb(path: String, outline_width: float, tint := Color.WHITE) -> Node3D:
 	var doc := GLTFDocument.new()
@@ -67,10 +87,7 @@ static func apply(node: Node, outline_width: float, tint := Color.WHITE) -> void
 				mat.set_shader_parameter("albedo_tex", tex)
 			else:
 				mat.set_shader_parameter("albedo", col)
-			var o := ShaderMaterial.new()
-			o.shader = OUTLINE
-			o.set_shader_parameter("width", outline_width)
-			mat.next_pass = o
+			mat.next_pass = outline_mat(outline_width)
 			node.set_surface_override_material(i, mat)
 	for c in node.get_children():
 		apply(c, outline_width, tint)
@@ -91,11 +108,7 @@ static func make_solid(color: Color, outline_width := 0.0) -> ShaderMaterial:
 	var m := ShaderMaterial.new()
 	m.shader = TOON
 	m.set_shader_parameter("albedo", color)
-	if outline_width > 0.0:
-		var o := ShaderMaterial.new()
-		o.shader = OUTLINE
-		o.set_shader_parameter("width", outline_width)
-		m.next_pass = o
+	m.next_pass = outline_mat(outline_width)
 	return m
 
 # 접지 그림자 판(곱셈 블렌드, 무충돌). r = 균일하게 어두운 코어 반경 — 판은 1.25r까지 깔고

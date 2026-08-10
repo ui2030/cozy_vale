@@ -28,6 +28,12 @@ uniform float edge_strength : hint_range(0.0, 1.0) = 0.28;
 // 기본 1.0 = 항등(분기도 uniform) → 캐릭터·기존 에셋은 옛 경로를 글자 그대로 통과한다.
 // 선형 albedo 기준이다 — 화면(sRGB) 채도는 이보다 낮게 찍힌다(0.60 → 정오 실측 0.42~0.49).
 uniform float sat_cap : hint_range(0.0, 1.0) = 1.0;
+// 킷 아틀라스 **밝기** 정합 레버 — char_tint(밝은 킷을 끌어내리는 곱, Kenney 1.0 → 0.72)의 반대 방향.
+// 식생 킷(Tiny Treats)은 반대로 마을보다 훨씬 어둡다: 수관 화면 실측 (72,128,76) vs 마을 절차
+// 수관 (195,212,169). 채도(sat_cap)로는 못 올린다 — 그건 최대 채널 쪽으로 당길 뿐이라 명도 천장이
+// 최대 채널에 묶이고, 결과는 회색조 나무가 된다(실측 계산). 그래서 hue·비율을 보존하는 순수 곱을 둔다.
+// 기본 1.0 = 항등 → 캐릭터·기존 에셋은 옛 경로를 글자 그대로 통과한다(sat_cap과 같은 규약).
+uniform float val_gain : hint_range(0.25, 4.0) = 1.0;
 // 동물의 숲식 월드 곡률 (거리²만큼 지평선을 아래로 휘게)
 uniform float curve_strength = 0.006;
 
@@ -44,6 +50,8 @@ void fragment() {
 		float sv = (mx - min(src.r, min(src.g, src.b))) / max(mx, 1e-4);
 		src = mix(vec3(mx), src, min(1.0, sat_cap / max(sv, 1e-4)));
 	}
+	// 정오 직광 클리핑 상한(char_tint가 잡아둔 것)을 넘지 않게 곱한 뒤 자른다.
+	src = min(src * val_gain, vec3(1.0));
 	vec3 base = src * char_tint.rgb;
 	float fres = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 3.0);
 	ALBEDO = mix(base, edge_pigment.rgb, fres * edge_strength);

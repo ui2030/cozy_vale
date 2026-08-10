@@ -46,6 +46,7 @@ func _ready() -> void:
 	_test_pick_fish()
 	_test_forage_rare()
 	_test_winter_pass()
+	_test_winter_veg_look()
 	_test_collection_roundtrip()
 	_test_daynight()
 	_test_ambience_curve()
@@ -1040,38 +1041,121 @@ func _test_winter_pass() -> void:
 	# 고정 — 내리면 근접 컷이 갈색이 된다). 그래서 눈 지면이 벽토보다 확실히 어두워야 눈밭에서
 	# 집·판매상자 윤곽이 떠오른다. 0.76이던 동안 명도차가 없어 실루엣이 통째로 소실됐다(실측).
 	assert(W.C_WALL.g - W.C_SNOW.g >= 0.15, "눈 지면과 벽토 명도차 부족 — 겨울 실루엣 소실")
-	# 가지에 얹힌 눈은 눈 지면 바로 아래 = 지면보다 밝으면 수관이 지면에서 분리되지 않는다.
-	assert(D.C_FROST_LEAF.g < W.C_SNOW.g and D.C_FROST_LEAF.g > D.C_FROST.g, "설경 서리톤 서열 어긋남")
+	# C_FROST_LEAF / C_FROST는 더 이상 겨울 화면을 **직접 칠하지 않는다**(식생이 킷 텍스처로 바뀌면서
+	# 서리톤은 sat_cap·val_gain·char_tint가 만든다). 그래서 이 핀은 이제 "옛 실측 목표값 두 개의
+	# 서열"만 지킨다 = 아래 실경로 검사(_test_winter_veg_look)가 도달해야 할 과녁이 흔들리지 않게.
+	# 겨울 룩 자체가 깨지는지는 이 핀이 아니라 그쪽이 잡는다.
+	assert(D.C_FROST_LEAF.g < W.C_SNOW.g and D.C_FROST_LEAF.g > D.C_FROST.g, "설경 서리톤 목표 서열 어긋남")
 	# 팔레트 단일 출처: decor.gd는 순환 preload를 피해 마을 팔레트를 복제한다(beach.gd가 이걸
 	# 재사용한다). 값이 갈라지면 존을 넘을 때 같은 소재가 다른 색으로 보인다.
 	assert(D.C_WOOD == W.C_WOOD and D.C_CREAM == W.C_WALL and D.C_ROOF == W.C_ROOF \
 		and D.C_STONE == W.C_STONE and D.C_GREEN == W.C_GREEN and D.C_WIST == W.C_WIST,
 		"decor.gd 팔레트가 world.gd와 어긋남")
-	for nm in ["Flora_flower_yellowA", "Flora_flower_purpleA"]:
+	# 버킷 이름 = 킷 파일명(decor.FLORA_SCALE / TREE_KIT 키)이다 — 이름이 어긋나면 겨울 숨김·서리가
+	# 조용히 아무 버킷에도 안 걸린다. 표를 순회해 대조만 하면 **표와 구현이 같이 빠져도 통과**하므로
+	# (한 종을 지우면 검사할 항목까지 같이 사라진다) 기대값을 명시 리터럴로 박고, 그 목록이 곧
+	# 표의 전체 키라는 것도 함께 핀한다 = 누락·리네임 어느 쪽도 조용히 못 지나간다.
+	assert(D.FLORA_SCALE.keys() == ["flower_A", "flower_B", "bush", "bush_large", "grass_A", "grass_B"],
+		"식생 종 목록이 바뀌었다(겨울 규칙 검사 대상과 어긋남): %s" % str(D.FLORA_SCALE.keys()))
+	assert(D.TREE_KIT.keys() == ["tree", "tree_large"], "나무 종 목록이 바뀌었다: %s" % str(D.TREE_KIT.keys()))
+	assert(D.DECIDUOUS == ["Forest_tree", "Forest_tree_large"], "활엽 버킷 목록이 바뀌었다: %s" % str(D.DECIDUOUS))
+	assert(D.CONIFER == ["cone_slim"], "침엽 종 목록이 바뀌었다: %s" % str(D.CONIFER))
+	for nm in ["Flora_flower_A", "Flora_flower_B"]:
+		assert(nm.trim_prefix("Flora_") in D.FLORA_SCALE, "%s 버킷이 배율표에 없음" % nm)
 		assert(not D.flora_visible(nm, 3), "%s 겨울엔 숨김" % nm)
 		for s in 3:
 			assert(D.flora_visible(nm, s), "%s 계절 %d엔 보임" % [nm, s])
-	for nm in ["Flora_grass", "Flora_plant_bushSmall"]:
+	for nm in ["Flora_grass_A", "Flora_grass_B", "Flora_bush", "Flora_bush_large"]:
+		assert(nm.trim_prefix("Flora_") in D.FLORA_SCALE, "%s 버킷이 배율표에 없음" % nm)
 		assert(D.flora_visible(nm, 3) and D.flora_frosted(nm, 3), "%s 겨울엔 서리톤으로 남음" % nm)
 		for s in 3:
 			assert(not D.flora_frosted(nm, s), "%s 계절 %d엔 원색" % [nm, s])
-	assert(not D.flora_frosted("Forest_cone_tall", 3), "침엽수는 flora 규칙 밖")
-	# 활엽수 수관만 겨울 서리톤 — 침엽수는 초록 유지(겨울 실루엣 담당)
+	assert(not D.flora_frosted("Forest_tree", 3), "나무는 flora 규칙 밖")
+	# 나무는 킷 교체로 전부 활엽 — 겨울엔 전 그루가 서리톤이어야 한다(초록 나무가 남으면 계절이 안 읽힌다).
+	# 위에서 목록을 리터럴로 못박았으므로 여기 순회는 더 이상 자기 자신과의 비교가 아니다.
 	for nm in D.DECIDUOUS:
 		assert(D.tree_frosted(nm, 3), "%s 겨울엔 수관 서리톤" % nm)
 		for s in 3:
 			assert(not D.tree_frosted(nm, s), "%s 계절 %d엔 원색" % [nm, s])
+	# 버킷 이름 정합: DECIDUOUS가 실제 나무 종을 빠짐없이 덮는다(리네임 회귀 방지)
+	for nm in D.TREE_KIT:
+		assert(("Forest_" + nm) in D.DECIDUOUS, "%s가 겨울 서리 대상에서 빠졌다" % nm)
+	# 해변 해송(절차 블롭)은 마을 규칙 밖 — 겨울에도 초록으로 남는 유일한 나무다
 	for nm in D.CONIFER:
+		assert(nm in D.BLOB_KINDS, "%s 침엽 종이 블롭 표에 없음" % nm)
 		assert(not D.tree_frosted("Forest_" + nm, 3), "%s 침엽수는 겨울에도 초록" % nm)
-	# 버킷 이름 정합: DECIDUOUS·CONIFER가 실제 절차 나무 종을 빠짐없이 덮는다(이름이 어긋나면
-	# 겨울 서리 스왑이 조용히 아무 나무에도 안 걸린다 — 이름 리네임 회귀 방지)
-	for nm in D.BLOB_KINDS:
-		var full: String = "Forest_" + nm
-		assert((full in D.DECIDUOUS) != (nm in D.CONIFER), "%s는 활엽/침엽 중 정확히 하나여야" % nm)
 	# 만개(화분·꽃수레 꽃, 등나무 드레이프)는 겨울만 숨김
 	assert(not D.bloom_visible(3), "겨울엔 만개 숨김")
 	for s in 3:
 		assert(D.bloom_visible(s), "계절 %d엔 만개" % s)
+
+# ══ 겨울 식생 룩 — **실제 경로**를 계산으로 검증 ═══════════════════════
+# 식생이 킷 텍스처로 바뀐 뒤 겨울 룩을 만드는 것은 단색 상수(C_FROST/C_FROST_LEAF)가 아니라
+#   ① 킷 아틀라스 텍셀 → ② sat_cap(채도 상한) → ③ val_gain(밝기 곱) → ④ char_tint
+# 네 단계다. 그래서 상수 서열만 핀하면 gain을 1.0으로 되돌려도(= 겨울에 초록·회색 식생이 남아도)
+# 아무 테스트도 안 깨진다. 여기서는 **실물 메시의 UV로 실물 아틀라스를 샘플링**해서 위 네 단계를
+# 그대로 계산하고, 결과 albedo가 눈 지면(C_SNOW)에 대해 어느 대역에 앉는지를 못박는다.
+# 머티리얼 파라미터는 상수가 아니라 decor가 실제로 만든 머티리얼(_frost_mat / 겨울 스왑 Mesh)에서 읽는다.
+func _test_winter_veg_look() -> void:
+	var W := preload("res://world/world.gd")
+	var D := preload("res://world/decor.gd")
+	var atlas := Image.load_from_file(D.TT_PARK + "tiny_treats_texture_1.png")
+	assert(atlas != null, "파크 킷 아틀라스를 못 읽음")
+	var dec: Node = D.new()
+	var grass: Mesh = dec._flora_mesh("grass_A")     # 여름 원본 = 겨울에도 같은 지오메트리
+	var tree_w: Mesh = dec._kit_mesh("tree", D.TREE_WINTER_GAIN, D.VEG_WINTER_SAT)  # 겨울 스왑 사본
+	assert(grass != null and tree_w != null, "킷 메시 로드 실패 — 에셋 경로 확인")
+	var frost: ShaderMaterial = dec._frost_mat()     # 지피 서리 = MMI material_override
+	assert(frost.get_shader_parameter("use_tex"), "서리 override가 아틀라스를 안 물었다(단색 폴백)")
+	var snow := W.C_SNOW.srgb_to_linear()
+	var g_sum := _kit_albedo(grass, atlas, grass.surface_get_material(0) as ShaderMaterial)
+	var g_win := _kit_albedo(grass, atlas, frost)
+	var t_win := _kit_albedo(tree_w, atlas, tree_w.surface_get_material(0) as ShaderMaterial)
+	dec.free()
+	var msg := " (설원 %.3f / 여름풀 %.3f / 서리풀 %.3f / 서리수관 %.3f, 설원비 %.2f/%.2f)" \
+		% [snow.g, g_sum.g, g_win.g, t_win.g, g_win.g / snow.g, t_win.g / snow.g]
+	print("winter veg albedo(lin):" + msg)   # assert보다 먼저 — 실패해도 실측값이 로그에 남는다
+	# ① 서리는 **밝히는** 처방이다(잎 결을 남긴 "얹힌 눈"). gain을 잃으면 눈밭 위 검은 잡초가 된다.
+	#    겨울 gain을 1.0으로 되돌리면 여기서 걸린다 = 이 테스트의 존재 이유.
+	assert(g_win.g > snow.g * 0.90, "서리 풀이 너무 어둡다 — FLORA_WINTER_GAIN 처방 소실" + msg)
+	assert(g_win.g > g_sum.g * 1.05, "겨울 풀이 여름 풀보다 안 밝다 — 서리가 안 걸렸다" + msg)
+	# ② 그러나 더 밝히면 설원에 붙어 중경이 통째로 빈다 — 실측된 1차 실패(gain 2.6, 서리 풀 화면
+	#    (209,198,189)이 설원 (213,215,220)에 흡수)의 경계다. 세 지점을 이 계산으로 재보면
+	#    gain 1.0 → 설원비 0.53 · **승인된 2.15 → 1.14** · 1차 실패 2.6 → 1.33 이므로,
+	#    [0.90, 1.25] 대역이 승인점만 통과시키고 알려진 두 실패를 다 걸러낸다.
+	assert(g_win.g < snow.g * 1.25, "서리 풀이 설원과 붙었다 — 겨울 중경 실루엣 소실" + msg)
+	# ③ 수관은 반대 목표 — 크림 하늘 배경이라 훨씬 밝아야 "가지에 얹힌 눈"으로 읽힌다(어두우면 바위
+	#    덩어리). 두 목표가 반대라는 것이 옛 C_FROST_LEAF > C_FROST 서열의 실경로 판이다.
+	assert(t_win.g > snow.g * 1.25, "서리 수관이 어둡다 — 눈 덮인 나무가 아니라 바위로 읽힌다" + msg)
+	assert(t_win.g > g_win.g * 1.25, "수관·지피 서리 밝기 목표가 갈리지 않았다" + msg)
+
+# toon.gdshader fragment의 albedo 경로를 선형공간에서 그대로 계산한다(채도 상한 → 밝기 곱 → char_tint).
+func _toon_albedo(src: Color, sat: float, gain: float, tint: Color) -> Color:
+	var mx := maxf(src.r, maxf(src.g, src.b))
+	if sat < 1.0:
+		var sv := (mx - minf(src.r, minf(src.g, src.b))) / maxf(mx, 1e-4)
+		var t := minf(1.0, sat / maxf(sv, 1e-4))
+		src = Color(lerpf(mx, src.r, t), lerpf(mx, src.g, t), lerpf(mx, src.b, t))
+	return Color(minf(src.r * gain, 1.0) * tint.r, minf(src.g * gain, 1.0) * tint.g,
+		minf(src.b * gain, 1.0) * tint.b)
+
+# 메시가 실제로 참조하는 아틀라스 텍셀들의 평균 albedo(선형). 킷 UV는 팔레트 패치를 찍으므로
+# 정점 UV 평균이 그 종의 대표색이 된다.
+func _kit_albedo(mesh: Mesh, atlas: Image, m: ShaderMaterial) -> Color:
+	var sat: float = m.get_shader_parameter("sat_cap")
+	var gain: float = m.get_shader_parameter("val_gain")
+	var tint: Color = m.get_shader_parameter("char_tint")
+	var acc := Color(0, 0, 0)
+	var n := 0
+	for s in mesh.get_surface_count():
+		var uvs: PackedVector2Array = mesh.surface_get_arrays(s)[Mesh.ARRAY_TEX_UV]
+		for uv in uvs:
+			var px := atlas.get_pixel(
+				clampi(int(uv.x * atlas.get_width()), 0, atlas.get_width() - 1),
+				clampi(int(uv.y * atlas.get_height()), 0, atlas.get_height() - 1))
+			acc += _toon_albedo(px.srgb_to_linear(), sat, gain, tint)
+			n += 1
+	return acc / maxf(n, 1)
 
 # 채집 배치 스냅샷 [위치, forage_id] — _clear()가 queue_free 하므로 다음 _respawn 전에 뜬다.
 func _forage_snapshot(fs: Node) -> Array:
