@@ -10,6 +10,12 @@
 # 테스트용 GLB (사용자 실제 캐릭터는 나중 명시적 추가)
 /lookdev/character/*.glb
 
+# 재배포 금지 라이선스 에셋 — 공개 저장소에 올리면 라이선스 위반이다.
+#   Plumberry Plains: TERMS.md "may not resell, redistribute ... in any marketplace or repository"
+#   Sprout Lands UI (Basic): "can not redistribute or resale" + 비상업 전용(출시 전 Premium 필요)
+# 받는 곳은 assets/VENDOR.md 참조. (assets/tinytreats/ 는 CC0라 커밋한다)
+/assets/vendor/
+
 # 대용량 3D 모델 원본·작업파일 (레포 미포함)
 /assets/nun.glb
 /assets/cat_fixed*

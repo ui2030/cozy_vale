@@ -17,6 +17,19 @@ const DIR := "res://assets/props/"
 const OUTLINE := 0.006   # world.gd 정적물과 같은 연필선 두께
 const GROUND_Y := 0.10   # 지면 상면 (world.tscn Ground / beach.gd GROUND_Y와 동일)
 
+# ── 구매/CC0 킷 (베이크된 albedo 텍스처가 있는 에셋) ─────────────────
+# Kenney 킷은 머티리얼이 단색이라 _repaint로 마을 팔레트에 다시 칠했지만, 이쪽은 **텍스처
+# 아틀라스**를 쓴다. ToonChar.apply가 원본 머티리얼의 albedo_texture를 그대로 toon 셰이더의
+# use_tex/albedo_tex로 넘기므로(단색 경로와 같은 함수) 텍스처를 죽이지 않고 툰 라이팅·외곽선·
+# 월드 곡률이 전부 걸린다 → 재도색하지 않는다. MAT_COLORS에 없는 이름이라 _repaint도 안 탄다.
+const TT_PARK := "res://assets/tinytreats/Tiny_Treats_Pretty_Park_1.0_FREE/Assets/gltf/"
+const VENDOR := "res://assets/vendor/plumberry-plains-props-vol-1/props/"
+# 밝기만 마을 규약에 맞춘다. 킷 아틀라스의 UV가 실제로 닿는 텍셀 최댓값이 0.83~0.97(sRGB)인데,
+# 정오 직광면은 albedo 0.745를 넘으면 화면에서 255로 클리핑한다(world.gd C_GRASS 주석의 실측
+# 계수 1.93 = 지면 albedo 0.75 상한의 출처). char_tint는 선형 공간 곱이라 텍셀 1.0 → 이 색의
+# sRGB 값이 그대로 상한이 된다 = interior.gd TINT_DEF(Kenney 순백 1.0 → 0.72)와 같은 수법.
+const KIT_TINT := Color(0.76, 0.75, 0.72)
+
 # ── 팔레트 (VILLAGE_SPEC §2, 낮 기준 — world.gd 상수와 같은 값) ──────
 # 파스텔 시프트(소프트닝 v1) — world.gd와 같은 규칙·같은 값(채도 −15%p / ×0.55 하한, 명도 +5%p).
 const C_WOOD   := Color(0.590, 0.480, 0.362)  # 브라운
@@ -218,6 +231,25 @@ func _glb(nm: String) -> Node3D:
 		_cache[nm] = n
 	return (_cache[nm] as Node3D).duplicate() as Node3D
 
+# 텍스처 킷 로드 (전체 res:// 경로 + 배율 확정). world.gd 분수도 이걸 쓴다 = 킷 규약 단일 출처.
+# 외곽선 두께는 오브젝트 공간이라 배율로 나눠 넣어야 월드에서 굵기가 일정하다
+# (ToonChar.set_outline_width 주석의 규약 — 기존 _glb는 이 보정이 없어 sign이 ×3.6만큼 굵었다).
+static func load_kit(path: String, sc: float, outline := OUTLINE) -> Node3D:
+	var n := ToonChar.load_glb(path, outline / sc, KIT_TINT)
+	if n == null:
+		return null  # 에셋 누락(vendor는 gitignore) 폴백: 그 자리만 빈다
+	n.scale = Vector3.ONE * sc
+	return n
+
+func _kit(path: String, sc: float) -> Node3D:
+	if not _cache.has(path):
+		var n := load_kit(path, sc)
+		if n == null:
+			return null
+		_strip_collision(n)  # 데코 무충돌 계약 (_audit이 런타임에 증명한다)
+		_cache[path] = n
+	return (_cache[path] as Node3D).duplicate() as Node3D
+
 # MultiMesh용 Mesh: 인스턴스별 surface override가 없으므로 머티리얼을 Mesh에 박는다.
 # 캐시를 우회해 새로 로드 = 개별 노드가 쓰는 Mesh 리소스를 공유 변형하지 않는다(Codex MUST-FIX).
 # swap = 팔레트 위에 덧씌울 {킷 머티리얼 이름: 색} — 계절 사본(겨울 수관)을 별도 Mesh로 뽑는 데 쓴다.
@@ -396,19 +428,25 @@ func _glow_mat() -> ShaderMaterial:
 		_glow.set_shader_parameter("tint", C_GLASS)
 	return _glow
 
-# 벤치: 등받이 있는 목재 벤치(로컬 -z가 등받이 = yaw로 정면을 정한다)
+# 벤치 — Tiny Treats Pretty Park (CC0). 옛 절차 박스 3개(폭 1.70 · 전고 1.18 = 좌판 0.62 +
+# 등받이 1.18)를 대체한다. 원본 AABB 2.000×1.406×1.317, 원점 = 바닥 중심.
+# 배율 0.85 → 폭 1.70(옛 1.70) · 전고 1.20(옛 1.18) = 옛 프리미티브가 차지하던 크기 그대로.
+# 등받이 정점(y>1.0)의 z가 −0.717..−0.176 = **로컬 −z가 등받이**(실측) → 옛 방향 규약과 같아
+# PROPS의 yaw를 한 값도 안 고친다. 데코라 충돌체 없음 = WORLD_VERSION 불변.
+const BENCH_S := 0.85
 func _bench(p: Node3D) -> void:
-	_box(p, Vector3(0, 0.56, 0), Vector3(1.7, 0.12, 0.52), C_WOOD, 0.004)
-	_box(p, Vector3(0, 0.9, -0.24), Vector3(1.7, 0.56, 0.1), C_WOOD, 0.004)
-	for s in [-1.0, 1.0]:
-		_box(p, Vector3(0.7 * s, 0.28, 0), Vector3(0.12, 0.56, 0.46), C_WOOD_D, 0.004)
+	var n := _kit(TT_PARK + "bench.gltf", BENCH_S)
+	if n != null:
+		p.add_child(n)
 
+# 게시판 — Plumberry Plains Props Vol.1 (구매, assets/vendor = 재배포 금지라 gitignore).
+# 옛 Kenney sign(0.300×0.409×0.070 ×3.6 = 폭 1.08 · 전고 1.47)을 대체.
+# 원본 1.354×1.600×0.971(미터·원점 바닥 중심) → 배율 0.92면 전고 1.47로 옛 값과 같다.
+const SIGN_S := 0.92
 func _sign(p: Node3D) -> void:
-	var n := _glb("sign")
-	if n == null:
-		return
-	n.scale = Vector3.ONE * 3.6
-	p.add_child(n)
+	var n := _kit(VENDOR + "town-life--notice-board/town-life--notice-board.glb", SIGN_S)
+	if n != null:
+		p.add_child(n)
 
 # 화분: 목재 통 + 흙 + 꽃 3송이
 func _planter(p: Node3D) -> void:

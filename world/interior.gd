@@ -81,9 +81,7 @@ const FURNITURE := [
 	["bedDouble", -3.0, -4.9, 180, 0.0],      # 북서: 머리맡을 북벽에 (rot180 = 몸통이 +z로 자람)
 	["sideTable", -3.0, -1.0, 0, 0.0],        # 침대 발치 협탁
 	["lampRoundTable", -3.0, -1.15, 0, 0.99], # 협탁 위 (sideTable 높이 0.38×FSC)
-	["kitchenStove", 1.9, -3.75, 0, 0.0],     # 북동: 부엌 라인 (뒷면이 북벽)
-	["kitchenSink", 3.1, -3.75, 0, 0.0],
-	["kitchenFridge", 4.3, -4.15, 0, 0.0],
+	["kitchenFridge", 4.3, -4.15, 0, 0.0],    # 북동 끝 (스토브·싱크는 TT_KITCHEN으로 교체)
 	["bookcaseClosedDoors", -4.35, 0.8, 90, 0.0],  # 서벽 (rot90 = 정면이 +x = 방 안쪽)
 	["rugRectangle", 0.0, 1.4, 0, 0.01],      # 중앙 러그 (바닥 위 살짝)
 	["table", 0.0, 0.6, 0, 0.0],              # 러그 위 식탁
@@ -92,6 +90,23 @@ const FURNITURE := [
 	["lampRoundFloor", 4.3, 1.8, 0, 0.0],     # 동쪽 스탠드
 	["pottedPlant", -4.4, 3.4, 0, 0.0],       # 남서 화분
 ]
+# 부엌 라인 — Tiny Treats Charming Kitchen (CC0). 옛 Kenney kitchenStove/kitchenSink
+# (각 0.430×0.450 ×FSC 2.6 = 폭 1.12)를 대체한다. 냉장고는 충돌체 SOLIDS[2]가 걸려 있어 그대로 둔다.
+# 원본은 폭 2.000 · 상판 1.000 · 안길이 1.501, 원점 = 바닥 중심, rot 0의 정면이 +z(스토브만
+# z가 −0.750..+0.926으로 비대칭 = 문·손잡이가 +z로 튀어나온 쪽이 앞) — Kenney와 같은 방향 규약.
+#
+# 배율은 **자리가 정한다**: 북벽에서 쓸 수 있는 폭은 문간(WALL_N[2] wallDoorway x∈[−1,1])
+# 오른쪽부터 냉장고 서단(x 4.30)까지 = 2.95다. 두 조각이 들어가려면 폭 ≤1.47 → 0.72
+# (폭 1.44 · 상판 0.72 · 스토브 전고 0.94). 스토브 중심 x 2.10은 STOVE_AT(x 1.9) 트리거
+# 바로 뒤 = 요리 프롬프트가 스토브를 가리킨다는 계약이 그대로다.
+# z: 원본 뒷면 −0.750 ×0.72 = −0.54 → 중심 −4.38이면 뒷면이 −4.92 = 옛 Kenney 스토브 뒷면과 같다.
+const TT_KITCHEN := "res://assets/tinytreats/Tiny_Treats_Charming_Kitchen_1.1_FREE/Assets/gltf/"
+const TT_S := 0.72
+const TT_FURNITURE := [
+	["stove", 2.10, -4.38],            # 폭 1.38..2.82 (문간 x1.0에서 0.38 띄움)
+	["countertop_sink", 3.54, -4.38],  # 폭 2.82..4.26 (스토브에 맞붙고 냉장고 4.30 직전)
+]
+
 # 큰 가구만 대강 충돌 [x, z, w, d] (침대·책장·냉장고·식탁) — 나머진 통과 허용(오두막이 좁다)
 const SOLIDS := [
 	[-3.0, -3.43, 2.50, 2.94], [-4.67, 0.8, 0.65, 1.04],
@@ -109,6 +124,11 @@ func _ready() -> void:
 	_eaves()
 	for f in FURNITURE:
 		_place(f[0], Vector3(f[1], FLOOR_Y + f[4], f[2]), f[3])
+	for t in TT_FURNITURE:
+		var n := Decor.load_kit(TT_KITCHEN + t[0] + ".gltf", TT_S, OUTLINE)
+		if n != null:
+			n.position = ORIGIN + Vector3(t[1], FLOOR_Y, t[2])
+			add_child(n)
 	for s in SOLIDS:
 		_collide(Vector3(s[0], 1.0, s[1]), Vector3(s[2], 2.0, s[3]))
 	_shell_collision()

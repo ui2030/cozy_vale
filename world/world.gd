@@ -661,12 +661,23 @@ func _clock_tower(parent: Node, base: Vector3) -> void:
 	_box(parent, Vector3(cx, y + 4.55, cz), Vector3(0.07, 0.6, 0.07), C_WOOD, 0.0)            # 깃대(원뿔 꼭짓점 위)
 	_box(parent, Vector3(cx + 0.33, y + 4.7, cz), Vector3(0.6, 0.34, 0.04), C_ROOF2, 0.0)     # 깃발 (총고 top≈world9.87 ≤10)
 
+# 광장 분수 — Tiny Treats Pretty Park (CC0). 옛 3단 원통(반경 1.2 · 전고 1.40 · 흰 석재)을 대체.
+# 원본 AABB 4.000×1.600×4.000, 원점 = 바닥 중심.
+# 배율은 **충돌체가 정한다**: 원통 r1.0에 플레이어 캡슐 r0.4를 더하면 발이 멈추는 곳이 중심에서
+# 1.4다. 가시 반경이 그보다 크면 대야 안으로 걸어 들어간 그림이 된다(옛 반경 1.2가 이 규칙).
+# 0.65 → 반경 1.30 · 전고 1.04. 충돌체·좌표는 그대로 = WORLD_VERSION 불변, 보이는 메시만 교체.
+const FOUNTAIN_S := 0.65
 func _fountain(parent: Node, at: Vector3) -> void:
-	# 3단 분수(반경≤1.2), 광장 중앙. 충돌 r1 h2(플레이어 진입 차단).
-	_cyl(parent, at + Vector3(0, 0.3, 0), 1.2, 0.6, C_STONE)
-	_cyl(parent, at + Vector3(0, 0.75, 0), 0.8, 0.4, C_STONE)
-	_cyl(parent, at + Vector3(0, 1.15, 0), 0.35, 0.5, C_STONE)
-	_cyl(parent, at + Vector3(0, 0.62, 0), 1.0, 0.1, C_WATER, 0.0).material_override = _water_mat()  # 수면(애니 물)
+	var n := Decor.load_kit(Decor.TT_PARK + "fountain.gltf", FOUNTAIN_S)
+	if n != null:
+		n.position = at
+		parent.add_child(n)
+		# 킷의 수면 메시(fountain_water = 대야 y0.5 · 윗대야 y1.435 두 장의 수평 원반)는 UV가
+		# 아틀라스의 팔레트 블록 전체(u 0.14~0.77 · v 0.23~0.91)에 퍼져 있어, 원반의 방위각에 따라
+		# 노랑·주황·회색 팔레트 칸이 부채꼴로 찍힌다(실측 1차 after: 수면을 가로지르는 노란 띠).
+		# 마을 공용 애니 물로 갈아 끼우면 그 UV를 아예 안 쓰고 연못·강과 같은 물이 된다(단일 출처).
+		for c in n.find_children("fountain_water", "MeshInstance3D", true, false):
+			(c as MeshInstance3D).material_override = _water_mat()
 	_collide_cyl(parent, at + Vector3(0, 1, 0), 1.0, 2.0)
 
 # 보이지 않는 정적 원통 충돌체(분수·풍차 탑). 원통 가시물에 상자를 씌우면 대각선에 보이지 않는 벽이 남는다.
