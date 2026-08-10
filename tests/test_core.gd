@@ -1028,24 +1028,38 @@ func _test_winter_pass() -> void:
 	for s in 3:
 		assert(W.ground_color(s) == W.C_GRASS, "계절 %d 지면 무변경(초지)" % s)
 	assert(W.ground_pattern(3) < W.ground_pattern(0), "겨울 지면 패턴은 약해진다(설원 요철 수준)")
-	# 정오 수평면은 albedo 0.75 위에서 255로 포화한다(실측). 포화하면 풀 패턴·곡률 음영이
+	# 정오 직광면은 albedo 0.75 위에서 255로 포화한다(실측). 포화하면 풀 패턴·곡률 음영이
 	# 통째로 날아가므로 지면 계열 채널 상한을 테스트로 못박는다. 상한을 0.76→0.75로 조인 근거:
 	# 0.76은 "클리핑 직전"이 아니라 실측에서 이미 B가 255였다(눈 지면 (241,247,255)).
+	# 툰 light()는 ndl을 smoothstep(0.32,0.68)에 통과시키므로 정오 직광에서 수평 지면(ndl 0.89)과
+	# 수직 벽면(ndl 0.81)이 **둘 다 shade=1.0** = 같은 전달함수다. 그래서 이 상한은 지면만의
+	# 사정이 아니라 정오 직광면 전체의 화면 천장이고, 아래 실루엣 핀이 그 사실 위에 선다.
+	const CLIP_ALBEDO := 0.75
 	var B2 := preload("res://world/beach.gd")  # 해변 모래도 같은 수평 지면 = 같은 상한을 받는다
 	for gc in [W.C_GRASS, W.C_SNOW, W.C_ROAD, W.C_ROAD_W, W.C_GREEN, B2.C_SAND, B2.C_WET]:
-		assert(maxf(maxf(gc.r, gc.g), gc.b) <= 0.75, "지면/길 albedo가 정오 클리핑 한계 초과: %s" % gc)
+		assert(maxf(maxf(gc.r, gc.g), gc.b) <= CLIP_ALBEDO, "지면/길 albedo가 정오 클리핑 한계 초과: %s" % gc)
 	# 겨울 길은 설원보다 어두워야 길로 읽힌다(밝으면 눈에 묻히고, 여름 톤이면 설원 위 노란 띠).
 	assert(W.C_ROAD_W.g < W.C_SNOW.g and W.C_ROAD_W.g > W.C_CUT.g, "겨울 길 톤이 설원↔진흙 사이가 아님")
 	assert(W.C_ROAD_WE.g > W.C_ROAD_W.g, "겨울 길 가장자리는 길보다 밝게(설원으로 스밈)")
-	# 겨울 실루엣: 크림 벽토의 직광면은 어차피 255로 포화한다(C_WALL은 그늘면 파스텔 기준으로
-	# 고정 — 내리면 근접 컷이 갈색이 된다). 그래서 눈 지면이 벽토보다 확실히 어두워야 눈밭에서
-	# 집·판매상자 윤곽이 떠오른다. 0.76이던 동안 명도차가 없어 실루엣이 통째로 소실됐다(실측).
-	assert(W.C_WALL.g - W.C_SNOW.g >= 0.15, "눈 지면과 벽토 명도차 부족 — 겨울 실루엣 소실")
+	# 겨울 실루엣: 눈 지면이 크림 벽토보다 확실히 어두워야 눈밭에서 집·판매상자 윤곽이 떠오른다.
+	# **옛 핀은 `C_WALL.g - C_SNOW.g >= 0.15`였고, 통과하는데도 화면에서 실루엣이 사라졌다**
+	# (실측 season_audit/winter_clear_life_h12: 지평선 설원 (228,234,245) vs 벽 (255,255,255) = 21).
+	# 이유: C_WALL.g(0.844)는 CLIP_ALBEDO를 넘어 **화면에 존재하지 않는 여유**다. 0.75든 0.88이든
+	# 벽은 똑같이 255로 찍히므로, 벽 albedo를 올려도 대비는 1도 안 늘고 핀만 헐거워진다.
+	# 실제 여유는 `CLIP_ALBEDO - C_SNOW.g` = 0.07이었다 — 핀이 약속한 0.15의 절반 이하.
+	# (0.07로도 버틴 건 외곽선이 윤곽을 그려줬기 때문이고, 2bde841이 그걸 전역 제거하면서 드러났다.)
+	# 그래서 왼쪽 항을 **도달 가능한 천장**으로 바꾼다 = 눈만이 대비를 만들 수 있다는 사실을 핀한다.
+	# 기준 0.15는 그대로 두되(느슨하게 하지 않는다) 이제 진짜 0.15다: 화면 실측 62레벨.
+	assert(minf(W.C_WALL.g, CLIP_ALBEDO) - W.C_SNOW.g >= 0.15, "눈 지면과 벽토의 **화면** 명도차 부족 — 겨울 실루엣 소실")
 	# C_FROST_LEAF / C_FROST는 더 이상 겨울 화면을 **직접 칠하지 않는다**(식생이 킷 텍스처로 바뀌면서
 	# 서리톤은 sat_cap·val_gain·char_tint가 만든다). 그래서 이 핀은 이제 "옛 실측 목표값 두 개의
 	# 서열"만 지킨다 = 아래 실경로 검사(_test_winter_veg_look)가 도달해야 할 과녁이 흔들리지 않게.
 	# 겨울 룩 자체가 깨지는지는 이 핀이 아니라 그쪽이 잡는다.
-	assert(D.C_FROST_LEAF.g < W.C_SNOW.g and D.C_FROST_LEAF.g > D.C_FROST.g, "설경 서리톤 목표 서열 어긋남")
+	# 옛 판에는 `C_FROST_LEAF.g < C_SNOW.g`(수관 목표는 설원 아래)도 있었는데, 그건 **옛 설원
+	# 0.68에 대한 서술**이었다. 지금 수관은 설원이 아니라 크림 하늘을 배경으로 잡히므로 실경로에서
+	# 이미 설원보다 훨씬 밝고(실측 선형 0.640 vs 0.290), 설원을 내리자 그 항만 거짓이 됐다.
+	# 설원과의 관계는 값이 아니라 서열로 _test_winter_veg_look ③④가 실경로에서 본다.
+	assert(D.C_FROST_LEAF.g > D.C_FROST.g, "설경 서리톤 목표 서열 어긋남(수관 > 지피)")
 	# 팔레트 단일 출처: decor.gd는 순환 preload를 피해 마을 팔레트를 복제한다(beach.gd가 이걸
 	# 재사용한다). 값이 갈라지면 존을 넘을 때 같은 소재가 다른 색으로 보인다.
 	assert(D.C_WOOD == W.C_WOOD and D.C_CREAM == W.C_WALL and D.C_ROOF == W.C_ROOF \
@@ -1103,30 +1117,38 @@ func _test_winter_veg_look() -> void:
 	assert(atlas != null, "파크 킷 아틀라스를 못 읽음")
 	var dec: Node = D.new()
 	var grass: Mesh = dec._flora_mesh("grass_A")     # 여름 원본 = 겨울에도 같은 지오메트리
+	var tree_s: Mesh = dec._kit_mesh("tree")         # 여름 원본 수관(기본 VEG_GAIN·KIT_SAT_CAP)
 	var tree_w: Mesh = dec._kit_mesh("tree", D.TREE_WINTER_GAIN, D.VEG_WINTER_SAT)  # 겨울 스왑 사본
-	assert(grass != null and tree_w != null, "킷 메시 로드 실패 — 에셋 경로 확인")
+	assert(grass != null and tree_s != null and tree_w != null, "킷 메시 로드 실패 — 에셋 경로 확인")
 	var frost: ShaderMaterial = dec._frost_mat()     # 지피 서리 = MMI material_override
 	assert(frost.get_shader_parameter("use_tex"), "서리 override가 아틀라스를 안 물었다(단색 폴백)")
 	var snow := W.C_SNOW.srgb_to_linear()
 	var g_sum := _kit_albedo(grass, atlas, grass.surface_get_material(0) as ShaderMaterial)
 	var g_win := _kit_albedo(grass, atlas, frost)
+	var t_sum := _kit_albedo(tree_s, atlas, tree_s.surface_get_material(0) as ShaderMaterial)
 	var t_win := _kit_albedo(tree_w, atlas, tree_w.surface_get_material(0) as ShaderMaterial)
 	dec.free()
-	var msg := " (설원 %.3f / 여름풀 %.3f / 서리풀 %.3f / 서리수관 %.3f, 설원비 %.2f/%.2f)" \
-		% [snow.g, g_sum.g, g_win.g, t_win.g, g_win.g / snow.g, t_win.g / snow.g]
+	var msg := " (설원 %.3f / 풀 여름 %.3f→겨울 %.3f(×%.2f) / 수관 여름 %.3f→겨울 %.3f(×%.2f), 설원비 %.2f)" \
+		% [snow.g, g_sum.g, g_win.g, g_win.g / g_sum.g, t_sum.g, t_win.g, t_win.g / t_sum.g, g_win.g / snow.g]
 	print("winter veg albedo(lin):" + msg)   # assert보다 먼저 — 실패해도 실측값이 로그에 남는다
+	# 이 대역들은 **설원이 아니라 같은 킷의 여름 사본**을 기준으로 잡는다. 옛 판은 셋 다 설원비였는데,
+	# 겨울 실루엣 처방으로 C_SNOW를 내리자(0.68→0.575) 과녁이 통째로 따라 움직였다 — 설원을 건드릴
+	# 때마다 식생 gain의 합격 대역이 조용히 바뀌는 판이라 회귀를 못 잡는다. 서리는 "같은 텍셀을
+	# 얼마나 밝히느냐"는 처방이므로 여름 사본이 옳은 원점이고, 이 대역은 C_SNOW와 무관하게 고정된다.
 	# ① 서리는 **밝히는** 처방이다(잎 결을 남긴 "얹힌 눈"). gain을 잃으면 눈밭 위 검은 잡초가 된다.
-	#    겨울 gain을 1.0으로 되돌리면 여기서 걸린다 = 이 테스트의 존재 이유.
-	assert(g_win.g > snow.g * 0.90, "서리 풀이 너무 어둡다 — FLORA_WINTER_GAIN 처방 소실" + msg)
-	assert(g_win.g > g_sum.g * 1.05, "겨울 풀이 여름 풀보다 안 밝다 — 서리가 안 걸렸다" + msg)
-	# ② 그러나 더 밝히면 설원에 붙어 중경이 통째로 빈다 — 실측된 1차 실패(gain 2.6, 서리 풀 화면
-	#    (209,198,189)이 설원 (213,215,220)에 흡수)의 경계다. 세 지점을 이 계산으로 재보면
-	#    gain 1.0 → 설원비 0.53 · **승인된 2.15 → 1.14** · 1차 실패 2.6 → 1.33 이므로,
-	#    [0.90, 1.25] 대역이 승인점만 통과시키고 알려진 두 실패를 다 걸러낸다.
-	assert(g_win.g < snow.g * 1.25, "서리 풀이 설원과 붙었다 — 겨울 중경 실루엣 소실" + msg)
-	# ③ 수관은 반대 목표 — 크림 하늘 배경이라 훨씬 밝아야 "가지에 얹힌 눈"으로 읽힌다(어두우면 바위
+	#    겨울 gain을 1.0으로 되돌리면 여기서 걸린다(여름비 0.51) = 이 테스트의 존재 이유.
+	assert(g_win.g > g_sum.g * 1.05, "겨울 풀이 여름 풀보다 안 밝다 — FLORA_WINTER_GAIN 처방 소실" + msg)
+	# ② 그러나 더 밝히면 min(src*gain, 1.0)이 채널을 잘라 색이 흰색으로 빠지고 설원과 한 덩어리가
+	#    된다 — 실측된 1차 실패(gain 2.6: 서리 풀 화면 (209,198,189)이 설원 (213,215,220)에 흡수).
+	#    세 지점의 여름비는 gain 1.0 → 0.51 · **승인된 2.15 → 1.10** · 1차 실패 2.6 → 1.28이므로
+	#    [1.05, 1.20]이 승인점만 통과시키고 알려진 두 실패를 다 걸러낸다.
+	assert(g_win.g < g_sum.g * 1.20, "서리 풀이 하얗게 빠졌다 — 겨울 중경 실루엣 소실" + msg)
+	# ③ 그 위에서 지피는 설원 **바닥 위에 놓인다** = 지면에 묻히면 안 된다. 값이 아니라 서열만
+	#    본다(설원이 움직여도 뜻이 안 변하는 유일한 설원 관계다).
+	assert(g_win.g > snow.g * 1.05, "서리 풀이 설원에 묻힌다 — 흰 바탕의 흰 낙서" + msg)
+	# ④ 수관은 반대 목표 — 크림 하늘 배경이라 훨씬 밝아야 "가지에 얹힌 눈"으로 읽힌다(어두우면 바위
 	#    덩어리). 두 목표가 반대라는 것이 옛 C_FROST_LEAF > C_FROST 서열의 실경로 판이다.
-	assert(t_win.g > snow.g * 1.25, "서리 수관이 어둡다 — 눈 덮인 나무가 아니라 바위로 읽힌다" + msg)
+	assert(t_win.g > t_sum.g * 1.25, "서리 수관이 어둡다 — 눈 덮인 나무가 아니라 바위로 읽힌다" + msg)
 	assert(t_win.g > g_win.g * 1.25, "수관·지피 서리 밝기 목표가 갈리지 않았다" + msg)
 
 # toon.gdshader fragment의 albedo 경로를 선형공간에서 그대로 계산한다(채도 상한 → 밝기 곱 → char_tint).
