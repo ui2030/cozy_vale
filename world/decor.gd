@@ -29,6 +29,13 @@ const VENDOR := "res://assets/vendor/plumberry-plains-props-vol-1/props/"
 # 계수 1.93 = 지면 albedo 0.75 상한의 출처). char_tint는 선형 공간 곱이라 텍셀 1.0 → 이 색의
 # sRGB 값이 그대로 상한이 된다 = interior.gd TINT_DEF(Kenney 순백 1.0 → 0.72)와 같은 수법.
 const KIT_TINT := Color(0.76, 0.75, 0.72)
+# 밝기를 맞춰도 **채도**가 남는다 — (max−min)/max: 마을 팔레트 상수가 벽토 0.11 · 최고치인
+# 보라 기와 0.33인데 화면 실측이 TT 벤치 좌판 0.69 · Plumberry 게시판 기와 0.85로, 형태는 맞아도 색이
+# "다른 게임 스티커"로 읽혔다(assets1/after_hall_h12). 아틀라스를 다시 굽지 않고 toon 셰이더의
+# 채도 상한(sat_cap)으로 깎는다. 선형 albedo 0.60 = 같은 컷 화면 실측 게시판 기와 0.42 ·
+# 벤치 좌판 0.49로, 마을 보라 기와 0.41 · 화분 목재 0.50과 같은 대역(assets2 실측표).
+# 상한을 넘는 텍셀만 깎이므로 이미 얌전한 부분(판넬 종이·석재)은 원본 그대로 = 디테일 보존.
+const KIT_SAT_CAP := 0.60
 
 # ── 팔레트 (VILLAGE_SPEC §2, 낮 기준 — world.gd 상수와 같은 값) ──────
 # 파스텔 시프트(소프트닝 v1) — world.gd와 같은 규칙·같은 값(채도 −15%p / ×0.55 하한, 명도 +5%p).
@@ -238,8 +245,22 @@ static func load_kit(path: String, sc: float, outline := OUTLINE) -> Node3D:
 	var n := ToonChar.load_glb(path, outline / sc, KIT_TINT)
 	if n == null:
 		return null  # 에셋 누락(vendor는 gitignore) 폴백: 그 자리만 빈다
+	_grade_kit(n)
 	n.scale = Vector3.ONE * sc
 	return n
+
+# 채도 상한을 **텍스처 표면에만** 건다. use_tex는 ToonChar.apply가 원본에 albedo_texture가
+# 있을 때만 켜므로 그 자체가 "구운 아틀라스냐" 판정이다 — 단색 표면(마을 팔레트로 지정한
+# 색이거나 _glb 경로에서 _repaint가 칠한 색)까지 당기면 팔레트값이 흔들린다.
+static func _grade_kit(node: Node) -> void:
+	if node is MeshInstance3D:
+		var mi := node as MeshInstance3D
+		for i in mi.get_surface_override_material_count():
+			var m := mi.get_surface_override_material(i) as ShaderMaterial
+			if m != null and m.get_shader_parameter("use_tex"):
+				m.set_shader_parameter("sat_cap", KIT_SAT_CAP)
+	for c in node.get_children():
+		_grade_kit(c)
 
 func _kit(path: String, sc: float) -> Node3D:
 	if not _cache.has(path):

@@ -695,12 +695,26 @@ func _collide_cyl(parent: Node, center: Vector3, radius: float, height: float) -
 const PLAZA_R := 6.0  # 판석 원반 반경 — 길 끝 겹침(_lap_to_plaza)이 같은 값을 읽는다(단일 출처)
 
 func _plaza(parent: Node) -> void:
-	# 크림 판석 원형 바닥 r6 — 시각 전용 교체(메시·좌표·높이·반경 불변, 충돌체 없음).
-	# 흰 디스크 → 절차 판석 패턴(world/plaza.gdshader, 텍스처 파일 0).
-	var mi := _cyl(parent, Vector3(0, 0.08, 0), PLAZA_R, 0.12, C_WALL, 0.0)
+	# 크림 판석 원형 바닥 r6 — 절차 판석 패턴(world/plaza.gdshader, 텍스처 파일 0).
+	# 원기둥이 아니라 **세분할 판**인 이유: 원기둥 뚜껑은 중심-림 삼각형 팬이라 정점이 중심과
+	# r6에만 있다. 곡률(v.y -= 0.006·z²)이 정점 단위여서 6유닛 스포크가 현으로 근사되고, 중간
+	# 반경(r3)이 0.006·6²/4 = 0.054 가라앉는다 — 판석 상면 0.14 − 지면 0.10 = 여유 0.04보다
+	# 커서 광장 한복판에 잔디가 뚫고 올라왔다(실측 assets1/probe_nofount, 옛 흰 분수 밑동이
+	# 가리고 있던 것). _subdiv_z가 긴 박스에 대해 경고하는 바로 그 함정 = 같은 처방(칸 1.5u)으로
+	# 칸당 처짐 0.007. 상면 높이 0.14·반경·무충돌은 그대로라 길 겹침(PLAZA_LAP) 계약 무변경.
+	var mi := MeshInstance3D.new()
+	var pm := PlaneMesh.new()
+	pm.size = Vector2(PLAZA_R * 2.0, PLAZA_R * 2.0)
+	pm.subdivide_width = _subdiv_z(PLAZA_R * 2.0)  # 박스와 같은 단일 출처
+	pm.subdivide_depth = pm.subdivide_width
+	mi.mesh = pm
+	mi.position = Vector3(0, 0.14, 0)  # 옛 원기둥 상면과 같은 높이
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF  # 지면에 붙은 판 — 저녁 해에 사각 그림자가 새지 않게
 	var m := ShaderMaterial.new()
 	m.shader = PLAZA_SHADER
+	m.set_shader_parameter("radius", PLAZA_R)  # 원반 모양은 셰이더 discard가 낸다(64각형보다 매끈)
 	mi.material_override = m
+	parent.add_child(mi)
 
 # 방사 6갈래 + 다리 연결로. [중심, 길이(로컬+Z), y회전(도)] — rot=atan2(dx,dz)로 장축을 방향에 정렬.
 # 지도 충실화(Fable 탑다운 대조 반영): 모든 다리는 길로 연결 + 동안(東岸) 경로.

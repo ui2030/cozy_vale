@@ -490,6 +490,20 @@ func _test_npc_schedule() -> void:
 	# S자 곡류라 관절 1(북, 서로 꺾임)과 관절 5(남, 반대로 꺾임)의 부호가 반대여야 한다.
 	assert(W2._joint_ext(1, false, W2.BANK_OFF) < 0.0 and W2._joint_ext(5, false, W2.BANK_OFF) > 0.0,
 		"굽이 방향 부호가 살아 있지 않다(absf 회귀) — 안쪽 둑이 겹쳐 혹이 된다")
+	# ── 광장 판석도 같은 곡률 함정에 걸렸었다(실측 assets1/probe_nofount): 원기둥 뚜껑은
+	# 중심-림 삼각형 팬이라 스포크가 r6 = 처짐 0.006·6²/4 = 0.054 > 여유 0.04라 광장 한복판에
+	# 잔디가 뚫고 올라왔다. 판 + 세분할로 고쳤으니 그 계약(칸 대각 처짐 < 지면 여유)을 잡는다.
+	var probe_p := W2.new()
+	var plaza_root := Node3D.new()
+	probe_p._plaza(plaza_root)
+	var plaza_mi := plaza_root.get_child(0) as MeshInstance3D
+	var plaza_pm := plaza_mi.mesh as PlaneMesh
+	var pdiag: float = W2.PLAZA_R * 2.0 / float(plaza_pm.subdivide_width + 1) * sqrt(2.0)
+	assert(0.006 * pdiag * pdiag * 0.25 < plaza_mi.position.y - 0.10,
+		"판석 칸 처짐 %.3f ≥ 지면 여유 %.2f" % [0.006 * pdiag * pdiag * 0.25, plaza_mi.position.y - 0.10])
+	assert(absf(plaza_mi.position.y - 0.14) < 0.001, "판석 상면 0.14 계약(길 0.185 아래 · 접지 그림자판 0.20 아래)")
+	plaza_root.free()
+	probe_p.free()
 	# ── 로드/취침 점프: 그 시각 장소에 이미 배치 (단체 행군 방지)
 	GameClock.game_min = 13 * 60
 	_npcsys.snap_to_schedule()

@@ -13,6 +13,7 @@ uniform float slab_arc = 0.95;      // 슬래브 1장의 목표 호 길이 → �
 uniform float joint = 0.09;         // 줄눈 두께(모델 단위)
 uniform float tone_var = 0.065;      // 판석마다 명도 변주 폭(수제 석재 느낌)
 uniform float curve_strength = 0.006;  // toon.gdshader와 동일 월드 곡률
+uniform float radius = 6.0;         // 이 반경 밖은 버린다 — 판을 원반으로 자르는 건 메시가 아니라 픽셀
 
 // toon.gdshader와 같은 수채 단조 파라미터
 uniform float shadow_level : hint_range(0.0, 1.0) = 0.55;
@@ -39,6 +40,9 @@ void vertex() {
 void fragment() {
 	vec2 p = mpos.xz;
 	float r = max(length(p), 0.001);
+	if (r > radius) {
+		discard;
+	}
 	float ring = floor(r / ring_width);
 	float rf = fract(r / ring_width);
 	// 링 둘레를 slab_arc 길이로 나눈 수 = 바깥 링일수록 판석이 많아진다(방사 배열).
