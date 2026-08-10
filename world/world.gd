@@ -42,6 +42,7 @@ func _bridge_mat(uv_shift := 0.0) -> ShaderMaterial:
 	return m
 
 func _ready() -> void:
+	add_to_group("world")  # 디버그 패널이 계절 재적용(_apply_season)·날짜 탐색을 부르는 통로
 	_sun.rotation_degrees = Vector3(-52, -125, 0)
 	_add_env()
 	_build_village()        # 마을 P1 컬러박스 (임시 지오메트리, make_solid=곡면 툰)
@@ -256,14 +257,21 @@ func _ready() -> void:
 		if _si + 2 < _args.size() and _args[_si + 2].is_valid_int():
 			GameClock.abs_day = sb + clampi(int(_args[_si + 2]), 1, GameClock.DAYS_PER_SEASON) - 1
 		else:
-			for d in GameClock.DAYS_PER_SEASON:
-				if not GameData.is_rainy(sb + d) and GameData.festival_on(sid, d + 1).is_empty():
-					GameClock.abs_day = sb + d
-					break
+			GameClock.abs_day = season_day(GameData.SEASON_IDS.find(sid), false)
 		print("season shot: ", sid, " abs_day=", GameClock.abs_day)
 	# 시계를 옮기는 하네스(festival·wedding·weather·season)와 세이브 로드를 전부 지난 뒤 1회 —
 	# from_dict는 신호를 안 쏘므로 여기서 계절 표현(지면 눈 톤·식생)을 명시 재평가한다.
 	_apply_season(GameClock.season())
+	# 개발자 패널 검증: `-- devpanel [토큰...]` — 패널을 열고 뒤따르는 토큰을 **버튼과 같은
+	# 진입점**(press)으로 누른다. 토큰 = 계절 id / clear|rain|snow / 시각 정수. 모르는 토큰
+	# (out·파일명·shot 등)은 무시된다. 릴리즈 빌드엔 패널이 없어 이 블록은 조용히 지나간다.
+	var _dpi := _args.find("devpanel")
+	if _dpi != -1:
+		var dp := get_tree().get_first_node_in_group("debug_panel")
+		if dp != null:
+			dp.open()  # SaveManager.suspended는 open()이 세운다(단방향 래치)
+			for tk in _args.slice(_dpi + 1):
+				dp.press(tk)
 	# 채집물 검증: -- forage. 좌표를 복제하지 않고 실제로 스폰된 첫 채집물 옆에 선다.
 	if "forage" in _args:
 		await get_tree().process_frame  # forage_system의 _respawn.call_deferred 완료 대기
@@ -1229,6 +1237,19 @@ static func ground_color(season: int) -> Color:
 # 지면 패턴 강도. 겨울엔 절반 — 풀 2톤이 아니라 설원 요철 정도로만 남는다.
 static func ground_pattern(season: int) -> float:
 	return 0.45 if season == WINTER else 1.0
+
+# (계절, 강수 여부) → 그 계절 안에서 그 조건이 성립하는 첫 abs_day. `-- season` 하네스와
+# 디버그 패널(ui/debug_panel.gd)의 공용 단일 출처다.
+# 날씨·계절은 abs_day 결정적이므로 **강제 스위치를 두지 않고 시계를 옮긴다** — 판정 함수
+# (GameData.is_rainy)를 그대로 통과시킨다 = 프로덕션 코드에 테스트 훅 0.
+# 축제일은 건너뛴다: 축제 장식이 지면·식생 판정을 가린다(축제일은 is_rainy가 항상 false라
+# 강수를 찾는 쪽에는 영향이 없다). 조건에 맞는 날이 없으면 계절 첫날(계약: 항상 그 계절 안).
+func season_day(season: int, rain: bool) -> int:
+	var base: int = season * GameClock.DAYS_PER_SEASON
+	for d in GameClock.DAYS_PER_SEASON:
+		if GameData.is_rainy(base + d) == rain and GameData.festival_on(GameData.SEASON_IDS[season], d + 1).is_empty():
+			return base + d
+	return base
 
 # 계절 상태 재적용. 신호가 없는 경로(세이브 로드·하네스의 시계 이동)에서도 한 번 명시 호출한다
 # — festival_system의 "로드 후 evaluate" 전례와 같은 규약.

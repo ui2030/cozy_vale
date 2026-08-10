@@ -47,7 +47,7 @@ func open_menu() -> void:
 	_prev_state = GameClock.state
 	GameClock.state = GameClock.State.PAUSED
 	# 열려 있는 패널은 전부 닫는다 — hud.tscn에서 PauseMenu보다 뒤에 있는 패널은 메뉴 위에 겹쳐 그려진다
-	for g in ["calendar_panel", "collection_panel", "inventory_panel", "cooking_panel"]:
+	for g in ["calendar_panel", "collection_panel", "inventory_panel", "cooking_panel", "debug_panel"]:
 		var pan := get_tree().get_first_node_in_group(g)
 		if pan != null:
 			pan.visible = false
