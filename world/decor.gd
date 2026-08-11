@@ -153,7 +153,29 @@ const VEG_GAIN := 1.85
 # 색으로 붙어 꽃심이 사라지고 노란 덩어리가 된다(실측 근접 크롭) — 유저가 원한 "꽃잎·중심부 구분"의
 # 정반대다. KIT_TINT에서 완전 노랑 쪽으로 0.70만 간다 = 꽃잎은 버터색, 꽃심은 한 단 진한 호박색.
 # 푸른 꽃은 곱으로 보라가 못 된다(R 텍셀 자체가 없다) → 원색 유지 = 연못·하늘과 같은 계열의 시원한 악센트.
-const FLORA_TINT := {"flower_A": Color(0.760, 0.688, 0.464)}
+#
+# 그리고 **한 가지 색으론 부족하다**. 유저가 붙인 참고 이미지(동물의 숲 꽃밭)의 요점은 꽃잎
+# 디테일만이 아니라 **종류가 여럿이라는 것**이었다 — 노란 꽃만 깔면 색이 하나인 화단이다.
+# 킷엔 꽃 메시가 둘뿐이지만 flower_A는 **흰 꽃잎**이라 곱으로 어느 색이든 낼 수 있다. 그래서
+# 같은 메시를 색만 달리한 변종(`flower_A~white`, `flower_A~pink`)으로 나눈다. 이름의 `~` 앞이
+# 킷 파일명이다. MultiMesh는 인스턴스별 색을 안 쓰므로 **색을 가르려면 버킷을 가르는 수밖에
+# 없다** = 변종 하나당 드로우콜 +1. 꽃 2색 → 4색에 +2로 산다.
+# (푸른 flower_B는 변종을 못 만든다 — R 텍셀이 0이라 곱으로는 파랑 계열 밖으로 못 나간다.)
+# 분홍값은 노랑과 같은 유도식이다: KIT_TINT에서 (0.85,0.45,0.55)를 최대 채널로 정규화한
+# 비율 쪽으로 0.70만 간다 = 꽃잎은 분홍, 꽃심은 한 단 진한 장미색으로 갈린다.
+const FLORA_TINT := {
+	"flower_A": Color(0.760, 0.688, 0.464),        # 노랑 — 옛 마을 화단의 C_YELLOW 계승
+	"flower_A~pink": Color(0.760, 0.503, 0.542),   # 분홍
+	# "flower_A~white"는 여기 없다 = KIT_TINT 그대로 = 킷 원본 흰 데이지.
+}
+# 실제로 심는 버킷 목록 = MultiMesh 목록. `~` 뒤는 색 변종이라 메시는 같다.
+const FLORA_BUCKETS := ["flower_A", "flower_A~white", "flower_A~pink", "flower_B",
+	"bush", "bush_large", "grass_A", "grass_B"]
+
+# 버킷 이름 → 킷 파일명 (색 변종 접미 제거)
+static func kit_of(nm: String) -> String:
+	var i := nm.find("~")
+	return nm.substr(0, i) if i >= 0 else nm
 # ── 겨울 서리 (텍스처를 죽이지 않고 채도만 지우고 밝기를 올린다 = 잎 결이 남은 "얹힌 눈") ──
 # 옛 방식(albedo를 C_FROST/C_FROST_LEAF 단색으로 교체)을 그대로 쓰면 겨울에만 다시 통짜가 된다.
 # **나무와 지피 식생은 밝기 목표가 반대다** — 옛 두 상수(C_FROST_LEAF vs C_FROST)가 갈려 있던 이유:
@@ -326,7 +348,7 @@ func _kit(path: String, sc: float, gain := 1.0) -> Node3D:
 # 변형하지 않는다(Codex MUST-FIX). 겨울 사본도 이 함수로 따로 뽑는다(sat/gain만 다른 별개 Mesh).
 # 배율은 인스턴스 transform이 지므로 여기선 항상 native(1.0)로 굽는다.
 func _kit_mesh(nm: String, gain := VEG_GAIN, sat := KIT_SAT_CAP) -> Mesh:
-	var n := load_kit(TT_PARK + nm + ".gltf", 1.0, 0.0, gain)
+	var n := load_kit(TT_PARK + kit_of(nm) + ".gltf", 1.0, 0.0, gain)
 	if n == null:
 		return null
 	var mi := _first_mesh(n)
@@ -552,7 +574,7 @@ func _planter(p: Node3D) -> void:
 	# 킷 꽃은 줄기 위 한 송이가 아니라 납작하고 넓은 지피 꽃이라(native 0.45폭 × 0.14고) 옛 배율
 	# 2.6을 그대로 쓰면 폭 1.17이 되어 0.88 화분을 통째로 덮는다. 폭 기준으로 다시 잡는다:
 	# 0.78 → 폭 0.35 · 고 0.11. 3송이가 반경 0.18에서 살짝 겹쳐 화분 하나를 채운 무더기가 된다.
-	var kinds := ["flower_A", "flower_B", "flower_A"]
+	var kinds := ["flower_A", "flower_B", "flower_A~pink"]
 	for i in 3:
 		var f := _flower_node(kinds[i])
 		var a := TAU * i / 3.0
@@ -571,7 +593,7 @@ func _cart(p: Node3D) -> void:
 		var w := _cyl(p, Vector3(0, 0.38, 0.5 * s), 0.36, 0.1, C_WOOD_D, 0.004)
 		w.rotation.x = PI * 0.5
 	for i in 5:
-		var f := _flower_node("flower_A" if i % 2 == 0 else "flower_B")
+		var f := _flower_node(["flower_A", "flower_B", "flower_A~pink", "flower_A~white", "flower_A"][i])
 		f.position = Vector3(-0.5 + i * 0.25, 0.94, (i % 2) * 0.3 - 0.15)
 		f.scale = Vector3.ONE * 0.85  # 화분과 같은 이유 — 폭 0.38짜리가 0.25 간격으로 겹쳐 무더기가 된다
 		f.rotation.y = i * 1.1
@@ -609,7 +631,9 @@ func _place_flora() -> void:
 	rng.seed = 20260731
 	# 버킷 = 킷 모델 1종 = MultiMesh 1개 = 드로우콜 1. 옛 4종에서 6종으로 늘렸다(덤불·풀에 큰
 	# 변종 추가) — 같은 모델이 반복되는 게 "통짜"로 읽히던 원인의 절반이라, 드로우콜 +2로 산다.
-	var buckets := {"flower_A": [], "flower_B": [], "bush": [], "bush_large": [], "grass_A": [], "grass_B": []}
+	var buckets := {}
+	for nm in FLORA_BUCKETS:
+		buckets[nm] = []
 
 	# ① 길가 띠 — 길 중심선에서 2.3~4.2 벗어난 양쪽
 	for r in _roads:
@@ -623,14 +647,14 @@ func _place_flora() -> void:
 				if rng.randf() < 0.28:
 					continue
 				var c: Vector2 = a + dir * ((k + rng.randf()) * 2.6) + perp * (s * rng.randf_range(2.3, 4.2))
-				_add_flora(buckets, c, rng, ["flower_A", "flower_A", "flower_B", "flower_B", "bush", "grass_A"])
+				_add_flora(buckets, c, rng, ["flower_A", "flower_A~white", "flower_B", "flower_A~pink", "bush", "grass_A"])
 
 	# ② 광장 둘레 화단 — 판석 바깥 링(방사길 사이 구간만 남는다)
 	for _i in 220:
 		var ang := rng.randf() * TAU
 		var rad := rng.randf_range(6.6, 9.6)
 		_add_flora(buckets, Vector2(cos(ang), sin(ang)) * rad, rng,
-			["flower_A", "flower_B", "flower_B", "bush"])
+			["flower_A", "flower_A~pink", "flower_B", "flower_A~white"])
 
 	# ③ 강변 양안 — 물폭3 + 강둑 바깥
 	for i in _river.size() - 1:
@@ -644,7 +668,7 @@ func _place_flora() -> void:
 				if rng.randf() < 0.30:
 					continue
 				var c: Vector2 = a + dir * ((k + rng.randf()) * 3.0) + perp * (s * rng.randf_range(3.2, 5.2))
-				_add_flora(buckets, c, rng, ["flower_B", "flower_B", "flower_A", "grass_B", "bush_large"])
+				_add_flora(buckets, c, rng, ["flower_B", "flower_A~white", "flower_A", "grass_B", "bush_large"])
 
 	# ④ 초지 스프링클 — 풀포기·덤불만 옅게(꽃은 위 세 존에서만)
 	for _i in 190:
@@ -666,7 +690,7 @@ func _add_flora(buckets: Dictionary, at: Vector2, rng: RandomNumberGenerator, ki
 		if _blocked_flora(p):
 			continue
 		var nm: String = kinds[rng.randi() % kinds.size()]
-		var sc: Vector2 = FLORA_SCALE[nm]
+		var sc: Vector2 = FLORA_SCALE[kit_of(nm)]
 		var t := Transform3D()
 		t = t.scaled(Vector3.ONE * rng.randf_range(sc.x, sc.y))
 		t = t.rotated(Vector3.UP, rng.randf() * TAU)
@@ -681,11 +705,13 @@ func _add_flora(buckets: Dictionary, at: Vector2, rng: RandomNumberGenerator, ki
 # 서리톤이다. 옛 규약("침엽수는 겨울에도 초록으로 실루엣을 진다")은 이제 해변 해송만 진다.
 # 겨울에 초록 나무가 남는 실패 모드 쪽이 더 위험하므로(계절이 통째로 안 읽힌다) 전면 서리가 안전한 방향.
 const WINTER := 3
-const FLORA_HIDE_WINTER := ["Flora_flower_A", "Flora_flower_B"]
+# 꽃은 변종이 늘어나므로 목록이 아니라 **접두 규칙**이다 — 목록이면 새 색을 추가할 때마다
+# 여기 적는 걸 잊고 겨울 설원에 분홍 꽃이 만개한 채 남는다.
+const FLORA_FLOWER_PREFIX := "Flora_flower"
 const DECIDUOUS := ["Forest_tree", "Forest_tree_large"]
 
 static func flora_visible(nm: String, season: int) -> bool:
-	return not (season == WINTER and nm in FLORA_HIDE_WINTER)
+	return not (season == WINTER and nm.begins_with(FLORA_FLOWER_PREFIX))
 
 static func flora_frosted(nm: String, season: int) -> bool:
 	return season == WINTER and nm.begins_with("Flora_") and flora_visible(nm, season)

@@ -1215,8 +1215,31 @@ func _test_winter_pass() -> void:
 	assert(D.TREE_KIT.keys() == ["tree", "tree_large"], "나무 종 목록이 바뀌었다: %s" % str(D.TREE_KIT.keys()))
 	assert(D.DECIDUOUS == ["Forest_tree", "Forest_tree_large"], "활엽 버킷 목록이 바뀌었다: %s" % str(D.DECIDUOUS))
 	assert(D.CONIFER == ["cone_slim"], "침엽 종 목록이 바뀌었다: %s" % str(D.CONIFER))
-	for nm in ["Flora_flower_A", "Flora_flower_B"]:
-		assert(nm.trim_prefix("Flora_") in D.FLORA_SCALE, "%s 버킷이 배율표에 없음" % nm)
+	# 꽃은 색 변종으로 갈려 있다(같은 메시, char_tint만 다른 별개 MultiMesh) — 목록을 여기
+	# 다시 적지 않고 decor의 버킷 목록에서 뽑는다. 변종을 추가하고 겨울 숨김을 잊는 게
+	# 실제 실패 모드라(설원에 분홍 꽃 만개), 새 변종은 자동으로 이 검사에 걸려야 한다.
+	assert(D.FLORA_BUCKETS == ["flower_A", "flower_A~white", "flower_A~pink", "flower_B",
+		"bush", "bush_large", "grass_A", "grass_B"],
+		"식생 버킷 목록이 바뀌었다(드로우콜·겨울 규칙 검사 대상): %s" % str(D.FLORA_BUCKETS))
+	var flowers := []
+	for b in D.FLORA_BUCKETS:
+		assert(D.kit_of(b) in D.FLORA_SCALE, "%s 버킷의 킷 파일명이 배율표에 없음" % b)
+		if b.begins_with("flower"):
+			flowers.append("Flora_" + b)
+	assert(flowers.size() >= 4, "꽃 종류가 4색 미만 — 화단이 단색으로 읽힌다 (%s)" % str(flowers))
+	# 변종은 색이 실제로 갈려야 의미가 있다. 색조표에 없으면 KIT_TINT(킷 원본 흰 데이지)이므로
+	# 같은 메시의 두 변종이 **둘 다** 표에 없으면 화면에서 완전히 같은 꽃이 된다.
+	var seen_tint := {}
+	for b in flowers:
+		var key: String = b.trim_prefix("Flora_")
+		var tn: Color = D.FLORA_TINT.get(key, D.KIT_TINT)
+		var base := D.kit_of(key)
+		if not seen_tint.has(base):
+			seen_tint[base] = []
+		assert(not (tn in seen_tint[base]), "%s가 같은 메시의 다른 변종과 색까지 같다 = 드로우콜만 늘고 화면은 그대로" % key)
+		(seen_tint[base] as Array).append(tn)
+	for nm in flowers:
+		assert(D.kit_of(nm.trim_prefix("Flora_")) in D.FLORA_SCALE, "%s 버킷이 배율표에 없음" % nm)
 		assert(not D.flora_visible(nm, 3), "%s 겨울엔 숨김" % nm)
 		for s in 3:
 			assert(D.flora_visible(nm, s), "%s 계절 %d엔 보임" % [nm, s])
