@@ -376,7 +376,7 @@ func _repaint(node: Node, swap := {}) -> void:
 		_repaint(c, swap)
 
 # MUST-FIX 1: 데코에 충돌체가 섞이면 통행 계약이 깨진다 — 즉시 free(큐 대기 아님, 감사에서 세지지 않게).
-func _strip_collision(node: Node) -> void:
+static func _strip_collision(node: Node) -> void:
 	for c in node.get_children():
 		if c is CollisionObject3D or c is CollisionShape3D:
 			node.remove_child(c)

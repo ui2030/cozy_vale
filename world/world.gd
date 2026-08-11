@@ -518,6 +518,12 @@ const C_GRASS := Color(0.627, 0.720, 0.576)  # 초지
 # 이 값은 정오 클리핑 상한(0.75)에서 0.175 아래 = test_core의 실루엣 핀이 요구하는 여유다.
 # (청기를 더 주면 설원이 아니라 언 호수로 보인다 — R/G/B 간격을 좁게 유지할 것.)
 const C_SNOW  := Color(0.555, 0.575, 0.605)
+# 지붕 눈은 지면 눈과 **밝기 목표가 정반대다**(decor.gd 서리 식생 주석이 나무↔풀포기에서 겪은 것과
+# 같은 갈림). 지면 눈은 그 위에 선 건물이 읽히도록 어두워야 하고, 지붕 눈은 보라 기와(C_ROOF.g
+# 0.429) 위에 얹혀 있어 밝아야 "쌓인 눈"으로 읽힌다. 그래서 C_SNOW를 0.68→0.575로 내렸을 때
+# 지붕 눈이 같은 상수를 쓰던 탓에 따라 내려가 기와와의 화면 차가 ~59레벨에서 ~16레벨로 무너졌다.
+# 여기서 갈라 고정한다. 값은 그 사고 이전의 지면 눈 = 이미 승인돼 있던 지붕 눈 화면값 그대로다.
+const C_SNOW_ROOF := Color(0.660, 0.680, 0.710)
 
 func _build_village() -> void:
 	var v := Node3D.new()
@@ -621,10 +627,11 @@ func _house(parent: Node, base: Vector3, w: float, d: float, h: float, solid: bo
 	if solid:
 		_collide(parent, Vector3(cx, h * 0.5, cz), Vector3(w, h, d))
 
-# 지붕 눈 띠 — 겨울에만 보이는 무충돌 장식. 색은 지면 눈(C_SNOW)과 같은 단일 출처다.
-# 외곽선은 얇게(0.003): 0.006이면 9cm 두께 판이 테두리에 먹혀 검은 띠로 보인다.
+# 지붕 눈 띠 — 겨울에만 보이는 무충돌 장식. 색은 지면 눈이 **아니라** C_SNOW_ROOF다(그 상수
+# 주석: 두 눈은 배경이 달라 밝기 목표가 반대다). 외곽선은 얇게(0.003): 0.006이면 9cm 두께 판이
+# 테두리에 먹혀 검은 띠로 보인다.
 func _roof_snow(parent: Node, center: Vector3, size: Vector3) -> void:
-	var mi := _box(parent, center, size, C_SNOW, 0.003)
+	var mi := _box(parent, center, size, C_SNOW_ROOF, 0.003)
 	mi.add_to_group("roof_snow")
 	mi.visible = GameClock.season() == WINTER
 

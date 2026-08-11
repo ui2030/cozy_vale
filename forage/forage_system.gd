@@ -3,6 +3,28 @@ extends Node3D
 # 같은 날 재로드해도 동일하게 재생성됨(파생 상태, DESIGN 11.1 저장 표면 최소).
 
 const ToonChar := preload("res://common/toon_character.gd")
+const Decor := preload("res://world/decor.gd")  # 킷 로드 규약(load_kit·충돌 벗기기·식생 밝기) 재사용
+
+# ── 겉모습 = forage.json ────────────────────────────────────────────
+# 옛 판은 전 종이 같은 초록 구체(희귀만 금색)였다. 두 가지가 동시에 깨져 있었다:
+# ① 6종이 화면에서 구분이 안 된다 ② 초록 구체가 겨울 설원 위에서 형광 점으로 뜬다.
+# 종별 색·메시는 **데이터가 정한다**(엔진에 종 하드코딩 금지) — json의 "color"(hex)와
+# 선택 "mesh"("<킷>/<이름>"). 여기 있는 건 킷 접두어 표뿐이다.
+#
+# **파크 킷(Decor.TT_PARK)은 채집물에 쓰면 안 된다.** decor.gd가 그 킷의 여섯 종(flower_A·B,
+# grass_A·B, bush, bush_large)을 683개 흩뿌린 게 마을 배경이다 — 채집물이 같은 메시를 쓰면
+# 배경 식생에 위장돼 "주울 수 있는 것"으로 안 읽힌다(실측 forage_look/crop_spring: 민들레가
+# 화단 꽃과 구분 불가, 부추는 흙길 위에 누운 잎 하나). 배경 어휘 밖의 킷만 쓴다.
+const KIT_DIR := {
+	"picnic": "res://assets/tinytreats/Tiny_Treats_Pleasant_Picnic_1.0_FREE/Assets/gltf/",
+}
+# 목표 전고. 킷 메시는 원본 크기가 제각각(파크 꽃 0.14 · 피크닉 포도 0.05)이라 AABB로 재서
+# 여기 맞춘다 = json에 배율을 또 적지 않는다. 옛 구체 전고 0.56과 같은 대역이라 줍는 반경
+# (Area3D 0.9)과의 관계도 그대로다.
+const LOOK_H := 0.50
+# json에 색이 없을 때의 폴백 = 옛 동작 그대로. 희귀 금색은 "원거리서 식별" 계약이라 유지한다.
+const C_COMMON := Color(0.5, 0.75, 0.35)
+const C_RARE := Color(0.86, 0.68, 0.20)
 
 # 스폰 후보 지점 — 밭 Rect2i(0,2,8,4)·침대(5)·상점(-5)·상자(-2,4)·연못(10,0,0) 회피
 const SPAWN_POINTS := [
@@ -64,15 +86,7 @@ func _clear() -> void:
 func _spawn(pos: Vector3, fid: String, rare := false) -> void:
 	var root := Node3D.new()
 	root.position = pos
-	var mesh := MeshInstance3D.new()
-	var sm := SphereMesh.new()
-	sm.radius = 0.28
-	sm.height = 0.56
-	mesh.mesh = sm
-	var col := Color(0.86, 0.68, 0.20) if rare else Color(0.5, 0.75, 0.35)  # 희귀=금색(원거리서 식별)
-	mesh.material_override = ToonChar.make_solid(col, 0.006)
-	mesh.position = Vector3(0, 0.32, 0)
-	root.add_child(mesh)
+	root.add_child(_look(fid, rare))
 	var area := Area3D.new()
 	area.add_to_group("forage")
 	area.set_meta("forage_id", fid)
@@ -85,6 +99,43 @@ func _spawn(pos: Vector3, fid: String, rare := false) -> void:
 	root.add_child(area)
 	add_child(root)
 	_roots.append(root)
+
+# 종별 겉모습 노드. 메시가 없거나(데이터 미지정) 에셋 로드가 실패하면 옛 구체로 폴백하되
+# **색은 그대로 쓴다** — 에셋이 빠져도 종 구분은 살아 있다.
+func _look(fid: String, rare: bool) -> Node3D:
+	var d: Dictionary = GameData.forage.get(fid, {})
+	var col := Color.from_string(String(d.get("color", "")), C_RARE if rare else C_COMMON)
+	var mp := String(d.get("mesh", ""))
+	if mp != "":
+		var parts := mp.split("/", false, 1)
+		if parts.size() == 2 and KIT_DIR.has(parts[0]):
+			var n := Decor.load_kit(KIT_DIR[parts[0]] + parts[1] + ".gltf", 1.0, 0.0, Decor.VEG_GAIN)
+			if n != null:
+				Decor._strip_collision(n)  # 킷 충돌체가 붙으면 채집물이 통행을 막는다
+				_tint(n, col)
+				var h: float = ToonChar.aabb_of(n).size.y
+				n.scale = Vector3.ONE * (LOOK_H / h) if h > 0.001 else Vector3.ONE
+				return n
+	var mi := MeshInstance3D.new()
+	var sm := SphereMesh.new()
+	sm.radius = LOOK_H * 0.5
+	sm.height = LOOK_H
+	mi.mesh = sm
+	mi.material_override = ToonChar.make_solid(col, 0.006)
+	mi.position = Vector3(0, LOOK_H * 0.57, 0)  # 구체는 피벗이 중심이라 띄운다(킷 메시는 바닥 기준)
+	return mi
+
+# 킷이 깔아둔 char_tint(KIT_TINT)만 종별 색으로 갈아끼운다. sat_cap·val_gain은 건드리지 않는다
+# = 아틀라스 결이 살아 있는 채로 색상만 도는 것(decor.gd FLORA_TINT와 같은 수법).
+static func _tint(node: Node, col: Color) -> void:
+	if node is MeshInstance3D:
+		var mi := node as MeshInstance3D
+		for i in mi.get_surface_override_material_count():
+			var m := mi.get_surface_override_material(i) as ShaderMaterial
+			if m != null:
+				m.set_shader_parameter("char_tint", col)
+	for c in node.get_children():
+		_tint(c, col)
 
 # 플레이어가 주우면 해당 채집물 노드 제거
 func remove(area: Area3D) -> void:

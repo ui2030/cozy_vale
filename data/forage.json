@@ -1,20 +1,26 @@
 {
 	"forage.dandelion": {
-		"name": "Dandelion", "seasons": ["spring"], "sell_price": 20
+		"name": "Dandelion", "seasons": ["spring"], "sell_price": 20,
+		"color": "#bf9615"
 	},
 	"forage.leek": {
-		"name": "Leek", "seasons": ["spring"], "sell_price": 35
+		"name": "Leek", "seasons": ["spring"], "sell_price": 35,
+		"color": "#8fbf6a"
 	},
 	"forage.horseradish": {
-		"name": "Horseradish", "seasons": ["spring"], "sell_price": 30
+		"name": "Horseradish", "seasons": ["spring"], "sell_price": 30,
+		"color": "#bfb08c"
 	},
 	"forage.morel": {
-		"name": "Morel", "seasons": ["spring"], "sell_price": 90, "rare": true
+		"name": "Morel", "seasons": ["spring"], "sell_price": 90, "rare": true,
+		"color": "#b05c3a"
 	},
 	"forage.winter_root": {
-		"name": "Winter Root", "seasons": ["winter"], "sell_price": 40
+		"name": "Winter Root", "seasons": ["winter"], "sell_price": 40,
+		"color": "#bf7a2e"
 	},
 	"forage.snow_berry": {
-		"name": "Snow Berry", "seasons": ["winter"], "sell_price": 50
+		"name": "Snow Berry", "seasons": ["winter"], "sell_price": 50,
+		"mesh": "picnic/grapes", "color": "#bf4f66"
 	}
 }

@@ -45,6 +45,7 @@ func _ready() -> void:
 	_test_fishing_judge()
 	_test_pick_fish()
 	_test_forage_rare()
+	_test_forage_look()
 	_test_winter_pass()
 	_test_winter_veg_look()
 	_test_collection_roundtrip()
@@ -988,6 +989,44 @@ func _test_forage_rare() -> void:
 	assert(FS.pick_rare(true, 9500, ["forage.morel"]) == "", "원거리라도 밴드밖 → 일반")
 	assert(GameData.forage["forage.morel"].get("rare", false), "morel = 희귀 플래그")
 
+# ── 채집물 겉모습: 종 구분 + 겨울 가독 (forage.json이 단일 출처) ────
+# 옛 판은 전 종이 같은 초록 구체라 6종이 화면에서 하나로 보였고, 그 초록이 설원 위에서 형광
+# 점으로 떴다. 값 자체가 아니라 **구분되는가·설원에서 읽히는가**를 핀한다.
+func _test_forage_look() -> void:
+	var FS := preload("res://forage/forage_system.gd")
+	var W := preload("res://world/world.gd")
+	var seen := {}
+	for fid in GameData.forage:
+		var d: Dictionary = GameData.forage[fid]
+		assert(d.has("color"), "%s — 겉모습 색 미지정(엔진 폴백에 기대면 종이 다시 뭉친다)" % fid)
+		var c := Color.from_string(String(d["color"]), Color.BLACK)
+		assert(c != Color.BLACK, "%s — color 파싱 실패: %s" % [fid, str(d["color"])])
+		# 정오 직광면 클리핑 천장(지면 핀과 같은 0.75). 넘으면 색상이 화면에서 순백으로 날아간다 —
+		# 실측 forage_look/crop_spring2: 크림색(#e3ddc4) 무 뿌리가 흙길 위 흰 공으로 찍혔다.
+		assert(maxf(maxf(c.r, c.g), c.b) <= 0.75, "%s — 색이 정오 클리핑 천장 초과: %s" % [fid, str(d["color"])])
+		# 메시를 쓰는 종은 킷 접두어가 표에 있어야 한다(오타면 조용히 구체로 폴백해 버린다)
+		var mp := String(d.get("mesh", ""))
+		if mp != "":
+			var parts := mp.split("/", false, 1)
+			assert(parts.size() == 2 and FS.KIT_DIR.has(parts[0]), "%s — 알 수 없는 킷 경로: %s" % [fid, mp])
+			var full: String = FS.KIT_DIR[parts[0]] + parts[1] + ".gltf"
+			# 런타임 GLTFDocument 로드라 임포트 리소스가 아니다 → 파일 존재로 본다
+			assert(FileAccess.file_exists(full), "%s — 킷 메시 없음: %s" % [fid, mp])
+			# 배경 식생과 같은 메시를 쓰면 채집물이 데코에 위장된다(FS.KIT_DIR 주석의 실측).
+			var D2 := preload("res://world/decor.gd")
+			assert(not full.begins_with(D2.TT_PARK), "%s — 파크 킷은 데코 배경 어휘다: %s" % [fid, mp])
+			assert(not D2.FLORA_SCALE.has(parts[1]), "%s — 데코가 흩뿌리는 종과 같은 메시: %s" % [fid, mp])
+		# 종끼리 색이 붙어 있으면 구분이 안 된다 — 어느 한 채널이라도 0.08은 벌어져야
+		for prev in seen:
+			var p: Color = seen[prev]
+			var gap := maxf(maxf(absf(c.r - p.r), absf(c.g - p.g)), absf(c.b - p.b))
+			assert(gap >= 0.08, "%s와 %s 색이 붙어 구분 불가 (최대 채널차 %.3f)" % [fid, prev, gap])
+		seen[fid] = c
+		# 겨울 채집물은 설원(C_SNOW) 위에 놓인다 = 확실히 어둡고 따뜻해야 실루엣이 남는다.
+		if d["seasons"] == ["winter"]:
+			assert(c.g <= W.C_SNOW.g - 0.05, "%s — 설원 위에서 명도가 붙는다 (%.3f vs 눈 %.3f)" % [fid, c.g, W.C_SNOW.g])
+			assert(c.r > c.b, "%s — 겨울 채집물이 차가운 색이면 눈·얼음 조각으로 읽힌다" % fid)
+
 # ── 겨울 표현 패스: 채집물 2종 + 지면/식생 계절 파생 ────────────────
 func _test_winter_pass() -> void:
 	# ── 겨울 채집물 2종: 겨울에 작물이 0인 계절이라 요리 재료 접근을 이쪽이 연다.
@@ -1051,6 +1090,13 @@ func _test_winter_pass() -> void:
 	# 그래서 왼쪽 항을 **도달 가능한 천장**으로 바꾼다 = 눈만이 대비를 만들 수 있다는 사실을 핀한다.
 	# 기준 0.15는 그대로 두되(느슨하게 하지 않는다) 이제 진짜 0.15다: 화면 실측 62레벨.
 	assert(minf(W.C_WALL.g, CLIP_ALBEDO) - W.C_SNOW.g >= 0.15, "눈 지면과 벽토의 **화면** 명도차 부족 — 겨울 실루엣 소실")
+	# 지붕 눈은 배경이 보라 기와라 **반대로 밝아야** 한다. 위 실루엣 처방으로 C_SNOW를 내렸을 때
+	# 지붕 눈이 같은 상수를 쓰고 있어 기와와의 차가 무너졌다 — 두 눈이 갈렸다는 걸 여기서 못박는다.
+	# 양변 모두 클리핑 천장을 통과시킨다: 천장 위 값끼리의 차는 화면에서 0이다(위 문단의 교훈).
+	assert(minf(W.C_SNOW_ROOF.g, CLIP_ALBEDO) - minf(W.C_ROOF.g, CLIP_ALBEDO) >= 0.20,
+		"지붕 눈과 기와의 화면 명도차 부족 — 지붕에 눈이 안 얹혀 보인다")
+	assert(minf(W.C_SNOW_ROOF.g, CLIP_ALBEDO) > minf(W.C_SNOW.g, CLIP_ALBEDO),
+		"지붕 눈이 지면 눈보다 어둡다 — 두 눈의 밝기 목표가 뒤집혔다")
 	# C_FROST_LEAF / C_FROST는 더 이상 겨울 화면을 **직접 칠하지 않는다**(식생이 킷 텍스처로 바뀌면서
 	# 서리톤은 sat_cap·val_gain·char_tint가 만든다). 그래서 이 핀은 이제 "옛 실측 목표값 두 개의
 	# 서열"만 지킨다 = 아래 실경로 검사(_test_winter_veg_look)가 도달해야 할 과녁이 흔들리지 않게.
