@@ -5,7 +5,7 @@ extends Control
 
 const Hud := preload("res://ui/hud.gd")  # 패널 배경 단일 출처(여백·불투명도)
 
-const SEL_COLOR := Color(1.0, 0.85, 0.35)
+# 선택 강조색은 패널 배경에 따라 갈린다 — hud.gd 단일 출처(옛 금색은 어두운 패널 전제였다).
 
 var _list: VBoxContainer
 
@@ -17,7 +17,7 @@ func _ready() -> void:
 	var panel := PanelContainer.new()
 	panel.set_anchors_preset(Control.PRESET_CENTER)
 	panel.position = Vector2(360, 100)
-	panel.add_theme_stylebox_override("panel", Hud.panel_style())
+	Hud.style_panel(panel)
 	add_child(panel)
 	_list = VBoxContainer.new()
 	_list.add_theme_constant_override("separation", 6)
@@ -117,6 +117,6 @@ func _seed_btn(p: Node, sid: String) -> Button:
 	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	b.add_theme_font_size_override("font_size", 16)
 	if sel:
-		b.add_theme_color_override("font_color", SEL_COLOR)
+		b.add_theme_color_override("font_color", Hud.accent_color())
 	b.pressed.connect(func(): p.select_seed(sid))  # stats_changed → 이 패널 재빌드
 	return b

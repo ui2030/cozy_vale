@@ -14,7 +14,7 @@ func _ready() -> void:
 	var panel := PanelContainer.new()
 	panel.set_anchors_preset(Control.PRESET_CENTER)
 	panel.position = Vector2(360, 100)
-	panel.add_theme_stylebox_override("panel", Hud.panel_style())
+	Hud.style_panel(panel)
 	add_child(panel)
 	_list = VBoxContainer.new()
 	_list.add_theme_constant_override("separation", 8)

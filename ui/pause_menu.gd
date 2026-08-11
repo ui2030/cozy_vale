@@ -69,7 +69,7 @@ func _show(view: int) -> void:
 # ── 뷰 빌드 ────────────────────────────────────────────────────
 func _panel(title: String) -> Array:  # [PanelContainer, VBoxContainer]
 	var p := PanelContainer.new()
-	p.add_theme_stylebox_override("panel", Hud.panel_style())
+	Hud.style_panel(p)
 	var vb := VBoxContainer.new()
 	vb.add_theme_constant_override("separation", 10)
 	vb.custom_minimum_size = Vector2(320, 0)

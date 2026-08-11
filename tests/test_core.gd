@@ -47,6 +47,7 @@ func _ready() -> void:
 	_test_forage_rare()
 	_test_forage_look()
 	_test_wood_grain()
+	_test_ui_panel_skin()
 	_test_winter_pass()
 	_test_winter_veg_look()
 	_test_collection_roundtrip()
@@ -979,6 +980,36 @@ func _test_pick_fish() -> void:
 	# 실데이터: catfish는 야간, weight 필드 존재
 	assert(GameData.fish["fish.catfish"].get("hours", []).size() == 2, "catfish 야간 창")
 	assert(GameData.pick_fish(GameData.fish, ["fish.catfish"], 0.5, 12) == "", "낮엔 catfish 안 나옴")
+
+# ── UI 스킨: 밝은 패널로 바꿀 때 글자색을 같이 안 바꾸면 글자가 사라진다 ──
+# 킷 UI는 vendor(재배포 금지·비상업)라 gitignore다 → 클론엔 파일이 없다. 두 경로를 모두 핀한다.
+func _test_ui_panel_skin() -> void:
+	var H := preload("res://ui/hud.gd")
+	var p := PanelContainer.new()
+	H.style_panel(p)
+	var sb := p.get_theme_stylebox("panel")
+	if H.ui_texture() == null:
+		assert(sb is StyleBoxFlat, "에셋 없는 클론에서 폴백이 옛 패널이 아니다")
+		p.free()
+		return
+	assert(sb is StyleBoxTexture, "킷 시트가 있는데 패널이 옛 단색이다")
+	assert((sb as StyleBoxTexture).region_rect == H.UI_PANEL_RECT, "패널 타일 좌표가 어긋남")
+	assert(p.texture_filter == CanvasItem.TEXTURE_FILTER_NEAREST, "픽셀아트가 선형 보간으로 뭉개진다")
+	assert(p.theme != null, "밝은 패널인데 글자색 테마가 없다")
+	# 규약의 **전제**부터 확인한다: 그 타일이 실제로 밝은가. 시트에서 어두운 타일을 집어오면
+	# "글자는 어두워야 한다"는 규칙 자체가 뒤집히므로, 상수만 비교하는 핀은 그걸 못 잡는다.
+	var img := H.ui_texture().get_image()
+	var bg := img.get_pixel(int(H.UI_PANEL_RECT.position.x + 9), int(H.UI_PANEL_RECT.position.y + 14))
+	assert(bg.a > 0.9 and bg.get_luminance() > 0.6, "패널 타일이 밝은 크림이 아니다 — 글자색 규칙의 전제가 깨졌다 (%s)" % str(bg))
+	var fg: Color = p.theme.get_color("font_color", "Label")
+	assert(bg.get_luminance() - fg.get_luminance() > 0.4,
+		"패널과 글자의 명도차 부족 — 크림 위 흰 글자로 사라진다 (%.2f vs %.2f)" % [bg.get_luminance(), fg.get_luminance()])
+	# 버튼까지 같이 갈려야 한다. 배경만 크림으로 바꾸면 기본 테마의 어두운 회색 버튼이 남아
+	# 목록 행이 검은 띠로 박힌다(실측 ui2b/ui_inventory 1차).
+	assert(p.theme.get_stylebox("normal", "Button") is StyleBoxTexture, "버튼이 기본 테마 회색 그대로다")
+	assert(H.accent_color().get_luminance() < bg.get_luminance() - 0.2,
+		"선택 강조색이 크림 패널 위에서 안 읽힌다 (%.2f)" % H.accent_color().get_luminance())
+	p.free()
 
 # ── 나뭇결: "색이 곧 재질" 규약이 실제로 세 파일 전부에 걸려 있는가 ──
 # 유저 지시: "나무 의자면 나무의 결대로 자른 나무의자니까 나이테가 있어야겠지".

@@ -6,8 +6,7 @@ const Hud := preload("res://ui/hud.gd")  # 패널 배경 단일 출처(여백·�
 
 const WD_EN := ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 const SEASON_EN := ["Spring", "Summer", "Autumn", "Winter"]
-const TODAY_BG := Color(1.0, 0.85, 0.35, 0.55)
-const CELL_BG := Color(1.0, 1.0, 1.0, 0.06)
+# 오늘 강조·빈 칸 배경은 패널 배경에 따라 갈린다 — hud.gd 단일 출처.
 
 var _title: Label
 var _grid: GridContainer
@@ -20,7 +19,7 @@ func _ready() -> void:
 	var panel := PanelContainer.new()
 	panel.set_anchors_preset(Control.PRESET_CENTER)
 	panel.position = Vector2(340, 90)
-	panel.add_theme_stylebox_override("panel", Hud.panel_style())
+	Hud.style_panel(panel)
 	add_child(panel)
 	var vb := VBoxContainer.new()
 	vb.add_theme_constant_override("separation", 8)
@@ -77,7 +76,7 @@ func _make_cell(sid: String, day: int, is_today: bool) -> Control:
 	var box := PanelContainer.new()
 	box.custom_minimum_size = Vector2(78, 52)
 	var sb := StyleBoxFlat.new()
-	sb.bg_color = TODAY_BG if is_today else CELL_BG
+	sb.bg_color = Hud.cell_bg(is_today)
 	box.add_theme_stylebox_override("panel", sb)
 	var lbl := Label.new()
 	lbl.add_theme_font_size_override("font_size", 13)

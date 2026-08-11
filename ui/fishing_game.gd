@@ -97,7 +97,7 @@ func _build() -> void:
 	var pw := BAR_W + PAD * 2.0
 	var ph := TIP_H + GAP + BAR_H + PAD * 2.0
 	_panel = Panel.new()
-	_panel.add_theme_stylebox_override("panel", Hud.panel_style())
+	Hud.style_panel(_panel)
 	_panel.size = Vector2(pw, ph)
 	_panel.position = Vector2(vp.x * 0.5 - pw * 0.5, vp.y - BOTTOM - ph)
 	_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE

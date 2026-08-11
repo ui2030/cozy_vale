@@ -45,7 +45,7 @@ func _ready() -> void:
 func _build() -> void:
 	var panel := PanelContainer.new()
 	panel.position = Vector2(16, 96)  # HUD 시각 라벨(상단)·토스트 아래
-	panel.add_theme_stylebox_override("panel", Hud.panel_style())
+	Hud.style_panel(panel)
 	add_child(panel)
 	var vb := VBoxContainer.new()
 	vb.add_theme_constant_override("separation", 8)
