@@ -434,7 +434,7 @@ func _box(parent: Node, center: Vector3, size: Vector3, color: Color, outline :=
 	var bm := BoxMesh.new()
 	bm.size = size
 	mi.mesh = bm
-	mi.material_override = ToonChar.make_solid(color, outline)
+	mi.material_override = ToonChar.solid_or_wood(color, size, outline)
 	mi.position = center
 	parent.add_child(mi)
 	return mi
@@ -446,7 +446,7 @@ func _cyl(parent: Node, center: Vector3, radius: float, height: float, color: Co
 	cm.bottom_radius = radius
 	cm.height = height
 	mi.mesh = cm
-	mi.material_override = ToonChar.make_solid(color, outline)
+	mi.material_override = ToonChar.solid_or_wood_cyl(color, outline)
 	mi.position = center
 	parent.add_child(mi)
 	return mi

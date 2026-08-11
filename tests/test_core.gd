@@ -46,6 +46,7 @@ func _ready() -> void:
 	_test_pick_fish()
 	_test_forage_rare()
 	_test_forage_look()
+	_test_wood_grain()
 	_test_winter_pass()
 	_test_winter_veg_look()
 	_test_collection_roundtrip()
@@ -978,6 +979,52 @@ func _test_pick_fish() -> void:
 	# 실데이터: catfish는 야간, weight 필드 존재
 	assert(GameData.fish["fish.catfish"].get("hours", []).size() == 2, "catfish 야간 창")
 	assert(GameData.pick_fish(GameData.fish, ["fish.catfish"], 0.5, 12) == "", "낮엔 catfish 안 나옴")
+
+# ── 나뭇결: "색이 곧 재질" 규약이 실제로 세 파일 전부에 걸려 있는가 ──
+# 유저 지시: "나무 의자면 나무의 결대로 자른 나무의자니까 나이테가 있어야겠지".
+# 재질 선택을 호출부에 맡기지 않고 **색으로** 거는 이유가 여기 있다 — 목재 조각은 world/decor/
+# beach 세 파일에 흩어져 있어서, 새로 만드는 조각이 조용히 민 갈색으로 빠지는 게 진짜 위험이다.
+func _test_wood_grain() -> void:
+	var W := preload("res://world/world.gd")
+	var D := preload("res://world/decor.gd")
+	var B := preload("res://world/beach.gd")
+	# 팔레트 복제본이 갈리면 목재가 통째로 단색으로 빠진다(조용히, 에러 없이)
+	assert(ToonCharacter.WOOD_C == W.C_WOOD and ToonCharacter.WOOD_D == D.C_WOOD_D,
+		"ToonCharacter 목재 팔레트가 world/decor와 어긋남")
+	# 결 축 = 최장변 (실제 제재목이 켜지는 방향)
+	var dirs := {
+		Vector3(0.9, 1.8, 0.12): Vector3.UP,     # 문
+		Vector3(2.4, 0.09, 0.06): Vector3.RIGHT, # 울타리 레일
+		Vector3(0.1, 0.1, 3.0): Vector3.BACK,    # 부두 널
+	}
+	for sz in dirs:
+		var m := ToonCharacter.solid_or_wood(W.C_WOOD, sz, 0.004)
+		assert(m.shader == ToonCharacter.WOOD, "목재 색인데 나뭇결 셰이더가 아님 (%s)" % str(sz))
+		assert(m.get_shader_parameter("grain_dir") == dirs[sz], "결 축이 최장변이 아님 %s → %s" % [str(sz), str(m.get_shader_parameter("grain_dir"))])
+	# 목재가 아닌 색은 옛 경로 그대로 (전역 회귀 방지)
+	assert(ToonCharacter.solid_or_wood(W.C_STONE, Vector3.ONE, 0.0).shader == ToonCharacter.TOON,
+		"목재가 아닌 색까지 나뭇결을 받는다")
+
+	# ── 실경로: 세 파일의 _box가 실제로 그 재질을 칠하는가 (상수만 보는 핀은 _box가
+	# make_solid로 되돌아가도 통과한다 — D9 교훈)
+	var wn: Node3D = W.new()
+	var hw := Node3D.new()
+	wn.add_child(hw)
+	assert((wn._box(hw, Vector3.ZERO, Vector3(0.9, 1.8, 0.12), W.C_WOOD, 0.004).material_override as ShaderMaterial).shader == ToonCharacter.WOOD, "world.gd _box가 목재에 단색을 칠한다")
+	assert((wn._cyl(hw, Vector3.ZERO, 0.15, 2.0, W.C_WOOD, 0.0).material_override as ShaderMaterial).shader == ToonCharacter.WOOD, "world.gd _cyl이 목재에 단색을 칠한다")
+	# 납작한 원통(수레바퀴 r0.36×h0.1)도 결은 로컬 Y여야 마구리에 나이테가 뜬다 — 최장변
+	# 규칙을 원통에 그대로 쓰면 여기서 가로축이 골라진다(그럼 바퀴 옆면에만 줄이 간다).
+	var wheel := (wn._cyl(hw, Vector3.ZERO, 0.36, 0.1, W.C_WOOD, 0.0).material_override as ShaderMaterial)
+	assert(wheel.get_shader_parameter("grain_dir") == Vector3.UP, "납작한 목재 원통의 결 축이 Y가 아니다 (%s)" % str(wheel.get_shader_parameter("grain_dir")))
+	wn.free()
+	var dn: Node3D = D.new()
+	var hd := Node3D.new()
+	dn.add_child(hd)
+	assert((dn._box(hd, Vector3.ZERO, Vector3(1.5, 0.44, 0.9), D.C_WOOD, 0.004).material_override as ShaderMaterial).shader == ToonCharacter.WOOD, "decor.gd _box가 목재에 단색을 칠한다")
+	dn.free()
+	var bn: Node3D = B.new()
+	assert((bn._box_at(Vector3.ZERO, Vector3(0.9, 1.8, 0.12), D.C_WOOD, 0.004).material_override as ShaderMaterial).shader == ToonCharacter.WOOD, "beach.gd _box_at이 목재에 단색을 칠한다")
+	bn.free()
 
 func _test_forage_rare() -> void:
 	var FS := preload("res://forage/forage_system.gd")

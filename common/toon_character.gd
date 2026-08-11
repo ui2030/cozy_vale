@@ -5,6 +5,12 @@ extends RefCounted
 const TOON := preload("res://lookdev/toon.gdshader")
 const OUTLINE := preload("res://lookdev/outline.gdshader")
 const CONTACT := preload("res://world/contact.gdshader")
+const WOOD := preload("res://world/wood.gdshader")
+
+# 목재 팔레트 — world.gd C_WOOD / C_WOOD_D와 같은 값(test_core가 일치를 핀한다).
+# 여기 복제하는 이유는 순환 preload 회피다(decor.gd가 마을 팔레트를 복제하는 것과 같은 전례).
+const WOOD_C := Color(0.590, 0.480, 0.362)
+const WOOD_D := Color(0.470, 0.372, 0.283)
 
 # 접지 그림자 판이 놓이는 월드 높이. 마을·해변·실내의 지면 상면이 전부 0.10이고 그 위 0.10을 띄운다 —
 # 판이 밟고 선 표면보다 아래면 깊이 판정에 통째로 먹힌다. 넘어야 하는 것들(실측):
@@ -104,6 +110,44 @@ static func set_outline_width(node: Node, w: float) -> void:
 		set_outline_width(c, w)
 
 # 단색 툰 머티리얼 (곡률 포함). 바닥·건물·NPC·작물 공용.
+# 절차 조각의 머티리얼 단일 진입점 — **색이 곧 재질이다**. 목재 팔레트로 칠하는 박스·원통은
+# 자동으로 나뭇결(wood.gdshader)을 받는다. 호출부를 하나씩 고치지 않는 이유: 목재는 문·울타리·
+# 궤짝·풍차 날개·부두처럼 세 파일에 흩어져 있어서, 호출부마다 재질을 고르게 하면 새로 만드는
+# 목재 조각이 조용히 민 갈색으로 빠진다. 팔레트 색이 곧 스위치면 그 누락이 불가능하다.
+#
+# 결 방향 = 그 조각의 **최장변**. 실제 제재목이 켜지는 방향이고, 짧은 변 쪽 마구리에 나이테가
+# 동심원으로 뜬다. 원통은 호출부가 (지름, 높이, 지름)으로 넘긴다 = 축 방향 그대로.
+static func solid_or_wood(color: Color, size: Vector3, outline_width := 0.0) -> ShaderMaterial:
+	var ax := Vector3.RIGHT
+	if size.y >= size.x and size.y >= size.z:
+		ax = Vector3.UP
+	elif size.z > size.x:
+		ax = Vector3.BACK
+	return _wood_or(color, ax, outline_width)
+
+# 원통은 **크기와 무관하게** 결이 로컬 Y다 — CylinderMesh 축이 그렇다. 최장변 규칙을 그대로
+# 쓰면 납작한 조각(수레바퀴 r0.36 × h0.1)이 가로축을 골라 마구리에 나이테가 안 뜬다.
+# 그런데 바퀴야말로 통나무를 가로로 켠 조각이라 나이테가 제일 떠야 하는 자리다(Codex 지적).
+static func solid_or_wood_cyl(color: Color, outline_width := 0.0) -> ShaderMaterial:
+	return _wood_or(color, Vector3.UP, outline_width)
+
+static func _wood_or(color: Color, axis: Vector3, outline_width: float) -> ShaderMaterial:
+	if not (color.is_equal_approx(WOOD_C) or color.is_equal_approx(WOOD_D)):
+		return make_solid(color, outline_width)
+	return make_wood(color, outline_width, axis)
+
+# 나뭇결 머티리얼. 추재(어두운 띠)는 색에서 파생한다 = 팔레트를 두 번 적지 않는다.
+# 0.21(≒C_WOOD_D)로 시작했다가 화면 대비가 11%뿐이라 안 보여서 0.32로 올렸다 — 목재 조각들이
+# 서로 이웃해 있어(문·문틀·울타리 기둥) 대비가 약하면 셋 다 한 덩어리로 읽힌다.
+static func make_wood(color: Color, outline_width := 0.0, dir := Vector3.RIGHT) -> ShaderMaterial:
+	var m := ShaderMaterial.new()
+	m.shader = WOOD
+	m.set_shader_parameter("wood_color", color)
+	m.set_shader_parameter("ring_color", color.darkened(0.32))
+	m.set_shader_parameter("grain_dir", dir)
+	m.next_pass = outline_mat(outline_width)
+	return m
+
 static func make_solid(color: Color, outline_width := 0.0) -> ShaderMaterial:
 	var m := ShaderMaterial.new()
 	m.shader = TOON

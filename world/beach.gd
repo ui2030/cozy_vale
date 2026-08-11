@@ -318,7 +318,7 @@ func _box_at(at: Vector3, size: Vector3, color: Color, outline := 0.006) -> Mesh
 	bm.size = size
 	bm.subdivide_depth = _subdiv_z(size.z)
 	mi.mesh = bm
-	mi.material_override = ToonChar.make_solid(color, outline)
+	mi.material_override = ToonChar.solid_or_wood(color, size, outline)
 	mi.position = at
 	add_child(mi)
 	return mi
