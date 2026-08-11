@@ -1027,6 +1027,43 @@ func _test_forage_look() -> void:
 			assert(c.g <= W.C_SNOW.g - 0.05, "%s — 설원 위에서 명도가 붙는다 (%.3f vs 눈 %.3f)" % [fid, c.g, W.C_SNOW.g])
 			assert(c.r > c.b, "%s — 겨울 채집물이 차가운 색이면 눈·얼음 조각으로 읽힌다" % fid)
 
+	# ── 실경로: **스폰된 노드**가 그 색을 실제로 쓰는가 ──────────────
+	# 위까지는 json만 읽는다 = _spawn을 옛 초록 구체 한 줄로 되돌려도 전부 통과한다(Codex 지적).
+	# 데이터와 화면 사이의 배선을 여기서 끊어본다.
+	var fs2: Node = preload("res://forage/forage_system.gd").new()
+	for sea in [0, 3]:  # 봄·겨울 (여름·가을은 채집물 0종)
+		GameClock.abs_day = sea * GameClock.DAYS_PER_SEASON + 5
+		fs2._respawn()
+		assert(not fs2._roots.is_empty(), "계절 %d에 채집물이 스폰되지 않아 실경로를 못 본다" % sea)
+		for r in fs2._roots:
+			var fid2 := ""
+			for c2 in (r as Node).get_children():
+				if c2 is Area3D and c2.has_meta("forage_id"):
+					fid2 = String(c2.get_meta("forage_id"))
+			assert(fid2 != "", "채집물 루트에 forage_id가 없다")
+			var want := Color.from_string(String(GameData.forage[fid2]["color"]), Color.BLACK)
+			var got := _look_color(r)
+			assert(got.is_equal_approx(want), "%s 스폰 노드 색이 데이터와 다름 (%s vs %s)" % [fid2, str(got), str(want)])
+	fs2.free()
+
+# 스폰된 채집물 노드가 화면에 내는 색. 구체는 material_override의 albedo, 킷 메시는 surface
+# override의 char_tint(아틀라스 곱)다 — 두 경로 중 먼저 잡히는 것.
+func _look_color(node: Node) -> Color:
+	if node is MeshInstance3D:
+		var mi := node as MeshInstance3D
+		var m := mi.material_override as ShaderMaterial
+		if m != null:
+			return m.get_shader_parameter("albedo")
+		for i in mi.get_surface_override_material_count():
+			var sm := mi.get_surface_override_material(i) as ShaderMaterial
+			if sm != null:
+				return sm.get_shader_parameter("char_tint")
+	for c in node.get_children():
+		var r := _look_color(c)
+		if r != Color.BLACK:
+			return r
+	return Color.BLACK
+
 # ── 겨울 표현 패스: 채집물 2종 + 지면/식생 계절 파생 ────────────────
 func _test_winter_pass() -> void:
 	# ── 겨울 채집물 2종: 겨울에 작물이 0인 계절이라 요리 재료 접근을 이쪽이 연다.
@@ -1097,6 +1134,17 @@ func _test_winter_pass() -> void:
 		"지붕 눈과 기와의 화면 명도차 부족 — 지붕에 눈이 안 얹혀 보인다")
 	assert(minf(W.C_SNOW_ROOF.g, CLIP_ALBEDO) > minf(W.C_SNOW.g, CLIP_ALBEDO),
 		"지붕 눈이 지면 눈보다 어둡다 — 두 눈의 밝기 목표가 뒤집혔다")
+	# 위 두 핀은 상수만 본다 = _roof_snow가 다시 C_SNOW를 칠해도 통과한다(Codex 지적).
+	# 실경로로 확인: 트리 밖에서 world.gd 인스턴스의 _roof_snow만 호출해 칠해진 색을 읽는다
+	# (_ready를 안 타므로 마을은 안 지어진다).
+	var wn: Node3D = W.new()
+	var holder := Node3D.new()
+	wn.add_child(holder)
+	wn._roof_snow(holder, Vector3.ZERO, Vector3(1, 0.09, 1))
+	var rs := holder.get_child(0) as MeshInstance3D
+	var rsm := rs.material_override as ShaderMaterial
+	assert(rsm.get_shader_parameter("albedo") == W.C_SNOW_ROOF, "지붕 눈이 실제로는 C_SNOW_ROOF를 안 쓴다 (%s)" % str(rsm.get_shader_parameter("albedo")))
+	wn.free()
 	# C_FROST_LEAF / C_FROST는 더 이상 겨울 화면을 **직접 칠하지 않는다**(식생이 킷 텍스처로 바뀌면서
 	# 서리톤은 sat_cap·val_gain·char_tint가 만든다). 그래서 이 핀은 이제 "옛 실측 목표값 두 개의
 	# 서열"만 지킨다 = 아래 실경로 검사(_test_winter_veg_look)가 도달해야 할 과녁이 흔들리지 않게.
