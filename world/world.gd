@@ -533,8 +533,9 @@ func _build_village() -> void:
 	_roads(v)
 	_fountain(v, Vector3.ZERO)
 	# 시계탑 회관 — footprint 6×5, 피벗(0,-18). 2층 몸체(H5) + 시계탑(2.3각, 총고~10). SOLID.
-	_house(v, Vector3(0, 0, -18), 6, 5, 5, true)
-	_clock_tower(v, Vector3(0, 5, -18))
+	var glb := _house(v, Vector3(0, 0, -18), 6, 5, 5, true)
+	if not glb:
+		_clock_tower(v, Vector3(0, 5, -18))
 	# 주민 집 3채 — 광장 외곽 링에 사방 분산(북서/서/남서). footprint 4×4, 전고 4. SOLID.
 	_house(v, Vector3(-20, 0, -14), 4, 4, 4, true)  # House1 피벗(-20,-14) 북서
 	_house(v, Vector3(-24, 0, 2), 4, 4, 4, true)    # House2 피벗(-24,2) 서
@@ -558,6 +559,9 @@ func _build_village() -> void:
 	# _convert_statics 이전/이후 어느 쪽이든 안전하지만, 규약대로 이전에 트리에 넣는다.
 	var decor := Decor.new()
 	decor.name = "Decor"
+	# 회관 파사드 등나무는 **박스 처마(z=-15.25, y4.62)에 매달린** 장식이다. 모델 회관은 박공
+	# 지붕이라 그 자리에 처마가 없어 등나무만 공중에 뜬다(실측 house_glb/plaza_h12).
+	decor.hall_drapes = not glb
 	v.add_child(decor)
 	decor.build(RIVER_PTS, BRIDGES, ROADS)
 
@@ -604,11 +608,85 @@ func _collide(parent: Node, center: Vector3, size: Vector3, rot_y := 0.0, rot_x 
 	sb.add_child(cs)
 	parent.add_child(sb)
 
+# ── P2 에셋 교체(집) ──────────────────────────────────────────────
+# 집 GLB가 있으면 컬러박스 대신 이 모델을 세운다. 없으면(에셋 미배포 클론) 옛 박스로 조용히
+# 폴백한다 — 킷 UI·vendor와 같은 규약이라 에셋 없이도 게임이 돈다.
+# **충돌체는 박스 그대로 둔다**: 모델이 w×d보다 살짝 작게 맞춰져도 히트박스가 안 바뀌므로
+# WORLD_VERSION을 안 건드린다(세이브 호환 유지).
+const HOUSE_GLB := "res://assets/house_a.glb"
+# 모델의 문이 향하는 로컬 방향(라디안). Tripo 출력에 방향 규약이 없어 실측으로 정한다.
+const HOUSE_DOOR_YAW := 0.0
+# 킷 등급(Decor.KIT_TINT·KIT_SAT_CAP)은 **너무 밝고 쨍한** 구매 킷을 눌러 앉히려고 만든 값이다.
+# AI 생성 모델은 반대 문제를 갖고 온다 — 텍스처에 음영이 이미 구워져 있어 그대로 심으면 파스텔
+# 마을에 혼자 진갈색 오두막이 앉는다(실측 house_glb/plaza_h12: 지붕이 테라코타가 아니라 고동색).
+# 그래서 밝기는 올리고(val_gain) 채도 상한은 킷보다 풀어 준다.
+const HOUSE_GAIN := 1.55
+const HOUSE_SAT_CAP := 0.72
+var _house_src: Node3D = null
+var _house_bb := AABB()
+var _house_tried := false
+
+# load_kit이 깔아둔 채도 상한만 다시 쓴다(밝기는 load_kit의 gain 인자가 이미 넣었다).
+func _grade_house(node: Node) -> void:
+	if node is MeshInstance3D:
+		var mi := node as MeshInstance3D
+		for i in mi.get_surface_override_material_count():
+			var m := mi.get_surface_override_material(i) as ShaderMaterial
+			if m != null:
+				m.set_shader_parameter("sat_cap", HOUSE_SAT_CAP)
+	for c in node.get_children():
+		_grade_house(c)
+
+# w×d×h 안에 통째로 들어가는 최대 배율. 한 축만 맞추면 처마가 이웃 건물이나 길을 침범한다.
+func _fit_scale(w: float, d: float, h: float) -> float:
+	var s := _house_bb.size
+	if s.x < 0.01 or s.y < 0.01 or s.z < 0.01:
+		return 0.0
+	return min(w / s.x, min(h / s.y, d / s.z))
+
+func _house_model(base: Vector3, w: float, d: float, h: float, door_sign: float) -> Node3D:
+	if not _house_tried:
+		_house_tried = true
+		if FileAccess.file_exists(HOUSE_GLB):
+			# 배율 1로 받아 크기를 재고, 외곽선은 아래에서 다시 정한다(load_kit은 sc로 나눈다).
+			_house_src = Decor.load_kit(HOUSE_GLB, 1.0, 0.0, HOUSE_GAIN)
+			if _house_src != null:
+				_grade_house(_house_src)
+			if _house_src != null:
+				_house_bb = ToonChar.aabb_of(_house_src)
+				# 외곽선 두께는 오브젝트 공간이라 배율로 나눠야 월드에서 일정하다. 머티리얼은
+				# duplicate끼리 **공유**되므로 여기서 한 번만 정한다 — 규격 4m 집 기준
+				# (3m 상점·5m 집은 ±25% 차이지만 연필선 굵기라 화면에서 구분이 안 된다).
+				var s0 := _fit_scale(4.0, 4.0, 4.0)
+				if s0 > 0.0:
+					ToonChar.set_outline_width(_house_src, Decor.OUTLINE / s0)
+	if _house_src == null:
+		return null
+	var sc := _fit_scale(w, d, h)
+	if sc <= 0.0:
+		return null
+	var n: Node3D = _house_src.duplicate()
+	n.scale = Vector3.ONE * sc
+	n.rotation.y = HOUSE_DOOR_YAW + (0.0 if door_sign > 0.0 else PI)
+	# 회전·배율을 먹인 **뒤에** 다시 재야 한다 — 회전 전 AABB로 중심을 잡으면 정사각이 아닌
+	# 평면에서 건물이 피벗 밖으로 밀린다. 바닥은 base.y에 맞춘다(옛 박스와 같은 접지).
+	var b := ToonChar.aabb_of(n)
+	n.position = base + Vector3(-b.get_center().x, -b.position.y, -b.get_center().z)
+	return n
+
 # 건물: 피벗=바닥중심(base.x,base.z), 벽 w×d, 전고 h. solid이면 충돌체.
-func _house(parent: Node, base: Vector3, w: float, d: float, h: float, solid: bool, door_sign := 1.0) -> void:
+# 반환값 = GLB 모델을 세웠는지. 시계탑처럼 **박스 지붕 높이를 전제로 얹히는 부속**이 이걸 보고
+# 빠진다(모델 지붕은 박공이라 y=5 평지붕이 없다 — 그대로 두면 탑이 공중에 뜬다, 실측 plaza_h12).
+func _house(parent: Node, base: Vector3, w: float, d: float, h: float, solid: bool, door_sign := 1.0) -> bool:
 	# door_sign: +1=남향 문(기본), -1=북향 문(광장을 등지는 남쪽 건물용)
 	var cx := base.x
 	var cz := base.z
+	var model := _house_model(base, w, d, h, door_sign)
+	if model != null:
+		parent.add_child(model)
+		if solid:
+			_collide(parent, Vector3(cx, h * 0.5, cz), Vector3(w, h, d))
+		return true
 	_box(parent, Vector3(cx, h * 0.5, cz), Vector3(w, h, d), C_WALL)            # 벽토(크림)
 	_box(parent, Vector3(cx, h + 0.2, cz), Vector3(w + 0.5, 0.5, d + 0.5), C_ROOF)   # 보라 기와 처마
 	_box(parent, Vector3(cx, h + 0.55, cz), Vector3(w * 0.6, 0.4, d * 0.6), C_ROOF2) # 지붕 마루 밝은면
@@ -626,6 +704,7 @@ func _house(parent: Node, base: Vector3, w: float, d: float, h: float, solid: bo
 			_window(parent, Vector3(cx + sx * (w * 0.5 + 0.03), wy, cz + sz * d * 0.28), Vector3(0.06, 0.8, 0.7))
 	if solid:
 		_collide(parent, Vector3(cx, h * 0.5, cz), Vector3(w, h, d))
+	return false
 
 # 지붕 눈 띠 — 겨울에만 보이는 무충돌 장식. 색은 지면 눈이 **아니라** C_SNOW_ROOF다(그 상수
 # 주석: 두 눈은 배경이 달라 밝기 목표가 반대다). 외곽선은 얇게(0.003): 0.006이면 9cm 두께 판이

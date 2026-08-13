@@ -15,6 +15,9 @@ const DayNight := preload("res://world/day_night.gd")  # 가로등 점등 시각
 const WINDOW_SHADER := preload("res://world/window.gdshader")  # 등 유리 발광 판(창불빛과 공용)
 const DIR := "res://assets/props/"
 const OUTLINE := 0.006   # world.gd 정적물과 같은 연필선 두께
+# 회관 파사드 등나무를 매달지 여부. world.gd가 build 전에 세운다 — 회관이 컬러박스가 아니라
+# GLB 모델이면 매달 처마가 없다.
+var hall_drapes := true
 const GROUND_Y := 0.10   # 지면 상면 (world.tscn Ground / beach.gd GROUND_Y와 동일)
 
 # ── 구매/CC0 킷 (베이크된 albedo 텍스처가 있는 에셋) ─────────────────
@@ -949,9 +952,11 @@ func _wisteria() -> void:
 		var m := maxf(absf(e.x), absf(e.y))
 		var p := Vector2(-26, 14) + e / m * 2.0
 		_drape(root, Vector3(p.x, 2.55, p.y), 0.5 + fmod(i * 0.37, 0.5))
-	# 회관 파사드(0,-18): 남면 처마 아래(z=-15.6)
-	for i in 7:
-		_drape(root, Vector3(-2.55 + i * 0.85, 4.62, -15.30), 0.7 + fmod(i * 0.41, 0.8))
+	# 회관 파사드(0,-18): 남면 처마 아래(z=-15.6). 박스 회관 전용 — 모델 회관은 처마가 다른
+	# 자리라 world.gd가 끈다(안 끄면 등나무만 공중에 남는다).
+	if hall_drapes:
+		for i in 7:
+			_drape(root, Vector3(-2.55 + i * 0.85, 4.62, -15.30), 0.7 + fmod(i * 0.41, 0.8))
 	# 다리 난간 포인트 — 데크는 강을 가로지르므로 흐름 수직(perp)이 난간 장축이다(world.gd _arch_bridge와 동일식)
 	for br in _bridges:
 		var ang := _river_dir_at(br)

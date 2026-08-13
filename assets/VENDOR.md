@@ -9,6 +9,20 @@
 - 형식: `Assets/gltf`(권장) · `Assets/fbx` · `Assets/obj` · `Assets/Textures`
 - 크레딧(의무 아님): Isa Lousberg — www.isalousberg.com
 
+### `assets/house_a.glb` — 자체 생성 (Tripo AI, 유료 구독)
+- 출처: 유저가 Tripo AI 유료 구독으로 직접 생성 (텍스트 → 참고 이미지 → 멀티뷰 → 3D)
+- 라이선스: **유저 소유** — 유료 구독자의 생성물은 상업 이용 가능. 재배포 제한 없음
+- 생성 설정: v3.1 / 울트라 메시 / 텍스처 2K / **PBR 끔** / 삼각형 토폴로지
+  - PBR을 끄는 이유: `ToonChar.apply`가 원본 머티리얼의 **albedo만** 읽어 툰 셰이더로 넘긴다.
+    금속감·거칠기·노멀 맵은 읽히지 않고 버려지므로 용량만 늘린다.
+- 프롬프트 뼈대는 나머지 건물과 **공유해야 한다** — 재질·조명·금지 조항을 글자 그대로 두고
+  건물 설명 문장만 갈아야 마을이 한 그림체로 남는다. 특히 이 세 줄이 핵심:
+  `3D render of a physical model` / `lit evenly, no strong shadows, no dark side faces` /
+  `no ground plane, no separate props`. 이걸 빼면 2D 일러스트가 나와 **윤곽선과 그림자가
+  텍스처에 구워진다** — 게임이 자체 외곽선을 또 그리므로 모서리가 검게 뭉개지고, 구워진
+  그림자는 해가 움직여도 안 움직인다.
+- 적용: `world.gd _house_model`. 파일이 없으면 옛 컬러박스로 조용히 폴백한다.
+
 ---
 
 ## 저장소에 **미포함** — 각자 받아야 함 (`.gitignore` 처리)
