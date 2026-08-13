@@ -166,14 +166,22 @@ const VEG_GAIN := 1.85
 # (푸른 flower_B는 변종을 못 만든다 — R 텍셀이 0이라 곱으로는 파랑 계열 밖으로 못 나간다.)
 # 분홍값은 노랑과 같은 유도식이다: KIT_TINT에서 (0.85,0.45,0.55)를 최대 채널로 정규화한
 # 비율 쪽으로 0.70만 간다 = 꽃잎은 분홍, 꽃심은 한 단 진한 장미색으로 갈린다.
+#
+# **라벤더는 마을 정체색이다**(VILLAGE_SPEC §2: 개나리 노랑 + 라벤더). 그런데 킷 전환 때
+# 조용히 빠져 있었다 — C_LAV 상수는 남았는데 심기는 노랑·분홍·흰색·파랑뿐이라, "라벤더가
+# 가득한 마을"에 라벤더가 한 포기도 없었다. 푸른 flower_B로는 못 메운다(위 주석: R 텍셀 0).
+# 유도식은 노랑·분홍과 같다. 다만 목표색으로 C_LAV(0.656,0.572,0.740)를 쓰면 그 자체가 옅어
+# 결과가 회보라로 죽는다 — 원거리에서 흰 꽃과 구분이 안 된다. 확실히 보라인 (0.62,0.42,0.85)를
+# 목표로 잡아 분홍과 같은 세기로 맞춘다(최대 채널 0.720 < 정오 클리핑 상한 0.75).
 const FLORA_TINT := {
-	"flower_A": Color(0.760, 0.688, 0.464),        # 노랑 — 옛 마을 화단의 C_YELLOW 계승
-	"flower_A~pink": Color(0.760, 0.503, 0.542),   # 분홍
+	"flower_A": Color(0.760, 0.688, 0.464),          # 노랑 — 옛 마을 화단의 C_YELLOW 계승
+	"flower_A~pink": Color(0.760, 0.503, 0.542),     # 분홍
+	"flower_A~lavender": Color(0.616, 0.485, 0.720), # 라벤더 — 마을 정체색
 	# "flower_A~white"는 여기 없다 = KIT_TINT 그대로 = 킷 원본 흰 데이지.
 }
 # 실제로 심는 버킷 목록 = MultiMesh 목록. `~` 뒤는 색 변종이라 메시는 같다.
-const FLORA_BUCKETS := ["flower_A", "flower_A~white", "flower_A~pink", "flower_B",
-	"bush", "bush_large", "grass_A", "grass_B"]
+const FLORA_BUCKETS := ["flower_A", "flower_A~white", "flower_A~pink", "flower_A~lavender",
+	"flower_B", "bush", "bush_large", "grass_A", "grass_B"]
 
 # 버킷 이름 → 킷 파일명 (색 변종 접미 제거)
 static func kit_of(nm: String) -> String:
@@ -577,7 +585,7 @@ func _planter(p: Node3D) -> void:
 	# 킷 꽃은 줄기 위 한 송이가 아니라 납작하고 넓은 지피 꽃이라(native 0.45폭 × 0.14고) 옛 배율
 	# 2.6을 그대로 쓰면 폭 1.17이 되어 0.88 화분을 통째로 덮는다. 폭 기준으로 다시 잡는다:
 	# 0.78 → 폭 0.35 · 고 0.11. 3송이가 반경 0.18에서 살짝 겹쳐 화분 하나를 채운 무더기가 된다.
-	var kinds := ["flower_A", "flower_B", "flower_A~pink"]
+	var kinds := ["flower_A~lavender", "flower_A", "flower_A~pink"]
 	for i in 3:
 		var f := _flower_node(kinds[i])
 		var a := TAU * i / 3.0
@@ -596,7 +604,7 @@ func _cart(p: Node3D) -> void:
 		var w := _cyl(p, Vector3(0, 0.38, 0.5 * s), 0.36, 0.1, C_WOOD_D, 0.004)
 		w.rotation.x = PI * 0.5
 	for i in 5:
-		var f := _flower_node(["flower_A", "flower_B", "flower_A~pink", "flower_A~white", "flower_A"][i])
+		var f := _flower_node(["flower_A~lavender", "flower_B", "flower_A~pink", "flower_A~white", "flower_A"][i])
 		f.position = Vector3(-0.5 + i * 0.25, 0.94, (i % 2) * 0.3 - 0.15)
 		f.scale = Vector3.ONE * 0.85  # 화분과 같은 이유 — 폭 0.38짜리가 0.25 간격으로 겹쳐 무더기가 된다
 		f.rotation.y = i * 1.1
@@ -650,14 +658,18 @@ func _place_flora() -> void:
 				if rng.randf() < 0.28:
 					continue
 				var c: Vector2 = a + dir * ((k + rng.randf()) * 2.6) + perp * (s * rng.randf_range(2.3, 4.2))
-				_add_flora(buckets, c, rng, ["flower_A", "flower_A~white", "flower_B", "flower_A~pink", "bush", "grass_A"])
+				# 라벤더를 두 번 넣어 가중치를 준다 — 목록은 균등 추첨이라 이게 유일한 비중 조절
+				# 수단이다(MultiMesh는 인스턴스별 색이 없어 버킷을 가르는 것 말고는 방법이 없다).
+				_add_flora(buckets, c, rng, ["flower_A~lavender", "flower_A~lavender", "flower_A",
+					"flower_A~white", "flower_B", "flower_A~pink", "bush", "grass_A"])
 
 	# ② 광장 둘레 화단 — 판석 바깥 링(방사길 사이 구간만 남는다)
 	for _i in 220:
 		var ang := rng.randf() * TAU
 		var rad := rng.randf_range(6.6, 9.6)
 		_add_flora(buckets, Vector2(cos(ang), sin(ang)) * rad, rng,
-			["flower_A", "flower_A~pink", "flower_B", "flower_A~white"])
+			["flower_A~lavender", "flower_A~lavender", "flower_A", "flower_A~pink",
+			"flower_B", "flower_A~white"])
 
 	# ③ 강변 양안 — 물폭3 + 강둑 바깥
 	for i in _river.size() - 1:
@@ -671,12 +683,15 @@ func _place_flora() -> void:
 				if rng.randf() < 0.30:
 					continue
 				var c: Vector2 = a + dir * ((k + rng.randf()) * 3.0) + perp * (s * rng.randf_range(3.2, 5.2))
-				_add_flora(buckets, c, rng, ["flower_B", "flower_A~white", "flower_A", "grass_B", "bush_large"])
+				_add_flora(buckets, c, rng, ["flower_A~lavender", "flower_B", "flower_A~white",
+					"flower_A", "grass_B", "bush_large"])
 
-	# ④ 초지 스프링클 — 풀포기·덤불만 옅게(꽃은 위 세 존에서만)
+	# ④ 초지 스프링클 — 풀포기·덤불 + 라벤더. 옛 판은 꽃을 길·광장·강변 세 존에만 뒀는데,
+	# 그러면 **꽃이 전부 사람이 다니는 선 위에만** 있어 들판은 단색 초지로 남는다. 마을 정체가
+	# "라벤더가 가득한 마을"이면 라벤더는 화단이 아니라 들에 있어야 한다. 다섯 중 하나 = ~20%.
 	for _i in 190:
 		var c := Vector2(rng.randf_range(-WALK_HALF, WALK_HALF), rng.randf_range(-WALK_HALF, WALK_HALF))
-		_add_flora(buckets, c, rng, ["grass_A", "grass_B", "grass_A", "bush_large"])
+		_add_flora(buckets, c, rng, ["grass_A", "grass_B", "flower_A~lavender", "grass_A", "bush_large"])
 
 	for nm in buckets:
 		if (buckets[nm] as Array).is_empty():

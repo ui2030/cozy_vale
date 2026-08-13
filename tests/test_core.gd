@@ -1249,9 +1249,16 @@ func _test_winter_pass() -> void:
 	# 꽃은 색 변종으로 갈려 있다(같은 메시, char_tint만 다른 별개 MultiMesh) — 목록을 여기
 	# 다시 적지 않고 decor의 버킷 목록에서 뽑는다. 변종을 추가하고 겨울 숨김을 잊는 게
 	# 실제 실패 모드라(설원에 분홍 꽃 만개), 새 변종은 자동으로 이 검사에 걸려야 한다.
-	assert(D.FLORA_BUCKETS == ["flower_A", "flower_A~white", "flower_A~pink", "flower_B",
-		"bush", "bush_large", "grass_A", "grass_B"],
+	assert(D.FLORA_BUCKETS == ["flower_A", "flower_A~white", "flower_A~pink", "flower_A~lavender",
+		"flower_B", "bush", "bush_large", "grass_A", "grass_B"],
 		"식생 버킷 목록이 바뀌었다(드로우콜·겨울 규칙 검사 대상): %s" % str(D.FLORA_BUCKETS))
+	# 라벤더는 **마을 정체색**이다(VILLAGE_SPEC §2). 킷 전환 때 한 번 조용히 사라진 전력이
+	# 있어서(노랑·분홍·흰색·파랑만 남아 "라벤더 마을"에 라벤더가 없었다) 존재를 명시로 박는다.
+	# 색까지 본다: 목록에만 있고 색조표에서 빠지면 흰 데이지가 되어 화면에서 다시 사라진다.
+	var lav: Color = D.FLORA_TINT.get("flower_A~lavender", D.KIT_TINT)
+	assert(lav.b > lav.r and lav.r > lav.g,
+		"라벤더 꽃 색조가 보라(B>R>G)가 아니다 — 마을 정체색이 다시 죽는다: %s" % str(lav))
+	assert(lav.b <= 0.75, "라벤더 최대 채널이 정오 클리핑 상한(0.75)을 넘음 = 화면에서 흰 점")
 	var flowers := []
 	for b in D.FLORA_BUCKETS:
 		assert(D.kit_of(b) in D.FLORA_SCALE, "%s 버킷의 킷 파일명이 배율표에 없음" % b)
