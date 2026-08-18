@@ -693,11 +693,51 @@ func _place_flora() -> void:
 		var c := Vector2(rng.randf_range(-WALK_HALF, WALK_HALF), rng.randf_range(-WALK_HALF, WALK_HALF))
 		_add_flora(buckets, c, rng, ["grass_A", "grass_B", "flower_A~lavender", "grass_A", "bush_large"])
 
+	_lavender_rows(buckets)
+
 	for nm in buckets:
 		if (buckets[nm] as Array).is_empty():
 			continue
 		_multimesh(_flora_mesh(nm), buckets[nm], "Flora_" + nm)
 		_n_flora += (buckets[nm] as Array).size()
+
+# ══ 라벤더 이랑 ═══════════════════════════════════════════════════
+# 흩뿌린 꽃 수백 송이보다 **이랑 몇 줄**이 "라벤더 마을"이라고 훨씬 크게 말한다 — 줄로 서 있다는
+# 건 사람이 심었다는 뜻이고, 그게 마을의 생업이 된다. 자리는 풍차 언덕 진입로(북동 다리 → 램프)의
+# 동안 평지: 다리를 건너 풍차로 올라가는 동선이 통째로 이랑 사이를 지난다 = 플레이어가 반드시 본다.
+# 버킷은 기존 라벤더 것을 그대로 쓴다 = 드로우콜 추가 없음.
+# 밭 서쪽 끝은 강에 물린다 — 일부러 그렇게 잡았다. _blocked_flora가 물·둑에서 잘라 주므로
+# 밭이 강가에서 끝나는 자연스러운 경계가 공짜로 나온다(직선으로 끊으면 잔디밭에 붙인 스티커).
+const LAV_CENTER := Vector2(28.0, -10.0)
+const LAV_YAW := 0.30      # 이랑 방향(라디안) — 강 흐름과 나란하게
+const LAV_ROWS := 10
+const LAV_ROW_GAP := 1.45  # 이랑 간격(사이로 걸어 다닐 수 있는 폭)
+const LAV_STEP := 0.55     # 이랑 안 포기 간격
+const LAV_LEN := 10.0
+
+# rng를 따로 쓴다 — 공용 스트림에 끼어들면 이 뒤에 뽑히는 나무·소품 자리가 통째로 밀린다.
+func _lavender_rows(buckets: Dictionary) -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 20260814
+	var dir := Vector2(sin(LAV_YAW), cos(LAV_YAW))
+	var perp := Vector2(dir.y, -dir.x)
+	var arr: Array = buckets["flower_A~lavender"]
+	var sc: Vector2 = FLORA_SCALE["flower_A"]
+	var n := int(LAV_LEN / LAV_STEP)
+	for r in LAV_ROWS:
+		var off := (r - (LAV_ROWS - 1) * 0.5) * LAV_ROW_GAP
+		for k in n:
+			var along := (k - (n - 1) * 0.5) * LAV_STEP
+			# 줄은 곧되 포기는 흔들린다. 완전 정렬은 손으로 심은 밭이 아니라 기계 출력으로 읽힌다.
+			var p := LAV_CENTER + dir * (along + rng.randf_range(-0.10, 0.10)) \
+				+ perp * (off + rng.randf_range(-0.13, 0.13))
+			if _blocked_flora(p):
+				continue  # 길·물·소품 자리에서 끊긴다 = 밭을 가로지르는 길로 읽힌다
+			var t := Transform3D()
+			t = t.scaled(Vector3.ONE * rng.randf_range(sc.x, sc.y))
+			t = t.rotated(Vector3.UP, rng.randf() * TAU)
+			t.origin = Vector3(p.x, GROUND_Y, p.y)
+			arr.append(t)
 
 # 한 자리에 3~6포기를 뭉쳐 심는다 — 낱개로 흩뿌리면 "잡초 노이즈"로 보이고 화단으로 안 읽힌다.
 func _add_flora(buckets: Dictionary, at: Vector2, rng: RandomNumberGenerator, kinds: Array) -> void:
