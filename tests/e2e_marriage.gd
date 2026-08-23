@@ -116,7 +116,11 @@ func _run() -> void:
 	_npcsys.state[ID]["talked_today"] = false
 	var msg := String(_npcsys.talk(ID)["msg"])
 	var married := false
-	for line in GameData.dialogues[String(GameData.npcs[ID]["archetype"])]["married"]:
+	var mpools: Array = []
+	for key in GameData.dialogues[String(GameData.npcs[ID]["archetype"])]:
+		if String(key).begins_with("married"):
+			mpools.append_array(GameData.dialogues[String(GameData.npcs[ID]["archetype"])][key])
+	for line in mpools:
 		if String(line) in msg:
 			married = true
 	assert(married, "부부 아침 인사 대사: %s" % msg)

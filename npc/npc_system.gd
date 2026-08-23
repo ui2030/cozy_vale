@@ -111,7 +111,8 @@ func _ready() -> void:
 	add_to_group("npc_system")
 	_farm = get_tree().get_first_node_in_group("farm")
 	for id in GameData.npcs:
-		state[id] = {"affection_points": 0, "talked_today": false, "gifted_today": false, "dates_seen": 0}
+		state[id] = {"affection_points": 0, "talked_today": false, "gifted_today": false, "dates_seen": 0,
+			"last_gift_day": -1}
 		_spawn(id)
 	snap_to_schedule()  # 시작 시각의 장소에서 출발 (새 게임 06시면 전원 집)
 	if not GameClock.day_changed.is_connected(_on_day_changed):
@@ -598,24 +599,62 @@ func talk(id: String) -> Dictionary:
 	# 하트를 토스트 꼬리에 노출 = 청혼 진행 단계(♥9 데이트1 → ♥10 데이트2 → 청혼)를 스스로 발견
 	return {"ok": true, "msg": "%s: %s  ♥ %d/10%s" % [nm, _dialogue_line(id), hearts(id), extra]}
 
-# 아키타입별 대사 랜덤 1줄 (배우자면 부부 아침 인사 > 축제별 > 축제 공용 > 평상).
-# 축제별 풀 key = 축제 id 그대로 = calendar.json이 단일 출처(중간 매핑표 없음). 결혼식은
-# _festival_id가 ""라 공용 "festival" 풀로 떨어진다(기존 동작 그대로).
-func _dialogue_line(id: String) -> String:
-	if id == spouse:
-		var married := _pool_line(id, "married")  # 대화는 하루 1회 성사 = 하루 첫 대화
-		if married != "":
-			return married
-	var pool: Dictionary = GameData.dialogues.get(String(GameData.npcs[id]["archetype"]), {})
-	var lines: Array = pool.get("normal", [])
+# 문맥 반응 대사. **주민이 살아있다는 체감은 문장 수가 아니라 "지금 상황을 짚는가"에서 온다** —
+# 옛 판은 아키타입당 평상시 3줄 고정이라, 생일에도 폭우에도 하트 10칸에도 같은 말을 했다.
+# 그래서 상황마다 다른 풀 key를 만들고 **구체적인 것부터 훑어 처음 채워진 풀을 쓴다**.
+# 데이터 형식은 그대로다(아키타입 → key → 줄 목록). key가 없는 상황은 조용히 평상 대사로
+# 떨어지므로, 대사를 계속 채워 넣기만 하면 되고 한 번에 다 쓰지 않아도 게임이 돈다.
+#
+# 나중에 로컬 LLM을 실험 옵션으로 붙일 자리도 여기 하나다 — 이 함수가 "무슨 상황인지"를
+# 이미 결정하므로, 그때 바꾸는 건 이 안쪽뿐이다(지금 인터페이스를 세우지 않는 이유).
+const HEART_WARM := 7   # 이 하트부터 말투가 바뀐다(만렙 10 직전 = 데이트 단계와 겹치게)
+
+# 사건 풀 — **오늘만의 일**. 하나라도 걸리면 그것만 쓴다(생일에 날씨 얘기를 하면 안 된다).
+func _event_keys(id: String) -> Array:
+	var keys := []
+	if _is_birthday(id):
+		keys.append("birthday")     # 생일은 축제보다 개인적 = 가장 먼저 (선물 ×8도 이날이다)
 	if _festival_active:
-		var per_fest: Array = pool.get(_festival_id, [])
-		var fest: Array = pool.get("festival", [])
-		if not per_fest.is_empty():
-			lines = per_fest
-		elif not fest.is_empty():
-			lines = fest
-	return "" if lines.is_empty() else lines[randi() % lines.size()]
+		keys.append(_festival_id)   # 축제별 풀 key = calendar.json의 축제 id 그대로(중간 매핑표 없음)
+		keys.append("festival")     # 결혼식은 _festival_id가 ""라 여기로 떨어진다
+	# 어제 준 선물을 오늘 언급한다 = "날 기억한다"의 정체. 당일(선물 직후 재대화)도 포함.
+	var gday := int(state[id].get("last_gift_day", -1))
+	var since := GameClock.abs_day - gday
+	if gday >= 0 and since >= 0 and since <= 1:
+		keys.append("gift_thanks")
+	return keys
+
+# 상시 풀 — **계속 참인 조건**(관계·계절·날씨). 이걸 사건처럼 한 줄로 세우면 위쪽 하나가
+# 아래를 영구히 굶긴다: 하트 7칸을 넘긴 순간부터 비도 계절도 영영 안 나오고, 그 주민은
+# 다시 두 줄 돌려막기가 된다 — 하필 **가장 자주 말 거는 주민**이. 그래서 합쳐서 뽑는다.
+func _ambient_keys(id: String) -> Array:
+	var keys := []
+	if hearts(id) >= HEART_WARM:
+		keys.append("heart_high")   # 관계가 자랐는데 말투가 그대로면 하트가 숫자로만 남는다
+	if GameData.is_rainy(GameClock.abs_day):
+		keys.append("rain")
+	keys.append("normal." + GameData.season_id(GameClock.season()))
+	keys.append("normal")
+	return keys
+
+func _dialogue_line(id: String) -> String:
+	for key in _event_keys(id):
+		var line := _pool_line(id, key)
+		if line != "":
+			return line
+	# 배우자 아침 인사는 상시 조건이지만 덮어쓴다 — 매일 첫 대화가 부부 인사인 게 연출이다.
+	# 대신 married 풀에 계절 변형을 둬서 이쪽도 두 줄에 갇히지 않게 한다.
+	if id == spouse:
+		var mline := _pool_line(id, "married." + GameData.season_id(GameClock.season()))
+		if mline == "":
+			mline = _pool_line(id, "married")
+		if mline != "":
+			return mline
+	var lines := []
+	var pools: Dictionary = GameData.dialogues.get(String(GameData.npcs[id]["archetype"]), {})
+	for key in _ambient_keys(id):
+		lines.append_array(pools.get(key, []))
+	return "" if lines.is_empty() else String(lines[randi() % lines.size()])
 
 # 아키타입 대사 풀 key에서 랜덤 1줄 (없으면 "")
 func _pool_line(id: String, key: String) -> String:
@@ -845,6 +884,7 @@ func give(id: String, item_id: String) -> Dictionary:
 	if _is_birthday(id):
 		delta *= 8  # 생일 보너스
 	s["gifted_today"] = true
+	s["last_gift_day"] = GameClock.abs_day  # 다음 날 대화에서 이걸 언급한다(gift_thanks 풀)
 	_add(id, delta)
 	var react: String = {"loved": "기뻐함!", "liked": "좋아함", "neutral": "받음", "disliked": "싫어함.."}[pref]
 	return {"ok": true, "msg": "%s %s (%+d) ♥ %d/10" % [nm, react, delta, hearts(id)]}
@@ -889,6 +929,8 @@ func load_data(d: Dictionary) -> void:
 			state[id]["talked_today"] = bool(s.get("talked_today", false))
 			state[id]["gifted_today"] = bool(s.get("gifted_today", false))
 			state[id]["dates_seen"] = clampi(int(s.get("dates_seen", 0)), 0, DATE_HEARTS.size())
+			# 구세이브엔 없는 필드 = -1(선물 준 적 없음). 마이그레이션 없이 기본값으로 흡수한다.
+			state[id]["last_gift_day"] = int(s.get("last_gift_day", -1))
 	# 결혼 상태 복원. 없는 npc_id(데이터 삭제)면 미혼으로 되돌림 — 유령 배우자 방지.
 	var sp := String(d.get("spouse", "") if d.get("spouse") != null else "")
 	spouse = sp if state.has(sp) else ""

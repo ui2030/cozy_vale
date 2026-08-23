@@ -134,6 +134,15 @@ func _validate() -> void:
 		assert(float(npcs[nid].get("walk_speed", 1.6)) > 0.0, "%s walk_speed는 양수여야 함(0이면 그 자리에 굳음)" % nid)
 		assert(dialogues.has(arche), "%s archetype '%s' 대사 풀 없음" % [nid, arche])
 		assert(not dialogues[arche].get("normal", []).is_empty(), "%s normal 대사 비어있음" % arche)
+		# 빈 풀을 선언해두면 대사 선택이 그 key를 조용히 건너뛴다 = 써 둔 줄 alignment 착각의 원인.
+		# 상황별 풀(생일·비·계절…)은 **없어도 되지만 비어 있으면 안 된다**.
+		for key in dialogues[arche]:
+			var lines: Array = dialogues[arche][key]
+			# 1줄 풀은 그 상황 내내 같은 문장 하나다 — 계절 풀이면 30일 동안 한 문장이다.
+			# 빈 배열은 조용히 건너뛰어져서 "썼는데 안 나온다"의 원인이 된다.
+			assert(lines.size() >= 2, "%s '%s' 풀이 %d줄 — 최소 2줄(없앨 거면 key째 지운다)" % [arche, key, lines.size()])
+			for ln in lines:
+				assert(ln is String and String(ln).strip_edges() != "", "%s '%s'에 빈 대사 줄" % [arche, key])
 		# 결혼 후보(candidate)는 연애 대사가 다 있어야 함 (F단계: 데이트 → 청혼 → 결혼식 → 부부)
 		if npcs[nid].get("candidate", false):
 			for key in ["date_invite", "date1", "date2", "propose_accept", "propose_reject", "wedding", "married"]:

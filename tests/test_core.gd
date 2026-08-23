@@ -57,6 +57,7 @@ func _ready() -> void:
 	_test_interior()
 	_test_beach()
 	_test_cooking()
+	_test_dialogue_context()
 	print("ALL CORE TESTS PASS")
 	get_tree().quit()
 
@@ -645,7 +646,11 @@ func _test_festival() -> void:
 	assert(_npcsys.npc_nodes[id].position.distance_to(home_pos) < 0.01, "종료 후 집 복귀(한밤 행군 없음)")
 	_npcsys._update_home_hide()
 	assert(bool(_npcsys._wander[id]["hidden"]), "종료 후 밤 숨김 재개")
-	assert(_npcsys._dialogue_line(id) in GameData.dialogues[String(GameData.npcs[id]["archetype"])]["normal"], "축제 밖 = 평상 대사")
+	# 축제가 끝나면 축제 풀을 안 쓴다. **"normal 안에 있다"로는 더 못 박는다** — 이제 계절·날씨
+	# 풀이 평상보다 먼저 걸리기 때문. 우선순위 목록에서 축제 key가 빠졌는지로 본다.
+	var keys_off: Array = _npcsys._event_keys(id)
+	assert(not ("festival" in keys_off) and not ("festival.star" in keys_off), "축제 밖인데 축제 풀이 후보에 남음: %s" % str(keys_off))
+	assert(_npcsys._dialogue_line(id) in _union_pool(id, _npcsys._ambient_keys(id)), "축제 밖 = 상시 풀에서 나온다")
 
 	# ── H-2: 겨울 등불 축제(D10 19:00~22:00) + 장식 생성
 	GameClock.abs_day = 3 * GameClock.DAYS_PER_SEASON + 9     # winter D10
@@ -905,11 +910,16 @@ func _test_marriage() -> void:
 	_npcsys.state[id]["talked_today"] = false
 	var t: Dictionary = _npcsys.talk(id)
 	assert(t["ok"] and "♥" in String(t["msg"]), "대화 토스트 하트 표기: %s" % t["msg"])
+	# married* 전체를 인정한다 — 부부 인사도 계절 변형이 있다(두 줄에 갇히지 않게).
+	# 계약은 "배우자는 부부 대사를 한다"이지 "그 두 줄만 한다"가 아니다.
 	var found := false
-	for line in GameData.dialogues["cheerful"]["married"]:
-		if String(line) in String(t["msg"]):
-			found = true
-	assert(found, "배우자는 married 대사: %s" % t["msg"])
+	for key in GameData.dialogues["cheerful"]:
+		if not String(key).begins_with("married"):
+			continue
+		for line in GameData.dialogues["cheerful"][key]:
+			if String(line) in String(t["msg"]):
+				found = true
+	assert(found, "배우자는 부부 대사: %s" % t["msg"])
 	# ── 시간창을 지나침(취침·로드) → 연출 없이 즉시 완혼 폴백
 	_npcsys.spouse = ""
 	_npcsys.engaged = {"id": "npc.luna", "wedding_abs_day": GameClock.abs_day + 1}
@@ -1789,3 +1799,123 @@ func _test_cooking() -> void:
 	assert(I.STOVE_AT.distance_to(I.BED_CENTER) > I.STOVE_R + PLAYER_R, "스토브와 침대 이격")
 	# ── 세이브 표면: 새 아이템 id는 인벤토리 자유형 리스트에 흡수 = 포맷 무변경
 	assert(SaveManager.VERSION == 5, "요리 추가 = 세이브 포맷 무변경 (VERSION 5 유지)")
+
+# ── 문맥 반응 대사: 상황이 바뀌면 실제로 다른 풀에서 말이 나오는가 ────────────
+# 옛 판은 아키타입당 평상시 3줄 고정이라 생일에도 폭우에도 하트 10칸에도 같은 말을 했다.
+# 여기서 핀하는 건 "대사가 많다"가 아니라 **우선순위 사슬이 실제로 갈라지는가**다.
+# 대사 줄 내용은 콘텐츠라 자주 바뀌므로 문장을 박지 않고, 어느 풀에서 나왔는지로 본다.
+func _union_pool(id: String, keys: Array) -> Array:
+	var pools: Dictionary = GameData.dialogues[String(GameData.npcs[id]["archetype"])]
+	var out := []
+	for k in keys:
+		out.append_array(pools.get(k, []))
+	return out
+
+func _test_dialogue_context() -> void:
+	var id := "npc.mira"
+	var arche := String(GameData.npcs[id]["archetype"])
+	var day0 := GameClock.abs_day
+	var min0 := GameClock.game_min
+	var st0: Dictionary = _npcsys.state[id].duplicate()
+	_npcsys._festival_active = false
+	_npcsys._festival_id = ""
+	GameClock.game_min = 600
+
+	# ── 1. 어느 상황에서도 빈 대사가 나오지 않는다(빈 문자열 = 이름만 뜨는 토스트).
+	# 사슬 맨 끝 "normal"이 전 아키타입에 있으므로 폴백은 항상 성립해야 한다.
+	for nid in GameData.npcs:
+		for sea in GameClock.SEASONS.size():
+			GameClock.abs_day = sea * GameClock.DAYS_PER_SEASON + 3
+			assert(_npcsys._dialogue_line(nid) != "", "%s 계절 %d 대사가 빈 문자열" % [nid, sea])
+
+	# ── 2. 계절이 바뀌면 풀이 갈린다 (평상 3줄 돌려막기가 아니게 된 근거)
+	var seen_pools := {}
+	for sea in GameClock.SEASONS.size():
+		GameClock.abs_day = sea * GameClock.DAYS_PER_SEASON + 3
+		var k := "normal." + GameData.season_id(sea)
+		assert(k in _npcsys._ambient_keys(id), "%s 후보에 계절 풀 없음" % k)
+		assert(not GameData.dialogues[arche].get(k, []).is_empty(), "%s 계절 대사 미작성" % k)
+		seen_pools[k] = true
+	assert(seen_pools.size() == 4, "네 계절이 서로 다른 풀을 쓴다 (실제 %d)" % seen_pools.size())
+
+	# ── 3. 생일이 계절·평상을 이긴다. 선물 ×8 보너스가 있는 날인데 대사가 평소와 같으면
+	# 그날이 특별한 날이라는 신호가 화면에 하나도 안 남는다.
+	var b: Dictionary = GameData.npcs[id]["birthday"]
+	var bsea := GameData.SEASON_IDS.find(String(b["season"]))
+	GameClock.abs_day = bsea * GameClock.DAYS_PER_SEASON + int(b["day"]) - 1
+	assert(_npcsys._is_birthday(id), "전제: 오늘이 생일")
+	assert(_npcsys._event_keys(id)[0] == "birthday", "생일이 최우선이 아님: %s" % str(_npcsys._event_keys(id)))
+	assert(_npcsys._dialogue_line(id) in GameData.dialogues[arche]["birthday"], "생일인데 생일 대사가 아님")
+
+	# ── 4. 비 오는 날. 날씨는 GameData.is_rainy(abs_day) 단일 출처라 실제 비 오는 날을 찾아 쓴다.
+	var rainy := -1
+	for d in 120:
+		GameClock.abs_day = d
+		if GameData.is_rainy(d) and not _npcsys._is_birthday(id):
+			rainy = d
+			break
+	assert(rainy >= 0, "1년 안에 비 오는 날이 없다(날씨 데이터 전제 붕괴)")
+	GameClock.abs_day = rainy
+	var keys_rain: Array = _npcsys._ambient_keys(id)
+	assert("rain" in keys_rain, "비 오는 날인데 rain 풀이 후보에 없음")
+	assert(_npcsys._dialogue_line(id) in _union_pool(id, keys_rain), "비 오는 날 대사가 상시 풀 밖")
+
+	# ── 5. 선물을 준 다음 날 그걸 언급한다 = "날 기억한다"의 정체.
+	GameClock.abs_day = 16  # 생일(봄 12일 = abs_day 11)을 피한다 — 생일이 사건 우선순위 위다
+	_npcsys.state[id]["gifted_today"] = false
+	_npcsys.state[id]["affection_points"] = 0
+	_npcsys.give(id, "crop.strawberry")
+	assert(int(_npcsys.state[id]["last_gift_day"]) == 16, "선물 날짜 기록 안 됨")
+	GameClock.abs_day = 17
+	assert("gift_thanks" in _npcsys._event_keys(id), "선물 다음 날 언급 안 함")
+	assert(_npcsys._dialogue_line(id) in GameData.dialogues[arche]["gift_thanks"], "사건 풀이 상시를 못 이김")
+	GameClock.abs_day = 19  # 사흘 뒤엔 더 안 꺼낸다(계속 고맙다고 하면 오히려 어색하다)
+	assert(not ("gift_thanks" in _npcsys._event_keys(id)), "선물 얘기가 사흘째 계속됨")
+
+	# ── 6. 관계가 자라면 말투가 바뀐다. 하트가 숫자로만 오르면 호감도 시스템이 안 읽힌다.
+	GameClock.abs_day = 17
+	_npcsys.state[id]["affection_points"] = (_npcsys.HEART_WARM - 1) * _npcsys.HEART
+	assert(not ("heart_high" in _npcsys._ambient_keys(id)), "임계 미만인데 친밀 대사")
+	_npcsys.state[id]["affection_points"] = _npcsys.HEART_WARM * _npcsys.HEART
+	assert("heart_high" in _npcsys._ambient_keys(id), "하트 %d칸인데 친밀 대사 없음" % _npcsys.HEART_WARM)
+
+	# ── 6b. 굶김 방지 (Codex 지적). 상시 조건은 **한번 켜지면 계속 참**이라, 이걸 사건처럼
+	# 한 줄로 세우면 하트 7칸을 넘긴 순간부터 비도 계절도 영영 안 나온다 — 하필 가장 자주
+	# 말 거는 주민이 두 줄에 갇힌다. 친밀 상태에서도 배경 풀이 살아 있는지 실제로 뽑아 본다.
+	GameClock.abs_day = rainy
+	var warm_keys: Array = _npcsys._ambient_keys(id)
+	for need in ["heart_high", "rain", "normal." + GameData.season_id(GameClock.season()), "normal"]:
+		assert(need in warm_keys, "친밀+비 상황에서 %s 풀이 굶었다: %s" % [need, str(warm_keys)])
+	var hit := {}
+	for _i in 300:
+		hit[_npcsys._dialogue_line(id)] = true
+	var from_rain := false
+	var from_warm := false
+	for ln in hit:
+		if ln in GameData.dialogues[arche]["rain"]:
+			from_rain = true
+		if ln in GameData.dialogues[arche]["heart_high"]:
+			from_warm = true
+	assert(from_rain and from_warm, "친밀 상태가 날씨 대사를 굶기거나 그 반대 (비 %s / 친밀 %s)" % [from_rain, from_warm])
+
+	# 배우자는 부부 인사가 덮어쓴다(매일 첫 대화 연출) — 대신 계절 변형으로 두 줄을 면한다
+	var sp0: String = _npcsys.spouse
+	_npcsys.spouse = id
+	var mkey := "married." + GameData.season_id(GameClock.season())
+	assert(not GameData.dialogues[arche].get(mkey, []).is_empty(), "%s 부부 계절 대사 미작성" % mkey)
+	assert(_npcsys._dialogue_line(id) in GameData.dialogues[arche][mkey], "배우자인데 부부 계절 대사가 안 나옴")
+	_npcsys.spouse = sp0
+
+	# ── 7. 세이브 왕복: last_gift_day가 살아남아야 다음 날 대사가 유지된다.
+	var blob: Dictionary = _npcsys.save_data()
+	_npcsys.state[id]["last_gift_day"] = -1
+	_npcsys.load_data(blob)
+	assert(int(_npcsys.state[id]["last_gift_day"]) == 16, "last_gift_day 세이브 왕복 실패")
+	# 구세이브(그 필드가 없던 판)는 -1로 흡수 — 마이그레이션 없이 로드된다
+	var old_blob := {id: {"affection_points": 50, "talked_today": false, "gifted_today": false, "dates_seen": 0}}
+	_npcsys.load_data(old_blob)
+	assert(int(_npcsys.state[id]["last_gift_day"]) == -1, "구세이브에서 last_gift_day 기본값 흡수 실패")
+
+	GameClock.abs_day = day0
+	GameClock.game_min = min0
+	_npcsys.state[id] = st0
