@@ -1,26 +1,59 @@
 {
 	"fish.carp": {
-		"name": "Carp", "seasons": ["spring"], "sell_price": 30, "difficulty": 0.15, "weight": 50
+		"name": "Carp", "seasons": ["spring", "summer", "autumn", "winter"], "sell_price": 30, "difficulty": 0.15, "weight": 50
 	},
 	"fish.bluegill": {
-		"name": "Bluegill", "seasons": ["spring"], "sell_price": 45, "difficulty": 0.4, "weight": 30
+		"name": "Bluegill", "seasons": ["spring", "summer"], "sell_price": 45, "difficulty": 0.4, "weight": 30
 	},
 	"fish.bass": {
-		"name": "Bass", "seasons": ["spring"], "sell_price": 75, "difficulty": 0.7, "weight": 15
+		"name": "Bass", "seasons": ["spring", "summer"], "sell_price": 75, "difficulty": 0.7, "weight": 15
 	},
 	"fish.smelt": {
-		"name": "Smelt", "seasons": ["spring"], "sell_price": 110, "difficulty": 0.9, "weight": 5
+		"name": "Smelt", "seasons": ["spring", "winter"], "sell_price": 110, "difficulty": 0.9, "weight": 5
 	},
 	"fish.catfish": {
-		"name": "Catfish", "seasons": ["spring"], "sell_price": 150, "difficulty": 0.85, "weight": 10, "hours": [18, 26]
+		"name": "Catfish", "seasons": ["spring", "summer"], "sell_price": 150, "difficulty": 0.85, "weight": 10, "hours": [18, 26]
+	},
+	"fish.sunfish": {
+		"name": "Sunfish", "seasons": ["summer"], "sell_price": 55, "difficulty": 0.3, "weight": 40
+	},
+	"fish.eel": {
+		"name": "Eel", "seasons": ["summer"], "sell_price": 140, "difficulty": 0.85, "weight": 10, "hours": [20, 26]
+	},
+	"fish.salmon": {
+		"name": "Salmon", "seasons": ["autumn"], "sell_price": 120, "difficulty": 0.6, "weight": 25
+	},
+	"fish.pike": {
+		"name": "Pike", "seasons": ["autumn"], "sell_price": 155, "difficulty": 0.85, "weight": 12
+	},
+	"fish.walleye": {
+		"name": "Walleye", "seasons": ["autumn"], "sell_price": 135, "difficulty": 0.75, "weight": 14, "hours": [18, 26]
+	},
+	"fish.perch": {
+		"name": "Perch", "seasons": ["winter"], "sell_price": 50, "difficulty": 0.35, "weight": 40
+	},
+	"fish.sturgeon": {
+		"name": "Sturgeon", "seasons": ["winter"], "sell_price": 165, "difficulty": 0.95, "weight": 6
 	},
 	"fish.jack": {
-		"name": "Jack Mackerel", "seasons": ["spring"], "sell_price": 40, "difficulty": 0.2, "weight": 50, "spot": "sea"
+		"name": "Jack Mackerel", "seasons": ["spring", "summer"], "sell_price": 40, "difficulty": 0.2, "weight": 50, "spot": "sea"
 	},
 	"fish.mackerel": {
-		"name": "Mackerel", "seasons": ["spring"], "sell_price": 85, "difficulty": 0.5, "weight": 30, "spot": "sea"
+		"name": "Mackerel", "seasons": ["spring", "summer", "autumn"], "sell_price": 85, "difficulty": 0.5, "weight": 30, "spot": "sea"
 	},
 	"fish.seabream": {
-		"name": "Sea Bream", "seasons": ["spring"], "sell_price": 170, "difficulty": 0.8, "weight": 12, "spot": "sea", "hours": [4, 10]
+		"name": "Sea Bream", "seasons": ["spring", "autumn"], "sell_price": 170, "difficulty": 0.8, "weight": 12, "spot": "sea", "hours": [4, 10]
+	},
+	"fish.pufferfish": {
+		"name": "Pufferfish", "seasons": ["summer"], "sell_price": 145, "difficulty": 0.8, "weight": 12, "spot": "sea", "hours": [10, 16]
+	},
+	"fish.tuna": {
+		"name": "Tuna", "seasons": ["summer"], "sell_price": 160, "difficulty": 0.9, "weight": 8, "spot": "sea"
+	},
+	"fish.squid": {
+		"name": "Squid", "seasons": ["autumn", "winter"], "sell_price": 130, "difficulty": 0.7, "weight": 18, "spot": "sea", "hours": [18, 26]
+	},
+	"fish.flounder": {
+		"name": "Flounder", "seasons": ["winter"], "sell_price": 150, "difficulty": 0.9, "weight": 10, "spot": "sea"
 	}
 }

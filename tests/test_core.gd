@@ -1109,7 +1109,7 @@ func _test_forage_look() -> void:
 	# 위까지는 json만 읽는다 = _spawn을 옛 초록 구체 한 줄로 되돌려도 전부 통과한다(Codex 지적).
 	# 데이터와 화면 사이의 배선을 여기서 끊어본다.
 	var fs2: Node = preload("res://forage/forage_system.gd").new()
-	for sea in [0, 3]:  # 봄·겨울 (여름·가을은 채집물 0종)
+	for sea in [0, 1, 2, 3]:  # 네 계절 전부 — 한 계절이라도 0종이면 그 계절 채집이 통째로 없다
 		GameClock.abs_day = sea * GameClock.DAYS_PER_SEASON + 5
 		fs2._respawn()
 		assert(not fs2._roots.is_empty(), "계절 %d에 채집물이 스폰되지 않아 실경로를 못 본다" % sea)
@@ -1122,6 +1122,24 @@ func _test_forage_look() -> void:
 			var want := Color.from_string(String(GameData.forage[fid2]["color"]), Color.BLACK)
 			var got := _look_color(r)
 			assert(got.is_equal_approx(want), "%s 스폰 노드 색이 데이터와 다름 (%s vs %s)" % [fid2, str(got), str(want)])
+
+	# ── 도감 도달성: 한 계절을 통째로 돌면 그 계절 전 종이 최소 1회는 나온다.
+	# 희귀종은 원거리 지점(REMOTE_IDX)에서만 뽑히므로, 데이터에 있어도 화면에 영영 안 나올 수
+	# 있다 — 그러면 도감이 설계상 완성 불가가 된다(장기 동기가 조용히 죽는다). 종수가 아니라
+	# **배치 알고리즘을 통과하는가**를 본다.
+	for sea2 in GameData.SEASON_IDS.size():
+		var want_ids := GameData.season_filter(GameData.forage, GameData.season_id(sea2))
+		var got_ids := {}
+		for day in GameClock.DAYS_PER_SEASON:
+			GameClock.abs_day = sea2 * GameClock.DAYS_PER_SEASON + day
+			fs2._respawn()
+			for r2 in fs2._roots:
+				for c3 in (r2 as Node).get_children():
+					if c3 is Area3D and c3.has_meta("forage_id"):
+						got_ids[String(c3.get_meta("forage_id"))] = true
+		for fid3 in want_ids:
+			assert(got_ids.has(fid3), "%s — %s 한 계절(%d일) 내내 한 번도 안 나옴 = 도감 완성 불가"
+				% [fid3, GameData.season_id(sea2), GameClock.DAYS_PER_SEASON])
 	fs2.free()
 
 # 스폰된 채집물 노드가 화면에 내는 색. 구체는 material_override의 albedo, 킷 메시는 surface
@@ -1144,21 +1162,27 @@ func _look_color(node: Node) -> Color:
 
 # ── 겨울 표현 패스: 채집물 2종 + 지면/식생 계절 파생 ────────────────
 func _test_winter_pass() -> void:
-	# ── 겨울 채집물 2종: 겨울에 작물이 0인 계절이라 요리 재료 접근을 이쪽이 연다.
+	# ── 계절 커버리지. **옛 핀은 "여름·가을 채집물 0종"을 계약으로 못박고 있었다** — 구멍을
+	# 고정한 핀이라, 여름에 들에 나가도 주울 게 하나도 없는 상태가 테스트 통과였다. 이제는
+	# 종수를 세지 않고 "어느 계절이든 일반 스폰이 존재한다"를 본다(종수는 늘 수 있으니).
+	for s in GameData.SEASON_IDS:
+		var pool := GameData.season_filter(GameData.forage, s)
+		assert(not pool.is_empty(), "%s 채집물 0종 — 그 계절 채집이 통째로 없다" % s)
+		var common := 0
+		for fid in pool:
+			if not GameData.forage[fid].get("rare", false):
+				common += 1
+			assert(GameData.is_collectible(fid), "%s 도감·판매 대상" % fid)
+		# 희귀만 있으면 원거리 지점 밖은 전부 빈손이다(_respawn의 common_pool 폴백이 죽는다)
+		assert(common > 0, "%s 채집물이 희귀뿐 — 일반 스폰 지점이 전부 빈다" % s)
+	# 겨울은 작물이 0인 계절이라 채집이 유일한 육상 산출 — 봄 하위종보단 비싸게, 희귀는 없이.
 	var win := GameData.season_filter(GameData.forage, "winter")
-	assert(win.size() == 2, "겨울 채집물 2종 (실제 %d: %s)" % [win.size(), str(win)])
 	for fid in win:
 		var d: Dictionary = GameData.forage[fid]
 		assert(d["seasons"] == ["winter"], "%s 겨울 전용 (실제 %s)" % [fid, str(d["seasons"])])
-		assert(GameData.is_collectible(fid), "%s 도감·판매 대상" % fid)
-		# 기존 봄 채집물 대역(20~90) 안 — 겨울 유일 산출이라 봄 하위종보단 비싸게
 		var sp := GameData.sell_price(fid)
 		assert(sp >= 35 and sp <= 90, "%s 판매가 대역 밖: %d" % [fid, sp])
 		assert(not d.get("rare", false), "%s — 겨울 풀엔 희귀 없음(원거리도 일반 스폰)" % fid)
-	# 다른 계절 오염 없음 (봄 4종 유지 / 여름·가을은 채집물 없음 = 기존 동작)
-	assert(GameData.season_filter(GameData.forage, "spring").size() == 4, "봄 채집물 4종 유지")
-	for s in ["summer", "autumn"]:
-		assert(GameData.season_filter(GameData.forage, s).is_empty(), "%s 채집물 무변경(0종)" % s)
 
 	# ── 리스폰 결정성: 같은 겨울날 두 번 = 같은 배치 (씬 트리 없이 _respawn 직접 호출)
 	var fs: Node = preload("res://forage/forage_system.gd").new()
@@ -1595,8 +1619,18 @@ func _test_beach() -> void:
 			sea_ids.append(fid)
 		else:
 			pond_ids.append(fid)
-	assert(sea_ids.size() == 3, "바다 어종 3종 (실제 %d)" % sea_ids.size())
-	assert(pond_ids.size() == 5, "기존 연못 어종 5종 유지 (실제 %d)" % pond_ids.size())
+	assert(sea_ids.size() >= 3, "봄 바다 어종 (실제 %d)" % sea_ids.size())
+	assert(pond_ids.size() >= 5, "봄 연못 어종 (실제 %d)" % pond_ids.size())
+	# ── 계절 커버리지: 네 계절 × 두 낚시터 × 24시간 어디서도 빈손이 없다.
+	# **옛 핀은 봄 풀만 봤고, 실제로 여름·가을·겨울은 어종이 0종이었다** — 낚시하면
+	# "여긴 잡을 게 없네요"가 뜬다. 종수가 아니라 pick_fish 실경로로 본다(시간창 게이트까지).
+	for s in GameData.SEASON_IDS:
+		var sp2 := GameData.season_filter(GameData.fish, s)
+		assert(not sp2.is_empty(), "%s 어종 0종 — 그 계절 낚시가 통째로 없다" % s)
+		for spot in GameData.SPOT_IDS:
+			for h in 24:
+				assert(GameData.pick_fish(GameData.fish, sp2, 0.5, h, spot) != "",
+					"%s %s %d시 후보 0 — 던져도 안 물린다" % [s, spot, h])
 	# 200회 뽑아 교차 오염이 없는지 (가중치 경로 전체를 훑는다)
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 424242
@@ -1609,9 +1643,19 @@ func _test_beach() -> void:
 	# 바다는 하루 어느 시각이든 물릴 게 있다(시간창 없는 종이 남아 있어야 빈손 낚시가 안 생긴다)
 	for h in 24:
 		assert(GameData.pick_fish(GameData.fish, pool, 0.5, h, GameData.SPOT_SEA) != "", "바다 %d시 후보 0" % h)
-	# 판매가: 바다 최고가가 연못 최고가를 넘되 반지(1200) 경제를 깨지 않는다
-	assert(GameData.sell_price("fish.seabream") > GameData.sell_price("fish.catfish"), "바다 최고가 > 연못 최고가")
-	assert(GameData.RING_COST >= GameData.sell_price("fish.seabream") * 7, "반지값이 최고가 7배 이상 유지")
+	# 판매가: 바다 최고가가 연못 최고가를 넘되 반지(1200) 경제를 깨지 않는다.
+	# **특정 어종 id를 박아두면 새 어종이 그 위로 올라가도 통과한다** — 데이터에서 최댓값을
+	# 뽑아 본다(어종을 늘릴 때 이 핀이 자동으로 따라온다).
+	var sea_max := 0
+	var pond_max := 0
+	for fid in GameData.fish:
+		var p := GameData.sell_price(fid)
+		if String(GameData.fish[fid].get("spot", GameData.SPOT_POND)) == GameData.SPOT_SEA:
+			sea_max = maxi(sea_max, p)
+		else:
+			pond_max = maxi(pond_max, p)
+	assert(sea_max > pond_max, "바다 최고가(%d) > 연못 최고가(%d)" % [sea_max, pond_max])
+	assert(GameData.RING_COST >= sea_max * 7, "반지값(%d)이 어종 최고가(%d) 7배 이상 유지" % [GameData.RING_COST, sea_max])
 	# 도감·판매·선물은 데이터 파생 — 신규 어종이 자동으로 산출물로 잡힌다
 	for fid in sea_ids:
 		assert(GameData.is_produce(fid), "%s 산출물(도감·판매 대상)" % fid)
@@ -1678,7 +1722,7 @@ func _test_cooking() -> void:
 	# 작물 gold/day 대역과 같은 수법: 런타임은 이 대역을 모르고 테스트만 안다.
 	var lo := 1.25
 	var hi := 1.6
-	assert(GameData.recipes.size() == 8, "요리 8종 (실제 %d)" % GameData.recipes.size())
+	assert(GameData.recipes.size() >= 8, "요리 종수 (실제 %d)" % GameData.recipes.size())
 	for rid in GameData.recipes:
 		var r: Dictionary = GameData.recipes[rid]
 		assert(rid.begins_with("dish."), "요리 id 규약 dish.*: %s" % rid)
@@ -1699,9 +1743,9 @@ func _test_cooking() -> void:
 		for nid in GameData.npcs:  # 선물 취향 목록은 특정 id만 참조 = 요리는 항상 neutral
 			for tier in ["loved", "liked", "disliked"]:
 				assert(not (rid in GameData.npcs[nid].get("gifts", {}).get(tier, [])), "%s 취향 목록에 요리" % nid)
-	# ── 계절 커버리지: 봄·여름·가을은 그 계절 재료만으로 만드는 요리가 하나씩 있다.
-	# 겨울은 재료 산출이 0인 계절(설계) — 저장해 둔 재료로 요리한다(요리 자체엔 계절 게이트 없음).
-	for s in ["spring", "summer", "autumn"]:
+	# ── 계절 커버리지: 어느 계절이든 그 계절 재료만으로 만드는 요리가 하나씩 있다.
+	# 겨울은 작물이 0이지만 채집·낚시 산출이 있으므로 이제 겨울도 이 계약에 든다.
+	for s in GameData.SEASON_IDS:
 		var found := ""
 		for rid in GameData.recipes:
 			var all_in := true

@@ -72,6 +72,16 @@ func _validate() -> void:
 		assert(String(d.get("spot", SPOT_POND)) in SPOT_IDS, "%s spot 잘못됨: %s" % [fid, str(d.get("spot"))])
 		var diff := float(d["difficulty"])
 		assert(diff >= 0.0 and diff <= 1.0, "%s difficulty 0..1 벗어남: %f" % [fid, diff])
+		# weight 0 이하면 pick_fish의 가중 추첨에서 영원히 안 뽑힌다(조용히 없는 어종이 된다)
+		assert(float(d.get("weight", 1.0)) > 0.0, "%s weight 0 이하 = 절대 안 잡힘" % fid)
+		# _hour_ok는 [시작,끝] 두 칸을 전제로 인덱싱한다 — 모양이 틀리면 거기서 터진다
+		var hrs_raw: Variant = d.get("hours", [])
+		assert(hrs_raw is Array, "%s hours가 배열이 아님: %s" % [fid, str(hrs_raw)])
+		var hrs: Array = hrs_raw
+		assert(hrs.is_empty() or hrs.size() == 2, "%s hours = [시작,끝] 아님: %s" % [fid, str(hrs)])
+		if hrs.size() == 2:
+			assert(int(hrs[0]) >= 0 and int(hrs[0]) < 24, "%s hours 시작이 0..23 밖: %s" % [fid, str(hrs)])
+			assert(int(hrs[1]) > int(hrs[0]) and int(hrs[1]) <= 48, "%s hours 끝이 시작 이하/과대: %s" % [fid, str(hrs)])
 		for s in d["seasons"]:
 			assert(s in SEASON_IDS, "%s 계절 잘못됨: %s" % [fid, str(s)])
 	for fid in forage:

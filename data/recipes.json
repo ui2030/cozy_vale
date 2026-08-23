@@ -30,5 +30,29 @@
 	"dish.platter": {
 		"name": "Forest Platter", "sell_price": 260,
 		"ingredients": {"forage.morel": 1, "forage.leek": 1, "forage.dandelion": 2}
+	},
+	"dish.lavender_tea": {
+		"name": "Lavender Tea", "sell_price": 200,
+		"ingredients": {"forage.lavender": 2, "forage.mint": 1}
+	},
+	"dish.mushroom_soup": {
+		"name": "Mushroom Soup", "sell_price": 260,
+		"ingredients": {"forage.red_mushroom": 1, "crop.tomato": 1}
+	},
+	"dish.grilled_tuna": {
+		"name": "Grilled Tuna", "sell_price": 300,
+		"ingredients": {"fish.tuna": 1, "crop.pepper": 1}
+	},
+	"dish.apple_crumble": {
+		"name": "Apple Crumble", "sell_price": 215,
+		"ingredients": {"forage.wild_apple": 2, "forage.chestnut": 1}
+	},
+	"dish.berry_tart": {
+		"name": "Berry Tart", "sell_price": 330,
+		"ingredients": {"forage.blackberry": 2, "crop.cranberry": 1}
+	},
+	"dish.winter_stew": {
+		"name": "Winter Stew", "sell_price": 185,
+		"ingredients": {"forage.winter_root": 2, "fish.perch": 1}
 	}
 }
