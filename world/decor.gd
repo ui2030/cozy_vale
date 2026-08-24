@@ -200,6 +200,24 @@ const FLORA_WINTER_GAIN := 2.15  # 지피 목표 = 옛 C_FROST 화면값 (166,16
 # 서리 풀은 청록이 아니라 **마른 풀**이어야 한다(옛 C_FROST 주석: B>R 청록은 "유리조각"으로 읽혔다).
 # KIT_TINT × C_FROST를 최대 채널로 정규화한 비율 = 명도 천장은 그대로, 색상만 R>G>B로 돌린다.
 const FLORA_WINTER_TINT := Color(0.760, 0.711, 0.608)
+# ── 가을 단풍 (겨울 서리와 **같은 처방**: 채도를 지우고 → 밝히고 → char_tint로 색을 준다) ──
+# 킷 잎 텍셀은 초록이다(실측 sRGB (0.294,0.639,0.373)). 여기에 주황을 곱하기만 해서는 단풍이
+# 안 된다: R을 G 위로 올리려면 R/G 비를 3배 넘게 밀어야 하는데, 그 배율이면 G가 셰이더의
+# min(src*gain, 1.0)에 잘려 잎 텍셀이 전부 같은 값으로 붙는다 = 잎 결이 통째로 날아간 통짜(계산).
+# 그래서 서리 사본과 같은 순서로 간다 — sat_cap으로 잎을 거의 무채색 중간톤(실측 (0.584,0.629,0.593))
+# 으로 만든 뒤 char_tint로 단풍색을 입힌다. 잎 결은 텍셀별 **명도차**로 남는다(잎 텍셀 최대채널
+# 0.549~0.733 = 1.9배 폭이 그대로 살아있다).
+# sat_cap을 겨울(0.06)까지 지우면 수피까지 같은 주황 한 덩어리가 된다 — 0.18은 수피의 붉은기를
+# 남겨 수관 (0.634,0.454,0.253)과 줄기 (0.737,0.457,0.264)가 화면에서 명도로 갈린다.
+# ponytail: 킷 나무는 **표면이 하나**라(수관·수피가 같은 머티리얼) 줄기도 같이 주황으로 물든다.
+# 겨울 서리 사본이 이미 같은 거래를 하고 있고(전 그루가 흰색) 게임 카메라 거리에선 줄기가
+# 가늘어 읽히지 않는다. 근경에서 거슬리면 UV 영역으로 표면을 갈라(수관/수피) 수관에만 tint를
+# 거는 게 다음 단계다 — ArrayMesh 재구성이 필요해서 지금은 안 한다.
+# 두 값 다 최대채널이 정오 클리핑 상한 0.75 아래다(지면 핀과 같은 천장 — 넘으면 255로 포화).
+# 화면 실측 환산(정오 = 선형 ×1.90): 수관 (211,154,89) = 크림 하늘을 배경으로 읽히는 따뜻한 주황.
+const TREE_AUTUMN_SAT := 0.18
+const TREE_AUTUMN_GAIN := 1.90
+const TREE_AUTUMN_TINT := Color(0.831, 0.552, 0.326)
 const WALK_HALF := 33.0     # 초지 스프링클 범위(숲 띠 안쪽)
 
 # ── 소품 배치표 [종류, x, z, yaw(도)] ────────────────────────────────
@@ -274,7 +292,7 @@ var _glow: ShaderMaterial              # 가로등 유리 발광 판 공용 머�
 var _frost: ShaderMaterial             # 겨울 식생 서리 override 공용 머티리얼 (_frost_mat)
 var _atlas: Texture2D                  # 파크 킷 아틀라스 — 전 식생이 공유(서리 머티리얼이 재사용)
 var _blooms: Array[Node3D] = []        # 겨울에 숨길 만개 노드(화분·꽃수레 꽃, 등나무 드레이프 루트)
-var _tree_mesh := {}                   # 활엽수 MMI 이름 → [원색 Mesh, 겨울 수관 서리 Mesh]
+var _tree_mesh := {}                   # 활엽수 MMI 이름 → [원색, 겨울 서리, 가을 단풍] (tree_variant_index 계약)
 var _flora_cache := {}                 # 식생 종 이름 → Mesh (MultiMesh·화분 꽃 공용)
 var _unknown_mats := {}                # 팔레트에 없는 킷 머티리얼 이름(로그용)
 # 검증 전용: 탑다운 도식용 좌표 수집 (headless는 MultiMesh 버퍼를 되읽지 못해 원본을 따로 남긴다)
@@ -304,6 +322,7 @@ func build(river_pts: Array, bridges: Array, roads: Array) -> void:
 	_place_props()
 	_place_fences()
 	_place_flora()
+	_place_leaf_litter()  # 전용 rng — 공용 스트림 위치를 안 건드린다(_place_forest 배치 보존)
 	_place_forest()
 	_wisteria()
 	_audit()
@@ -358,7 +377,8 @@ func _kit(path: String, sc: float, gain := 1.0) -> Node3D:
 # 캐시를 우회해 매번 새로 로드한다 = 개별 노드(화분·꽃수레 꽃)가 쓰는 Mesh 리소스를 공유
 # 변형하지 않는다(Codex MUST-FIX). 겨울 사본도 이 함수로 따로 뽑는다(sat/gain만 다른 별개 Mesh).
 # 배율은 인스턴스 transform이 지므로 여기선 항상 native(1.0)로 굽는다.
-func _kit_mesh(nm: String, gain := VEG_GAIN, sat := KIT_SAT_CAP) -> Mesh:
+# tint: 계절 사본이 색을 직접 줄 때만 넘긴다(a=0 = 미지정 → 기존 종별 색조표 경로).
+func _kit_mesh(nm: String, gain := VEG_GAIN, sat := KIT_SAT_CAP, tint := Color(0, 0, 0, 0)) -> Mesh:
 	var n := load_kit(TT_PARK + kit_of(nm) + ".gltf", 1.0, 0.0, gain)
 	if n == null:
 		return null
@@ -373,8 +393,10 @@ func _kit_mesh(nm: String, gain := VEG_GAIN, sat := KIT_SAT_CAP) -> Mesh:
 	for i in mesh.get_surface_count():
 		var m := mi.get_surface_override_material(i) as ShaderMaterial
 		if m != null:
-			m.set_shader_parameter("sat_cap", sat)  # 겨울 사본은 여기만 다르다
-			if FLORA_TINT.has(nm) and sat >= KIT_SAT_CAP:  # 겨울 서리 사본엔 종별 색조를 안 입힌다
+			m.set_shader_parameter("sat_cap", sat)  # 계절 사본은 여기만 다르다
+			if tint.a > 0.0:  # 단풍·낙엽 사본 = 색을 명시로 준다
+				m.set_shader_parameter("char_tint", tint)
+			elif FLORA_TINT.has(nm) and sat >= KIT_SAT_CAP:  # 겨울 서리 사본엔 종별 색조를 안 입힌다
 				m.set_shader_parameter("char_tint", FLORA_TINT[nm])
 			if _atlas == null:
 				_atlas = m.get_shader_parameter("albedo_tex")  # 서리 override가 재사용
@@ -739,6 +761,41 @@ func _lavender_rows(buckets: Dictionary) -> void:
 			t.origin = Vector3(p.x, GROUND_Y, p.y)
 			arr.append(t)
 
+# ══ 가을 낙엽 산포 ═══════════════════════════════════════════════════
+# 가을은 꽃이 노랑 하나만 남아 화단 밀도가 빈다 — 그 자리를 바닥에 깔린 낙엽이 메운다.
+# 메시는 flower_A를 그대로 쓴다: 킷의 **납작하고 넓은 지피 꽃**(native 0.45폭 × 0.138고)이라
+# 눕히면 그대로 바닥 잎이다 = 새 에셋 0, 드로우콜 +1(꽃 변종 하나와 같은 비용).
+# 채도를 지우고 낙엽색을 입히는 처방(단풍 사본과 같은 순서)이라 꽃심·꽃잎 구분이 사라져
+# "바닥에 떨어진 잎"으로 읽힌다 — 채도를 남기면 갈색 꽃이 핀 것으로 보인다.
+const LEAF_MM := "LeafLitter"
+const LEAF_CLUSTERS := 240
+# 수관 단풍(TREE_AUTUMN_TINT 0.831,0.552,0.326)보다 한 단 어둡고 붉다 — 바닥 잎은 이미 마른
+# 것이고, 수관과 같은 값을 쓰면 지면 위 잎이 나무 그늘에서 되레 더 밝게 떠 붕 뜬다.
+# 결과 albedo 최대채널 ≈ 0.60 = 가을 초지(0.610,0.640,0.412) 위에서 R>G로 갈린다.
+const LEAF_TINT := Color(0.700, 0.438, 0.262)
+const LEAF_SAT := 0.14
+const LEAF_GAIN := 1.55
+
+# rng는 **전용 고정 시드**다. 공용 스트림에 끼어들면 그 뒤에 뽑히는 나무·강변 바위·소품 자리가
+# 통째로 밀린다(_lavender_rows·_place_forest 원경 띠가 같은 이유로 전용 시드를 쓴다 — 실증).
+func _place_leaf_litter() -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 20260825
+	var xf := []
+	for _i in LEAF_CLUSTERS:
+		var at := Vector2(rng.randf_range(-WALK_HALF, WALK_HALF), rng.randf_range(-WALK_HALF, WALK_HALF))
+		for _k in rng.randi_range(3, 6):  # 뭉쳐 깔린다(_add_flora와 같은 이유 — 낱개는 잡티로 읽힌다)
+			var p := at + Vector2(rng.randf_range(-1.2, 1.2), rng.randf_range(-1.2, 1.2))
+			if _blocked_flora(p):
+				continue  # 길·물·판석·NPC 자리 제외 = 낙엽이 강물 위에 뜨지 않는다
+			var s := rng.randf_range(1.15, 1.75)
+			var t := Transform3D()
+			t = t.scaled(Vector3(s, s * 0.45, s))  # 높이만 깎아 눕힌다(폭은 그대로 = 바닥에 깔린 잎)
+			t = t.rotated(Vector3.UP, rng.randf() * TAU)
+			t.origin = Vector3(p.x, GROUND_Y, p.y)
+			xf.append(t)
+	_multimesh(_kit_mesh("flower_A", LEAF_GAIN, LEAF_SAT, LEAF_TINT), xf, LEAF_MM)
+
 # 한 자리에 3~6포기를 뭉쳐 심는다 — 낱개로 흩뿌리면 "잡초 노이즈"로 보이고 화단으로 안 읽힌다.
 func _add_flora(buckets: Dictionary, at: Vector2, rng: RandomNumberGenerator, kinds: Array) -> void:
 	if _blocked_flora(at):
@@ -755,33 +812,77 @@ func _add_flora(buckets: Dictionary, at: Vector2, rng: RandomNumberGenerator, ki
 		t.origin = Vector3(p.x, GROUND_Y, p.y)
 		(buckets[nm] as Array).append(t)
 
-# ══ 겨울 식생 (계절 파생 — 저장 없음, transform 재빌드 없음) ═══════
-# 꽃(개나리·라벤더)은 겨울에 숨긴다: 눈 지면 위에 만개한 꽃이 계절 감각을 통째로 깬다.
-# 풀·덤불은 숨기는 대신 서리톤으로 남긴다 — 통째로 지우면 마을이 민짜 눈판이 되고
+# ══ 계절 식생 (계절 파생 — 저장 없음, transform 재빌드 없음) ═══════
+# 꽃은 **계절 시계**다(아래 FLOWER_SEASONS). 겨울엔 한 종도 안 핀다: 눈 지면 위에 만개한 꽃이
+# 계절 감각을 통째로 깬다.
+# 풀·덤불은 겨울에 숨기는 대신 서리톤으로 남긴다 — 통째로 지우면 마을이 민짜 눈판이 되고
 # 길가 띠·광장 화단 링·강변의 밀도와 실루엣이 같이 사라진다(꽃만 빼도 계절은 읽힌다).
 # 나무는 킷 교체로 전부 활엽이 됐다(Tiny Treats 파크 킷에 침엽수가 없다) → 겨울엔 전 그루가
-# 서리톤이다. 옛 규약("침엽수는 겨울에도 초록으로 실루엣을 진다")은 이제 해변 해송만 진다.
-# 겨울에 초록 나무가 남는 실패 모드 쪽이 더 위험하므로(계절이 통째로 안 읽힌다) 전면 서리가 안전한 방향.
+# 서리톤, 가을엔 전 그루가 단풍이다. 옛 규약("침엽수는 계절 밖에서 초록으로 실루엣을 진다")은
+# 이제 해변 해송만 진다 — 가을에 혼자 초록으로 남아 단풍과 대비를 만들어 주므로 의도된 동작이다.
+const SPRING := 0
+const SUMMER := 1
+const AUTUMN := 2
 const WINTER := 3
-# 꽃은 변종이 늘어나므로 목록이 아니라 **접두 규칙**이다 — 목록이면 새 색을 추가할 때마다
-# 여기 적는 걸 잊고 겨울 설원에 분홍 꽃이 만개한 채 남는다.
+# 꽃은 변종이 늘어나므로 "꽃이냐"의 판정은 목록이 아니라 **접두 규칙**이다 — 목록이면 새 색을
+# 추가할 때마다 여기 적는 걸 잊고 겨울 설원에 분홍 꽃이 만개한 채 남는다.
 const FLORA_FLOWER_PREFIX := "Flora_flower"
 const DECIDUOUS := ["Forest_tree", "Forest_tree_large"]
+# 꽃 색 변종별로 피는 계절. **새 버킷을 만들지 않는다** — 변종 하나당 드로우콜 +1이라 계절마다
+# 새 색을 파면 비용이 곱으로 는다. 기존 버킷의 가시성만 계절로 여닫는다.
+# 배분의 핵심은 **여름 = 라벤더 절정**이다: 라벤더 이랑(_lavender_rows)이 만개하는 계절이 있어야
+# "라벤더로 먹고사는 마을"이라는 서사가 화면에서 성립한다.
+# 흰 데이지는 봄·여름 양쪽에 둔다 — 어느 계절이든 흰색이 한 겹 섞여야 화단이 단색으로 안 읽힌다.
+# 푸른 flower_B는 여름에만 둔다: **미지정으로 두면 조용히 사라지므로 명시가 곧 계약이다**.
+# 연못·하늘과 같은 시원한 계열이라 여름 그림에 맞는다.
+# 가을은 노랑 한 색뿐이라 화단 밀도가 빈다 — 그 자리는 바닥 낙엽(_place_leaf_litter)이 메운다.
+const FLOWER_SEASONS := {
+	"flower_A": [AUTUMN],                     # 노랑(개나리 계승) — 가을 화단을 혼자 진다
+	"flower_A~white": [SPRING, SUMMER],
+	"flower_A~pink": [SPRING],
+	"flower_A~lavender": [SUMMER],            # 마을 정체색 — 여름 만개
+	"flower_B": [SUMMER],
+}
+
+# MultiMesh 이름("Flora_flower_A~pink") → 버킷 이름("flower_A~pink"). 접두 처리 **단일 출처**다 —
+# 호출부마다 trim_prefix를 쓰면 한 곳만 빠져도 표가 조용히 안 걸린다(kit_of와 같은 규약).
+static func bucket_of(nm: String) -> String:
+	return nm.trim_prefix("Flora_")
 
 static func flora_visible(nm: String, season: int) -> bool:
-	return not (season == WINTER and nm.begins_with(FLORA_FLOWER_PREFIX))
+	if not nm.begins_with(FLORA_FLOWER_PREFIX):
+		return true  # 풀·덤불은 사계절 상주(겨울엔 서리톤으로 남는다)
+	return season in FLOWER_SEASONS.get(bucket_of(nm), [])
 
 static func flora_frosted(nm: String, season: int) -> bool:
 	return season == WINTER and nm.begins_with("Flora_") and flora_visible(nm, season)
 
-static func tree_frosted(nm: String, season: int) -> bool:
-	return season == WINTER and nm in DECIDUOUS
+# 활엽수 메시 슬롯 [원색, 겨울 서리, 가을 단풍] 중 하나. 인라인 삼항을 중첩하지 않고 순수 함수로
+# 두는 이유: 슬롯이 늘 때마다 apply_season 안의 인덱스 식이 조용히 깨진다(옛 판은 2슬롯 계약인
+# `[1 if ... else 0]`이었다) — 여기 있으면 노드 없이 테스트가 잡는다.
+static func tree_variant_index(nm: String, season: int) -> int:
+	if not nm in DECIDUOUS:
+		return 0  # 침엽수(해변 해송)는 사계절 원색
+	match season:
+		WINTER: return 1
+		AUTUMN: return 2
+		_: return 0
 
-# 만개한 꽃(화분·꽃수레의 개별 꽃 GLB, 등나무 드레이프)은 겨울에 숨긴다. 서리톤으로 남기지 않는
-# 이유: 꽃(Flora_flower_*)이 이미 겨울 숨김이라 규칙이 하나로 통일되고, 회색으로 물든 만개 송이는
-# 눈 위에 매달린 이물처럼 보인다. 빈 화분·빈 수레·맨 퍼걸러가 겨울 그림으로 맞다.
+static func tree_frosted(nm: String, season: int) -> bool:
+	return tree_variant_index(nm, season) == 1
+
+# 만개한 꽃(화분·꽃수레의 개별 꽃 GLB, 등나무 드레이프)은 겨울에만 숨긴다. 서리톤으로 남기지 않는
+# 이유: 회색으로 물든 만개 송이는 눈 위에 매달린 이물처럼 보인다 — 빈 화분·빈 수레·맨 퍼걸러가
+# 겨울 그림으로 맞다.
+# **들꽃(FLOWER_SEASONS)과 달리 계절로 안 나눈다**: 화분·꽃수레는 사람이 관리하는 물건이라
+# 계절 따라 송이가 사라지면 오히려 어색하고, 들꽃이 비는 가을에 마을 안 색을 붙잡아 주는 게
+# 이쪽이다. 겨울만 갈리는 이 계약은 test_core가 사계절 전부 못박는다.
 static func bloom_visible(season: int) -> bool:
 	return season != WINTER
+
+# 바닥 낙엽(_place_leaf_litter)은 가을에만 깔린다.
+static func leaf_litter_visible(season: int) -> bool:
+	return season == AUTUMN
 
 # world.gd _apply_season이 계절 전환 신호 + 로드 직후에 부른다(축제 evaluate와 같은 규약).
 func apply_season(sea: int) -> void:
@@ -791,7 +892,10 @@ func apply_season(sea: int) -> void:
 			continue
 		var nm := String(mmi.name)
 		if _tree_mesh.has(nm):  # 활엽수: transform 버퍼는 그대로 두고 Mesh만 갈아 끼운다
-			mmi.multimesh.mesh = _tree_mesh[nm][1 if tree_frosted(nm, sea) else 0]
+			mmi.multimesh.mesh = _tree_mesh[nm][tree_variant_index(nm, sea)]
+			continue
+		if nm == LEAF_MM:
+			mmi.visible = leaf_litter_visible(sea)
 			continue
 		if not nm.begins_with("Flora_"):
 			continue
@@ -968,10 +1072,14 @@ func _place_forest() -> void:
 		_multimesh(summer, buckets[nm], full)
 		_n_trees += (buckets[nm] as Array).size()
 		if tree_frosted(full, WINTER):
-			# 겨울용 사본을 빌드 때 미리 뽑아 둔다(전환 때 로드하지 않게). 텍스처는 그대로 두고
+			# 겨울·가을 사본을 빌드 때 미리 뽑아 둔다(전환 때 로드하지 않게). 텍스처는 그대로 두고
 			# 채도만 지우고 밝기를 올린 별개 Mesh — 옛 방식(수관 albedo를 단색으로 교체)은
-			# 킷 나무에선 잎 결까지 통째로 뭉개져 겨울에만 다시 통짜가 된다.
-			_tree_mesh[full] = [summer, _kit_mesh(nm, TREE_WINTER_GAIN, VEG_WINTER_SAT)]
+			# 킷 나무에선 잎 결까지 통째로 뭉개져 그 계절에만 다시 통짜가 된다.
+			# 슬롯 순서는 tree_variant_index의 계약이다 [원색, 겨울, 가을]. 봄·여름은 원색을 공유한다
+			# = 종당 사본 2개 = 나무 2종에 Mesh 4장.
+			_tree_mesh[full] = [summer,
+				_kit_mesh(nm, TREE_WINTER_GAIN, VEG_WINTER_SAT),
+				_kit_mesh(nm, TREE_AUTUMN_GAIN, TREE_AUTUMN_SAT, TREE_AUTUMN_TINT)]
 
 	# 강변 바위 몇 개 — 물길이 지형에 박혀 보이게(개별 노드, 무충돌)
 	var rocks := Node3D.new()

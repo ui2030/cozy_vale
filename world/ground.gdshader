@@ -8,7 +8,7 @@ shader_type spatial;
 render_mode cull_back;
 
 uniform vec4 albedo : source_color = vec4(0.627, 0.72, 0.576, 1.0);
-uniform float pattern : hint_range(0.0, 1.0) = 1.0;  // 계절 강도 — 겨울(눈)은 절반(요철 느낌만)
+uniform float pattern : hint_range(0.0, 1.2) = 1.0;  // 계절 강도 — 여름 1.15(무성) / 가을 0.85(성김) / 겨울 0.45(설원 요철)
 uniform float cell = 1.4;         // 칸 한 변(m). 게임 카메라 화각에서 ~100px = "질감" 스케일
 uniform float shade_depth = 0.11;  // 어두운 칸 감광폭(albedo 배율 1-이값)
 uniform float mottle = 0.04;      // 칸별 추가 변주(격자로 안 읽히게)

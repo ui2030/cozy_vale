@@ -475,6 +475,13 @@ const C_WIN_FRAME := Color(0.325, 0.245, 0.270, 1.0)  # 창틀·창살 — 지�
 const C_WOOD  := Color(0.590, 0.480, 0.362)  # 브라운 — 목재
 const C_ROAD  := Color(0.700, 0.619, 0.476)  # 흙길 — 파스텔 모래빛
 const C_ROAD_E := Color(0.720, 0.673, 0.590)  # 길 가장자리 — 풀로 옅어지는 톤(같은 hue, 채도만 낮춤)
+# 가을 흙길 — 낙엽이 밟혀 섞인 길. C_ROAD에서 G·B만 내려 붉은 쪽으로 돌린다(R까지 같이 내리면
+# 길이 통째로 어두워져 초지 위의 띠가 죽는다). 이 색이 존재하는 조건은 **가을 지면과 갈리는 것**이다 —
+# 둘 다 노란 대역이라 값이 붙으면 길이 마른 풀에 먹힌다. 화면 실측 환산(정오 수평면 = 선형 ×1.90):
+# 가을 길 (228,190,139) vs 가을 초지 (207,218,140) → G채널 28레벨 + hue 반전(R>G ↔ G>R)으로 갈린다.
+const C_ROAD_A  := Color(0.672, 0.560, 0.408)
+# 가을 길 가장자리 — 봄 쌍과 같은 관계(길보다 밝고 채도는 낮게 = 마른 풀로 스밈).
+const C_ROAD_AE := Color(0.692, 0.618, 0.508)
 # 겨울 흙길 — 눈에 덮여 밟힌 길. 여름 톤 그대로 두면 설원 위에 노란 띠만 남는다(실측
 # audit2/winter_hall_h12). 설원(C_SNOW)보다 한 단 어둡고 살짝 따뜻하게 = "다져진 눈".
 # 더 밝게 하면 길이 사라지고, 더 어둡게 하면 진창으로 읽힌다. **설원 파생값**이라 C_SNOW를
@@ -499,7 +506,17 @@ const C_WIST  := Color(0.720, 0.649, 0.790)  # 등나무 보라 — 퍼걸러
 # 지면(world.tscn Ground/GroundMesh) 계절색 = ground.gdshader의 albedo uniform을 구동한다.
 # 명도 0.80은 정오 수평면에서 G채널 255로 클리핑됐다(실측 (212,255,172)) — 패턴이 통째로 날아가는
 # 값이라 0.72로 내리고 채도도 0.35→0.20으로 낮췄다. 이제 (213,245,196)쯤 = 파스텔 초지.
-const C_GRASS := Color(0.627, 0.720, 0.576)  # 초지
+const C_GRASS := Color(0.627, 0.720, 0.576)  # 초지 (= 봄. 승인된 룩이라 값을 옮기지 않는다)
+# 여름 초지 — 다 자란 풀. 봄에서 **명도를 한 단 내리고 채도를 한 단 올린다**(0.720→0.672 /
+# (max−min)/max 0.20→0.28). 무성함을 밝기로 내려 하면 안 된다: 봄이 이미 G 245라(C_GRASS 주석의
+# 실측) 조금만 올려도 255에 붙어 풀 패턴이 통째로 날아간다 — 무성함은 색이 아니라 ground_pattern
+# (여름 1.15)이 낸다. 화면 실측 환산(정오 수평면 = 선형 ×1.90): 봄 (213,245,196) → 여름 (186,228,165).
+const C_GRASS_S := Color(0.548, 0.672, 0.484)
+# 가을 초지 — 마른 풀. 초록기를 다 빼면 죽은 땅이 되고, R을 G 위로 올리면 흙길(C_ROAD 0.700,
+# 0.619,0.476 = R>G)과 같은 hue가 되어 길이 초지에 먹힌다 → **G를 최대 채널로 남긴다**.
+# 봄 대비 R/G 0.871→0.953 · B −0.164 · 명도 0.720→0.640 = 노랗고 한 단 낮은 마른 풀.
+# 화면 실측 환산 (207,218,140) — 봄 (213,245,196)에서 G −27 · B −56.
+const C_GRASS_A := Color(0.610, 0.640, 0.412)
 # 눈: 순백 금지. 툰 라이팅(태양1.0 + 환경광0.55)이 albedo를 ~3.3배로 올려 화면에 낸다 —
 # 실측(정오 초지 albedo 0.62 → 화면 212). albedo 0.75를 넘기면 지면이 255로 클리핑돼
 # 음영·곡률이 통째로 날아가고 크림색 하늘과 지평선에서 붙어버린다.
@@ -1324,15 +1341,41 @@ func _windmill_hill(parent: Node) -> void:
 # ══ 계절 표현 (지면 톤 + 식생) ═════════════════════════════════════
 # 조명(day_night.gd 키프레임)은 건드리지 않는다 — 승인된 룩. 계절은 지면색과 식생으로만 읽힌다.
 # 광장 판석은 석재로 둔다(쓸어놓은 광장 = 축제 바닥이 계속 읽힌다), 해변 모래도 무변경.
+const SUMMER := 1
+const AUTUMN := 2
 const WINTER := 3
 
 # 순수 함수: 계절 인덱스 → 지면 albedo (test_core 단위검증, 노드 불필요)
 static func ground_color(season: int) -> Color:
-	return C_SNOW if season == WINTER else C_GRASS
+	match season:
+		SUMMER: return C_GRASS_S
+		AUTUMN: return C_GRASS_A
+		WINTER: return C_SNOW
+		_: return C_GRASS
 
-# 지면 패턴 강도. 겨울엔 절반 — 풀 2톤이 아니라 설원 요철 정도로만 남는다.
+# 지면 패턴 강도. 여름은 무성하게(밝기로는 못 올린다 — C_GRASS_S 주석), 가을은 마른 풀이라
+# 성기게, 겨울엔 절반 — 풀 2톤이 아니라 설원 요철 정도로만 남는다.
 static func ground_pattern(season: int) -> float:
-	return 0.45 if season == WINTER else 1.0
+	match season:
+		SUMMER: return 1.15
+		AUTUMN: return 0.85
+		WINTER: return 0.45
+		_: return 1.0
+
+# 흙길·길 가장자리도 순수 함수로 뺀다 — ground_color와 같은 이유(노드 없이 단위검증) + 4값을
+# 호출부에 인라인 삼항으로 박으면 계절이 늘 때마다 그 자리에서 깨진다.
+# 여름은 봄과 같은 흙이다: 마른 흙길은 계절로 색이 안 변한다(갈리는 건 낙엽과 눈뿐).
+static func road_color(season: int) -> Color:
+	match season:
+		AUTUMN: return C_ROAD_A
+		WINTER: return C_ROAD_W
+		_: return C_ROAD
+
+static func road_edge_color(season: int) -> Color:
+	match season:
+		AUTUMN: return C_ROAD_AE
+		WINTER: return C_ROAD_WE
+		_: return C_ROAD_E
 
 # (계절, 강수 여부) → 그 계절 안에서 그 조건이 성립하는 첫 abs_day. `-- season` 하네스와
 # 디버그 패널(ui/debug_panel.gd)의 공용 단일 출처다.
@@ -1360,8 +1403,8 @@ func _apply_season(sea: int) -> void:
 	for n in get_tree().get_nodes_in_group("road_shader"):
 		var rm := (n as MeshInstance3D).material_override as ShaderMaterial
 		if rm != null:
-			rm.set_shader_parameter("albedo", C_ROAD_W if sea == WINTER else C_ROAD)
-			rm.set_shader_parameter("edge_color", C_ROAD_WE if sea == WINTER else C_ROAD_E)
+			rm.set_shader_parameter("albedo", road_color(sea))
+			rm.set_shader_parameter("edge_color", road_edge_color(sea))
 	for n in get_tree().get_nodes_in_group("roof_snow"):  # 지붕 눈 띠 = 겨울에만
 		(n as MeshInstance3D).visible = sea == WINTER
 	get_tree().call_group("decor", "apply_season", sea)

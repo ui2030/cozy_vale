@@ -1213,9 +1213,15 @@ func _test_winter_pass() -> void:
 	var D := preload("res://world/decor.gd")
 	assert(W.ground_color(3) == W.C_SNOW, "겨울 지면 = 눈 톤")
 	assert(W.C_SNOW.r < 1.0 and W.C_SNOW.b > W.C_SNOW.r, "눈 톤 = 순백 아닌 차가운 근백색")
-	for s in 3:
-		assert(W.ground_color(s) == W.C_GRASS, "계절 %d 지면 무변경(초지)" % s)
-	assert(W.ground_pattern(3) < W.ground_pattern(0), "겨울 지면 패턴은 약해진다(설원 요철 수준)")
+	# 옛 핀은 `for s in 3: ground_color(s) == C_GRASS` = **"봄·여름·가을 지면 무변경"을 계약으로
+	# 박아** 계절 구멍 자체를 고정하고 있었다(HUD 글자만 바뀌는 상태가 테스트로 승인돼 있었다).
+	# 뒤집는다: 봄은 승인값 그대로 두되, 네 계절이 서로 다른 값이어야 한다.
+	assert(W.ground_color(0) == W.C_GRASS, "봄 지면 = 승인된 초지 톤(값 이동 금지)")
+	var seen_ground := []
+	for s in 4:
+		var gsc: Color = W.ground_color(s)
+		assert(not (gsc in seen_ground), "계절 %d 지면색이 앞 계절과 같다 — 화면에서 계절이 안 읽힌다" % s)
+		seen_ground.append(gsc)
 	# 정오 직광면은 albedo 0.75 위에서 255로 포화한다(실측). 포화하면 풀 패턴·곡률 음영이
 	# 통째로 날아가므로 지면 계열 채널 상한을 테스트로 못박는다. 상한을 0.76→0.75로 조인 근거:
 	# 0.76은 "클리핑 직전"이 아니라 실측에서 이미 B가 255였다(눈 지면 (241,247,255)).
@@ -1224,8 +1230,38 @@ func _test_winter_pass() -> void:
 	# 사정이 아니라 정오 직광면 전체의 화면 천장이고, 아래 실루엣 핀이 그 사실 위에 선다.
 	const CLIP_ALBEDO := 0.75
 	var B2 := preload("res://world/beach.gd")  # 해변 모래도 같은 수평 지면 = 같은 상한을 받는다
-	for gc in [W.C_GRASS, W.C_SNOW, W.C_ROAD, W.C_ROAD_W, W.C_GREEN, B2.C_SAND, B2.C_WET]:
+	# 지면·길·길가장자리는 상수 목록이 아니라 **순수 함수로 훑는다** — 계절이나 색을 추가해도
+	# 여기 적는 걸 잊고 클리핑하는 값이 화면에 나가는 일이 없다(옛 목록판은 실제로 그 구조였다).
+	var clip_colors := [W.C_GREEN, B2.C_SAND, B2.C_WET]
+	for s in 4:
+		clip_colors.append_array([W.ground_color(s), W.road_color(s), W.road_edge_color(s)])
+	for gc in clip_colors:
 		assert(maxf(maxf(gc.r, gc.g), gc.b) <= CLIP_ALBEDO, "지면/길 albedo가 정오 클리핑 한계 초과: %s" % gc)
+	# ── 여름·가을 지면 처방 ──────────────────────────────────────────
+	# 여름은 봄보다 짙고(명도↓) 채도가 한 단 위다. 밝기로 무성함을 내면 G가 255로 포화해
+	# 풀 패턴이 통째로 날아간다(C_GRASS 주석의 실측) — 무성함은 ground_pattern이 낸다.
+	assert(W.C_GRASS_S.s > W.C_GRASS.s and W.C_GRASS_S.v < W.C_GRASS.v,
+		"여름 초지가 봄보다 짙고 진하지 않다: %s" % str(W.C_GRASS_S))
+	# 가을은 마르되 죽지 않는다: G가 여전히 최대 채널이어야 초록기가 남는다(다 빼면 죽은 땅).
+	assert(W.C_GRASS_A.g > W.C_GRASS_A.r and W.C_GRASS_A.g > W.C_GRASS_A.b,
+		"가을 초지에서 초록기가 통째로 빠졌다 = 죽은 땅: %s" % str(W.C_GRASS_A))
+	assert(W.C_GRASS_A.r / W.C_GRASS_A.g > W.C_GRASS.r / W.C_GRASS.g, "가을 초지가 봄보다 노랗지 않다")
+	assert(W.C_GRASS_A.v < W.C_GRASS.v, "가을 초지가 봄보다 밝다 — 마른 풀이 아니다")
+	# 가을 길이 가을 지면에 먹히면 길이 화면에서 사라진다 — 둘 다 노란 대역이라 실제 위험이다.
+	# 지면은 G가 최대(위 핀), 길은 R이 최대 = hue 방향이 반대여야 띠로 읽힌다.
+	assert(W.C_ROAD_A.r > W.C_ROAD_A.g, "가을 길이 지면과 같은 hue 방향 — 길이 마른 풀에 먹힌다")
+	assert(W.C_ROAD_AE.v > W.C_ROAD_A.v and W.C_ROAD_AE.s < W.C_ROAD_A.s,
+		"가을 길 가장자리는 길보다 밝고 옅게(마른 풀로 스밈) — 봄 쌍과 같은 관계")
+	# 지면 패턴 정확값. 여름 무성 / 가을 성김 / 겨울 설원 요철.
+	var pat := [W.ground_pattern(0), W.ground_pattern(1), W.ground_pattern(2), W.ground_pattern(3)]
+	assert(pat == [1.0, 1.15, 0.85, 0.45], "지면 패턴 계절값이 바뀌었다: %s" % str(pat))
+	# 길 색도 순수 함수라 노드 없이 검증된다(ground_color와 같은 이유 = 인라인 삼항 금지).
+	# 봄·여름은 같은 흙이다 — 마른 흙길은 계절로 색이 안 변한다. 갈리는 건 낙엽과 눈뿐.
+	assert(W.road_color(0) == W.C_ROAD and W.road_color(1) == W.C_ROAD, "봄·여름 흙길 = 승인된 C_ROAD")
+	assert(W.road_color(2) == W.C_ROAD_A and W.road_color(3) == W.C_ROAD_W, "가을·겨울 길 색이 안 갈렸다")
+	assert(W.road_edge_color(0) == W.C_ROAD_E and W.road_edge_color(1) == W.C_ROAD_E \
+		and W.road_edge_color(2) == W.C_ROAD_AE and W.road_edge_color(3) == W.C_ROAD_WE,
+		"길 가장자리 계절 색이 안 갈렸다")
 	# 겨울 길은 설원보다 어두워야 길로 읽힌다(밝으면 눈에 묻히고, 여름 톤이면 설원 위 노란 띠).
 	assert(W.C_ROAD_W.g < W.C_SNOW.g and W.C_ROAD_W.g > W.C_CUT.g, "겨울 길 톤이 설원↔진흙 사이가 아님")
 	assert(W.C_ROAD_WE.g > W.C_ROAD_W.g, "겨울 길 가장자리는 길보다 밝게(설원으로 스밈)")
@@ -1310,34 +1346,82 @@ func _test_winter_pass() -> void:
 			seen_tint[base] = []
 		assert(not (tn in seen_tint[base]), "%s가 같은 메시의 다른 변종과 색까지 같다 = 드로우콜만 늘고 화면은 그대로" % key)
 		(seen_tint[base] as Array).append(tn)
+	# ── 꽃 = 계절 시계 ────────────────────────────────────────────────
+	# 옛 핀은 "겨울만 숨김 / 봄·여름·가을 전부 보임"을 계약으로 박아 계절 구멍을 고정하고 있었다.
+	# ① 이름 정규화 단일 출처: 표 키는 접두 없는 버킷명, MultiMesh 이름엔 "Flora_" 접두가 붙는다.
+	assert(D.bucket_of("Flora_flower_A~pink") == "flower_A~pink" and D.bucket_of("flower_B") == "flower_B",
+		"버킷 이름 정규화(bucket_of)가 접두를 못 뗀다")
+	assert(D.kit_of(D.bucket_of("Flora_flower_A~lavender")) == "flower_A",
+		"접두·변종 제거 조합이 킷 파일명에 못 닿는다")
+	# ② 계절표가 꽃 버킷을 빠짐없이 덮는다. 미지정으로 두면 그 꽃은 사계절 내내 조용히 사라진다
+	#    (푸른 flower_B가 정확히 그 위험이었다) — 목록 대조로 누락을 시끄럽게 만든다.
+	var flower_keys := []
+	for b in flowers:
+		flower_keys.append(D.bucket_of(b))
+	assert(D.FLOWER_SEASONS.keys() == flower_keys,
+		"꽃 계절표가 꽃 버킷 목록과 어긋남 (표 %s / 버킷 %s)" % [str(D.FLOWER_SEASONS.keys()), str(flower_keys)])
 	for nm in flowers:
-		assert(D.kit_of(nm.trim_prefix("Flora_")) in D.FLORA_SCALE, "%s 버킷이 배율표에 없음" % nm)
-		assert(not D.flora_visible(nm, 3), "%s 겨울엔 숨김" % nm)
-		for s in 3:
-			assert(D.flora_visible(nm, s), "%s 계절 %d엔 보임" % [nm, s])
+		assert(D.kit_of(D.bucket_of(nm)) in D.FLORA_SCALE, "%s 버킷이 배율표에 없음" % nm)
+		assert(not D.flora_visible(nm, 3), "%s 겨울엔 숨김(설원 위 만개 금지)" % nm)
+	# ③ 계절마다 최소 한 종은 핀다(겨울 제외) + ④ 세 계절의 개화 조합이 서로 다르다.
+	#    ③이 빠지면 그 계절 화단이 통째로 사라지고, ④가 빠지면 꽃이 계절을 안 파는 옛 상태로 돌아간다.
+	var open_sets := []
+	for s in 3:
+		var open_now := []
+		for nm in flowers:
+			if D.flora_visible(nm, s):
+				open_now.append(nm)
+		assert(not open_now.is_empty(), "계절 %d에 피는 꽃이 한 종도 없다 — 그 계절 화단이 사라진다" % s)
+		assert(not (open_now in open_sets), "계절 %d 개화 조합이 앞 계절과 같다 = 꽃이 계절을 안 판다" % s)
+		open_sets.append(open_now)
+	# ⑤ 라벤더(마을 정체색)는 **여름 절정**이다 — 이랑(_lavender_rows)이 만개하는 계절이 있어야
+	#    "라벤더로 먹고사는 마을"이 화면에서 성립한다. 배분을 옮길 땐 이 핀을 같이 봐야 한다.
+	assert(D.flora_visible("Flora_flower_A~lavender", 1), "여름에 라벤더가 안 핀다 — 이랑이 빈 땅으로 남는다")
+	# 풀·덤불은 꽃 규칙 **밖**이다 = 사계절 상주(겨울엔 서리톤). 계절표에 없다고 사라지면
+	# 마을이 계절마다 민짜가 된다 — 접두 규칙이 꽃만 잡는다는 걸 네 계절 전부 확인한다.
 	for nm in ["Flora_grass_A", "Flora_grass_B", "Flora_bush", "Flora_bush_large"]:
-		assert(nm.trim_prefix("Flora_") in D.FLORA_SCALE, "%s 버킷이 배율표에 없음" % nm)
+		assert(D.bucket_of(nm) in D.FLORA_SCALE, "%s 버킷이 배율표에 없음" % nm)
 		assert(D.flora_visible(nm, 3) and D.flora_frosted(nm, 3), "%s 겨울엔 서리톤으로 남음" % nm)
 		for s in 3:
-			assert(not D.flora_frosted(nm, s), "%s 계절 %d엔 원색" % [nm, s])
+			assert(D.flora_visible(nm, s) and not D.flora_frosted(nm, s), "%s 계절 %d엔 원색으로 상주" % [nm, s])
 	assert(not D.flora_frosted("Forest_tree", 3), "나무는 flora 규칙 밖")
 	# 나무는 킷 교체로 전부 활엽 — 겨울엔 전 그루가 서리톤이어야 한다(초록 나무가 남으면 계절이 안 읽힌다).
 	# 위에서 목록을 리터럴로 못박았으므로 여기 순회는 더 이상 자기 자신과의 비교가 아니다.
+	# 슬롯 선택은 순수 함수(tree_variant_index)다 — 옛 판은 apply_season 안의 2슬롯 삼항
+	# `[1 if tree_frosted(...) else 0]`이라 슬롯이 셋이 되는 순간 조용히 깨졌다.
+	# 슬롯 계약 [원색, 겨울 서리, 가을 단풍]을 여기서 못박는다.
 	for nm in D.DECIDUOUS:
+		assert(D.tree_variant_index(nm, 0) == 0 and D.tree_variant_index(nm, 1) == 0, "%s 봄·여름은 원색 슬롯" % nm)
+		assert(D.tree_variant_index(nm, 2) == 2, "%s 가을엔 단풍 슬롯" % nm)
+		assert(D.tree_variant_index(nm, 3) == 1, "%s 겨울엔 서리 슬롯" % nm)
 		assert(D.tree_frosted(nm, 3), "%s 겨울엔 수관 서리톤" % nm)
 		for s in 3:
-			assert(not D.tree_frosted(nm, s), "%s 계절 %d엔 원색" % [nm, s])
+			assert(not D.tree_frosted(nm, s), "%s 계절 %d엔 서리 아님" % [nm, s])
+	# 단풍 사본 처방 — 잎 결을 남기려면 채도를 지우고(sat) 색은 char_tint로 준다(겨울 서리와 같은 순서).
+	# tint가 주황(R>G>B)이 아니면 나무가 가을에 초록·회색으로 남고, sat을 겨울(0.06)까지 내리면
+	# 수피까지 같은 색 한 덩어리가 된다.
+	assert(D.TREE_AUTUMN_TINT.r > D.TREE_AUTUMN_TINT.g and D.TREE_AUTUMN_TINT.g > D.TREE_AUTUMN_TINT.b,
+		"단풍 색조가 주황(R>G>B)이 아니다: %s" % str(D.TREE_AUTUMN_TINT))
+	assert(D.TREE_AUTUMN_SAT > D.VEG_WINTER_SAT, "단풍 채도가 겨울 서리만큼 지워졌다 — 수관·수피가 한 덩어리")
+	assert(D.LEAF_TINT.r > D.LEAF_TINT.g and D.LEAF_TINT.v < D.TREE_AUTUMN_TINT.v,
+		"바닥 낙엽이 수관 단풍보다 어둡지 않다 — 나무 그늘에서 지면 잎이 떠 보인다")
 	# 버킷 이름 정합: DECIDUOUS가 실제 나무 종을 빠짐없이 덮는다(리네임 회귀 방지)
 	for nm in D.TREE_KIT:
 		assert(("Forest_" + nm) in D.DECIDUOUS, "%s가 겨울 서리 대상에서 빠졌다" % nm)
 	# 해변 해송(절차 블롭)은 마을 규칙 밖 — 겨울에도 초록으로 남는 유일한 나무다
 	for nm in D.CONIFER:
 		assert(nm in D.BLOB_KINDS, "%s 침엽 종이 블롭 표에 없음" % nm)
-		assert(not D.tree_frosted("Forest_" + nm, 3), "%s 침엽수는 겨울에도 초록" % nm)
-	# 만개(화분·꽃수레 꽃, 등나무 드레이프)는 겨울만 숨김
+		for s in 4:  # 가을 단풍·겨울 서리 어느 쪽도 안 탄다 = 사계절 원색 슬롯
+			assert(D.tree_variant_index("Forest_" + nm, s) == 0, "%s 침엽수는 계절 %d에도 원색" % [nm, s])
+	# 만개(화분·꽃수레 꽃, 등나무 드레이프)는 **겨울만** 숨김이다 — 들꽃(FLOWER_SEASONS)과 달리
+	# 계절로 안 나눈다는 게 명시된 정책이다: 사람이 관리하는 물건이라 계절 따라 송이가 사라지면
+	# 오히려 어색하고, 들꽃이 노랑 하나로 주는 가을에 마을 안 색을 붙잡아 주는 게 이쪽이다.
 	assert(not D.bloom_visible(3), "겨울엔 만개 숨김")
 	for s in 3:
-		assert(D.bloom_visible(s), "계절 %d엔 만개" % s)
+		assert(D.bloom_visible(s), "계절 %d엔 만개(겨울만 숨김 정책)" % s)
+	# 바닥 낙엽은 가을에만 깔린다(다른 계절에 남으면 초지 위 갈색 얼룩이 된다).
+	for s in 4:
+		assert(D.leaf_litter_visible(s) == (s == 2), "낙엽 가시성이 가을 전용이 아님 (계절 %d)" % s)
 
 # ══ 겨울 식생 룩 — **실제 경로**를 계산으로 검증 ═══════════════════════
 # 식생이 킷 텍스처로 바뀐 뒤 겨울 룩을 만드는 것은 단색 상수(C_FROST/C_FROST_LEAF)가 아니라

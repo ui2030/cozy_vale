@@ -1,5 +1,6 @@
 extends Node3D
 # 강수 — 비 오는 날 플레이어 머리 위를 따라다니는 파티클. 계절이 겨울이면 같은 강수일이 눈이 된다.
+# 가을 낙엽도 같은 추종 규약을 쓰므로 여기 산다(강수 판정과는 무관 — _make_leaves 주석).
 # 날씨 판정은 GameData.is_rainy(abs_day) 단일 출처(세이브 없음, abs_day 결정적).
 # 하늘 흐림은 day_night.gd가 같은 판정을 읽어 cloud_coverage로, 작물 자동 물주기는
 # farm_system이 day_changed 순서 안에서 각자 처리한다 — 여기는 순수 시각 효과만.
@@ -14,7 +15,8 @@ const Beach := preload("res://world/beach.gd")        # 바다 판 단일 출처
 
 const AREA := 14.0   # 플레이어 중심 강수 범위(한 변) — 고정 카메라 화각을 덮는 최소 크기
 const TOP := 9.0     # 낙하 시작 높이
-const WINTER := 3    # GameClock.SEASONS 인덱스
+const AUTUMN := 2    # GameClock.SEASONS 인덱스
+const WINTER := 3
 # 빗줄기 원근용 낙하 부피(비 전용). AREA 상자 안에선 화면에 잡히는 비가 전부 카메라 8~17m라
 # 굵기·화면속도·밀도가 다 같아 "커튼"으로 읽혔다 — 실측으로 12m 하드컷을 걸어도 그림이 안 변한다,
 # 즉 애초에 **먼 비가 없었다**. 알파 커브만으로는 못 만드는 문제라 부피를 깊고 넓게 잡는다.
@@ -95,6 +97,7 @@ void fragment() {
 
 var _rain: GPUParticles3D
 var _snow: GPUParticles3D
+var _leaves: GPUParticles3D
 var _splash: GPUParticles3D
 var _player: Node3D
 
@@ -106,6 +109,8 @@ func _ready() -> void:
 	add_child(_rain)
 	_snow = _make_precip(true)
 	add_child(_snow)
+	_leaves = _make_leaves()
+	add_child(_leaves)
 	_splash = _make_splash()
 	add_child(_splash)
 
@@ -118,15 +123,20 @@ func _process(_dt: float) -> void:
 		var p := _player.global_position
 		global_position = Vector3(p.x, 0.0, p.z)  # 수평만 추종 (높이는 에미터가 고정)
 	# 실내(플레이어 집)에선 강수 정지 — 지붕 없는 오픈탑이라 비가 방 안으로 쏟아진다.
-	var want := GameData.is_rainy(GameClock.abs_day) and not (_player != null and Interior.inside(_player.global_position))
+	var outside := not (_player != null and Interior.inside(_player.global_position))
+	var want := GameData.is_rainy(GameClock.abs_day) and outside
 	var snowing := want and GameClock.season() == WINTER
 	var raining := want and not snowing
+	# 낙엽은 강수가 아니다 — 가을이면 맑은 날에도 흩날린다(is_rainy와 무관, 실내 규약만 공유).
+	var falling := GameClock.season() == AUTUMN and outside
 	if raining != _rain.emitting:
 		_rain.emitting = raining
 	if raining != _splash.emitting:   # 파문은 비 전용 — 눈엔 없다
 		_splash.emitting = raining
 	if snowing != _snow.emitting:
 		_snow.emitting = snowing
+	if falling != _leaves.emitting:
+		_leaves.emitting = falling
 
 # 비/눈 공통 에미터. 낙하 부피·추종·컬링 규약은 같고 속도·모양·색만 갈린다.
 func _make_precip(snow: bool) -> GPUParticles3D:
@@ -211,6 +221,55 @@ func _make_precip(snow: bool) -> GPUParticles3D:
 	# ponytail: 파티클은 네이티브 StandardMaterial (툰셰이더는 인스턴스 변환 미지원 — festival_system과 동일)
 	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	p.material_override = mat
+	return p
+
+# 가을 낙엽 — 눈과 같은 낙하 규약(느리게 오래, 플레이어 추종)이지만 **강수가 아니다**.
+# _make_precip(snow: bool)에 셋째 상태로 끼우지 않는다: 불리언 인자가 3분기를 받는 순간 그 함수의
+# 모든 삼항이 무너지고(속도·부피·수·모양·색이 전부 snow 하나로 갈려 있다) 호출부까지 번진다.
+# 구조만 베끼고 별개 함수로 둔다.
+func _make_leaves() -> GPUParticles3D:
+	var p := GPUParticles3D.new()
+	# 강수가 아니라 **악센트**다 — 눈(800)만큼 깔면 가을이 낙엽 폭설로 읽힌다.
+	p.amount = 70
+	p.lifetime = 7.0   # v0 0.4~0.9 + 중력 0.35 → TOP 9에서 지면까지 ~6.5초(흩날리며 천천히)
+	p.preprocess = p.lifetime  # 켜자마자 화면이 차 있게(눈과 같은 이유)
+	p.emitting = false
+	p.local_coords = false     # 전역 좌표: 에미터가 따라가도 떨어지던 잎은 끌려오지 않음
+	p.position = Vector3(0, TOP, 0)
+	p.visibility_aabb = AABB(Vector3(-AREA, -(TOP + 1.0), -AREA), Vector3(AREA * 2.0, TOP + 2.0, AREA * 2.0))
+	var pm := ParticleProcessMaterial.new()
+	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
+	pm.emission_box_extents = Vector3(AREA * 0.5, 0.1, AREA * 0.5)
+	pm.direction = Vector3(0, -1, 0)
+	pm.spread = 30.0            # 잎은 곧게 안 떨어진다(눈 14보다 크게)
+	pm.initial_velocity_min = 0.4
+	pm.initial_velocity_max = 0.9
+	# 가로 성분이 낙하보다 커야 "떨어진다"가 아니라 "흩날린다"로 읽힌다(눈은 반대로 세로가 크다).
+	pm.gravity = Vector3(-0.55, -0.35, 0.20)
+	# 회전이 눈송이와 갈리는 지점이다 — 안 돌면 같은 색 종잇조각이 수직으로 내려올 뿐이다.
+	pm.angle_min = -180.0
+	pm.angle_max = 180.0
+	pm.angular_velocity_min = -110.0
+	pm.angular_velocity_max = 110.0
+	pm.scale_min = 0.6
+	pm.scale_max = 1.15
+	pm.lifetime_randomness = 0.35
+	p.process_material = pm
+	var quad := QuadMesh.new()
+	quad.size = Vector2(0.13, 0.09)  # 잎 한 장. 더 키우면 근경에서 판때기로 읽힌다(빗줄기 전례)
+	p.draw_pass_1 = quad
+	var mat := StandardMaterial3D.new()
+	# unshaded + 블룸이라 이 값보다 화면이 한참 밝게 뜬다 → albedo 상수가 아니라 **화면 목표값**에서
+	# 역산한다(빗줄기 색과 같은 규약). 1차 실측(0.82,0.58,0.34)은 화면에서 크림 티끌로 날아가
+	# 하늘과 붙었다 — 수관 단풍(정오 화면 (211,154,89))과 같은 대역으로 내려 잎이 나무에서
+	# 떨어졌다는 게 색으로 읽히게 한다.
+	mat.albedo_color = Color(0.70, 0.40, 0.19, 0.95)
+	mat.albedo_texture = _leaf_tex()  # 쿼드 그대로면 각진 색종이가 된다(1차 실측)
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED  # 돌면서 뒷면이 온다 — 안 끄면 잎이 깜빡인다
+	# ponytail: 파티클은 네이티브 StandardMaterial (툰셰이더는 인스턴스 변환 미지원 — _make_precip과 동일)
 	p.material_override = mat
 	return p
 
@@ -325,6 +384,23 @@ func _streak_tex() -> GradientTexture2D:
 	t.height = 64
 	t.fill_from = Vector2(0, 0)
 	t.fill_to = Vector2(0, 1)   # 세로 방향(기본은 가로)
+	return t
+
+# 잎 한 장 알파 — 방사 그라디언트 하나로 쿼드의 모서리를 지운다(텍스처 파일 0, 파문 링과 같은 수법).
+# 쿼드를 그대로 쓰면 화면에서 **각진 색종이**로 읽힌다 — 빗줄기가 "굵은 흰 막대"였던 것과 같은 실패다.
+# 쿼드가 정사각이 아니라(0.13×0.09) 원이 눌려 타원 = 잎 한 장으로 읽힌다.
+func _leaf_tex() -> GradientTexture2D:
+	var g := Gradient.new()
+	g.set_color(0, Color(1, 1, 1, 1))
+	g.set_color(1, Color(1, 1, 1, 0))
+	g.add_point(0.60, Color(1, 1, 1, 1))  # 가운데는 꽉 차고 가장자리만 녹인다(솜뭉치 방지)
+	var t := GradientTexture2D.new()
+	t.gradient = g
+	t.width = 32
+	t.height = 32
+	t.fill = GradientTexture2D.FILL_RADIAL
+	t.fill_from = Vector2(0.5, 0.5)
+	t.fill_to = Vector2(1.0, 0.5)
 	return t
 
 # 파문 링 — 중심에서 방사로 퍼지는 알파 고리 하나. 텍스처 파일 0.

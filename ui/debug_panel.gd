@@ -68,13 +68,9 @@ func _build() -> void:
 	var hrow := _row(vb, "시각")
 	for h in HOURS:
 		_btn(hrow, "%d시" % h, func(): pick_hour(h))
-	# 지면·식생 톤은 엔진이 겨울만 가른다(World.ground_color / Decor.apply_season). 이걸 적어 두지
-	# 않으면 "가을을 눌렀는데 안 바뀐다 = 패널 고장"으로 읽힌다 — 사양이지 버그가 아니다.
-	var note := Label.new()
-	note.text = "지면·식생 톤은 겨울만 다름 (봄·여름·가을 동일)"
-	note.add_theme_font_size_override("font_size", 12)
-	note.modulate = Color(1, 1, 1, 0.6)
-	vb.add_child(note)
+	# 옛 안내 라벨("지면·식생 톤은 겨울만 다름")은 지웠다 — 계절을 사계절로 벌린 뒤 거짓말이 됐다.
+	# 이제 계절 버튼 하나로 지면색·길색·지면 패턴(World.ground_color/road_color/ground_pattern)과
+	# 나무 단풍·꽃 개화·바닥 낙엽(Decor.apply_season)이 전부 함께 바뀐다.
 
 func _row(vb: VBoxContainer, title: String) -> HBoxContainer:
 	var hb := HBoxContainer.new()
