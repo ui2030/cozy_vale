@@ -41,8 +41,22 @@ func _bridge_mat(uv_shift := 0.0) -> ShaderMaterial:
 	m.next_pass = ToonChar.outline_mat(0.004)  # 전역 스위치(ToonChar.OUTLINE_ON)를 함께 탄다
 	return m
 
+# 유저 args가 하나라도 있으면 하네스다 — 플레이어가 게임을 켤 땐 `--` 뒤에 아무것도 안 붙는다.
+# 일부러 세이브를 써야 하는 쪽(test_core)은 basename을 갈아끼워 자기 파일에 쓰므로 이 관문과 무관하고,
+# e2e 씬들은 각자 suspended를 세운 채 자기 씬으로 뜬다(= 애초에 유저 args가 없다).
+static func harness_mode(args: PackedStringArray) -> bool:
+	return args.size() > 0
+
 func _ready() -> void:
 	add_to_group("world")  # 디버그 패널이 계절 재적용(_apply_season)·날짜 탐색을 부르는 통로
+	# 하네스로 켰으면 세이브 쓰기를 **먼저** 전면 차단한다 — 어떤 배치 분기보다 앞이다.
+	# 옛 판은 하네스마다 개별로 막았다(festival·interior·beach·wedding·inventory·hour가 각자
+	# suspended를 세움). 그런데 `shot` 계열(`-- shot npcs`, `-- v_houses` …)이 **빠져 있었다** —
+	# 하나를 빠뜨리면 조용히 열리는 구조라 개별 차단은 근본 처방이 아니다. 관문을 하나로 옮긴다.
+	# 하네스는 시계를 옮기고 소지품을 채우고 주민을 옮겨 세운다. 그 상태가 유저 세이브에 덮이면
+	# 되돌릴 방법이 없다(오염 전력은 SaveManager.suspended 주석에 남아 있다).
+	if harness_mode(OS.get_cmdline_user_args()):
+		SaveManager.suspended = true
 	_sun.rotation_degrees = Vector3(-52, -125, 0)
 	_add_env()
 	_build_village()        # 마을 P1 컬러박스 (임시 지오메트리, make_solid=곡면 툰)

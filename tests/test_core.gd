@@ -1212,6 +1212,11 @@ func _test_winter_pass() -> void:
 	# ── 지면·식생 계절 파생 (순수 함수 — 노드·렌더 없이 검증)
 	var W := preload("res://world/world.gd")
 	var D := preload("res://world/decor.gd")
+	# 하네스 감지 = 세이브 쓰기 차단의 유일한 관문. 옛 판은 하네스마다 개별로 막다가 `shot` 계열을
+	# 빠뜨렸다(오염 통로가 조용히 열려 있었다). 규칙은 "유저 args가 하나라도 있으면 하네스".
+	assert(not W.harness_mode(PackedStringArray([])), "인자 없음 = 실제 플레이 = 세이브 정상 동작")
+	for _a in [["shot"], ["shot", "npcs"], ["v_houses"], ["hour", "12"], ["weather", "clear"]]:
+		assert(W.harness_mode(PackedStringArray(_a)), "하네스 %s = 세이브 쓰기 차단 대상" % [_a])
 	assert(W.ground_color(3) == W.C_SNOW, "겨울 지면 = 눈 톤")
 	assert(W.C_SNOW.r < 1.0 and W.C_SNOW.b > W.C_SNOW.r, "눈 톤 = 순백 아닌 차가운 근백색")
 	# 옛 핀은 `for s in 3: ground_color(s) == C_GRASS` = **"봄·여름·가을 지면 무변경"을 계약으로
