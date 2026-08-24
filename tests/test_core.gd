@@ -58,6 +58,7 @@ func _ready() -> void:
 	_test_beach()
 	_test_cooking()
 	_test_dialogue_context()
+	_test_npc_personality()
 	print("ALL CORE TESTS PASS")
 	get_tree().quit()
 
@@ -2003,3 +2004,97 @@ func _test_dialogue_context() -> void:
 	GameClock.abs_day = day0
 	GameClock.game_min = min0
 	_npcsys.state[id] = st0
+
+# ══ 주민 개성 — 색조 클램프 · 체형 · 유휴 위상 ═══════════════════════
+# 셋 다 "모델 한 벌로 여덟을 가르는" 장치다. 그래서 핀은 값이 아니라 **서로 구분되는가**에 박는다 —
+# 너무 눌러 전부 회색으로 붙거나 위상이 한 점에 몰리면 복제감은 오히려 더 심해진다.
+func _test_npc_personality() -> void:
+	var N := preload("res://npc/npc_system.gd")
+	# ── ① 채도·밝기 클램프 (순수 함수)
+	var glow := Color(0.95, 0.72, 0.55)   # 상점 주민 원본 = 정오 클리핑 상한(0.745) 초과
+	var cl: Color = N.village_tint(glow)
+	assert(maxf(cl.r, maxf(cl.g, cl.b)) <= N.NPC_VAL_CEIL + 0.001, "밝기 천장 초과 (%s)" % str(cl))
+	assert(_hsat(cl) <= N.NPC_SAT_CAP + 0.001, "채도 상한 초과 (%.3f)" % _hsat(cl))
+	assert(absf(_hsat(cl) - _hsat(glow)) < 0.001, "밝기 축소는 비율 유지 = 채도가 보존돼야 한다")
+	assert(_hsat(N.village_tint(Color(0.88, 0.58, 0.32))) <= N.NPC_SAT_CAP + 0.001, "형광 주황 채도 클램프")
+	var tame := Color(0.62, 0.45, 0.32)   # 이미 마을 대역 안 = 항등
+	assert(N.village_tint(tame).is_equal_approx(tame), "대역 안이면 손대지 않는다")
+	# 클램프 후에도 여덟이 서로 구분되는가. 최소 거리 0.10 = 실측 최근접쌍(분홍-살구)이 0.137이라
+	# 상한을 조금 더 내려도 버티고, 전부 회색으로 붙이는 값(0.4 이하)에선 즉시 터진다.
+	var tints: Array[Color] = []
+	for id in GameData.npcs:
+		var cc: Array = GameData.npcs[id]["color"]
+		tints.append(N.village_tint(Color(cc[0], cc[1], cc[2])))
+	var mind := INF
+	for i in tints.size():
+		for j in range(i + 1, tints.size()):
+			mind = minf(mind, _cdist(tints[i], tints[j]))
+	assert(mind > 0.10, "클램프 후 주민 색이 서로 붙음 (최소 거리 %.3f)" % mind)
+	# ── ② 체형 (npcs.json 옵션 필드)
+	assert(N.body_scale({}) == Vector2.ONE, "미지정 = 1.0 (옛 동작)")
+	assert(N.body_scale({"height": 5.0, "build": 0.0}) == Vector2(N.BUILD_MIN, N.HEIGHT_MAX), "범위 밖 데이터는 잘린다")
+	var hs := []
+	var bs := []
+	for id in GameData.npcs:
+		var d: Dictionary = GameData.npcs[id]
+		var h := float(d.get("height", 1.0))
+		var b := float(d.get("build", 1.0))
+		assert(h >= N.HEIGHT_MIN and h <= N.HEIGHT_MAX, "%s height 범위 밖 %.2f" % [id, h])
+		assert(b >= N.BUILD_MIN and b <= N.BUILD_MAX, "%s build 범위 밖 %.2f" % [id, b])
+		hs.append(h)
+		bs.append(b)
+	assert(hs.max() - hs.min() > 0.10 and bs.max() - bs.min() > 0.15, "필드만 늘고 실루엣은 그대로 (h폭 %.2f b폭 %.2f)" % [hs.max() - hs.min(), bs.max() - bs.min()])
+	# 상호작용 반경은 체형과 무관해야 한다 — 주민마다 말 걸리는 거리가 달라지면 게임플레이 계약이 깨진다.
+	for id in _npcsys._wander:
+		var ar: Area3D = _npcsys._wander[id]["area"]
+		var sph: SphereShape3D = (ar.get_child(0) as CollisionShape3D).shape
+		assert(is_equal_approx(sph.radius, 1.4) and is_equal_approx(ar.position.y, 1.0),
+			"%s 상호작용 반경이 체형을 탔다 (r=%.2f y=%.2f)" % [id, sph.radius, ar.position.y])
+	# ── ③ 유휴 위상 (결정론 + 흩어짐)
+	assert(N.anim_phase(3) == N.anim_phase(3), "같은 순번 = 항상 같은 값(재현성 — randf였다면 여기서 터진다)")
+	var ph := []
+	for i in GameData.npcs.size():
+		var p: float = N.anim_phase(i)
+		assert(p >= 0.0 and p < 1.0, "순번 %d 위상이 클립 길이 밖 (%.3f)" % [i, p])
+		ph.append(p)
+	ph.sort()
+	var gap := INF
+	for i in ph.size() - 1:
+		gap = minf(gap, ph[i + 1] - ph[i])
+	# 황금비 수열은 세 거리 정리로 n=9에서 최소 간격 0.09를 보장한다. 옛 ID 해시 판은 실측 0.003이었다.
+	assert(gap > 0.05, "위상이 한 점에 몰림 (최소 간격 %.4f)" % gap)
+	assert(ph[ph.size() - 1] - ph[0] > 0.5, "위상이 클립 앞쪽에만 몰림 (폭 %.3f)" % (ph[ph.size() - 1] - ph[0]))
+	for i in GameData.npcs.size():
+		var sp: float = N.anim_speed(i)
+		assert(sp >= 1.0 - N.SPEED_JITTER - 0.001 and sp <= 1.0 + N.SPEED_JITTER + 0.001, "순번 %d 속도 배율 범위 밖 %.4f" % [i, sp])
+	assert(N.anim_speed(0) != N.anim_speed(1), "속도가 전원 같으면 시작점만 어긋나고 계속 평행하게 간다")
+	# ── ④ **실제로 어긋나 있는가.** 순수 함수만 맞고 호출을 빠뜨리면 화면은 그대로다 —
+	# 스폰(_spawn)과 전환(_set_walk) 양쪽을 다 태워 확인한다. 전환 쪽이 옛 판의 함정이었다.
+	assert(_phase_spread() == 0, "주민 유휴 애니 위상이 겹침 — 스폰이든 전환이든 한쪽이 위상을 0으로 리셋했다")
+	for id in _npcsys._wander:   # idle→walk→idle 왕복 = 전환 경로를 명시로 한 번 더 태운다
+		_npcsys._set_walk(id, true)
+		_npcsys._set_walk(id, false)
+	assert(_phase_spread() == 0, "전환(_set_walk) 뒤 주민 유휴 위상이 다시 겹침 — play()가 위상을 0으로 리셋한다")
+
+# 셰이더 sat_cap과 같은 채도 정의 (max−min)/max
+func _hsat(c: Color) -> float:
+	var mx := maxf(c.r, maxf(c.g, c.b))
+	return 0.0 if mx <= 0.0 else (mx - minf(c.r, minf(c.g, c.b))) / mx
+
+func _cdist(a: Color, b: Color) -> float:
+	return Vector3(a.r, a.g, a.b).distance_to(Vector3(b.r, b.g, b.b))
+
+# 지금 재생 중인 주민 유휴 위상 중 겹치는 쌍 수 (0이어야 한다)
+func _phase_spread() -> int:
+	var pos := []
+	for id in _npcsys._wander:
+		var ap: AnimationPlayer = _npcsys._wander[id]["anim"]
+		if ap != null and ap.is_playing() and ap.current_animation == "idle":
+			pos.append(ap.current_animation_position)
+	assert(pos.size() >= 8, "주민 유휴 애니가 안 붙음 (%d)" % pos.size())
+	var same := 0
+	for i in pos.size():
+		for j in range(i + 1, pos.size()):
+			if absf(pos[i] - pos[j]) < 0.01:
+				same += 1
+	return same

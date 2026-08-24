@@ -19,6 +19,31 @@ const KID_IDS := ["npc.momo", "npc.pip"]       # 꼬마(동물 종족) — 작�
 const NPC_SCALE := 2.1        # 플레이어와 동일
 const KID_MULT := 0.8         # 꼬마 축소
 const NPC_Y := 0.05           # 발 접지 오프셋 (플레이어 기준, 스크린샷 튜닝)
+
+# ── 주민 개성 (모델 한 벌로 여덟을 가르기) ──────────────────────────
+# 채도 정합. npcs.json의 color는 **그대로 두고** 여기서 클램프한다 — 디자이너 실물 모델이 들어오면
+# model 분기를 타서 tint 경로 자체를 안 지나므로 자동으로 무영향이 된다.
+# ⚠ 셰이더 sat_cap으로는 못 잡는다: toon.gdshader는 sat_cap을 텍스처(src)에만 걸고 char_tint를
+#   그 뒤에 곱한다(46-55행). 고양이 텍스처는 이미 흰 계열이라 아무 일도 안 일어난다 = tint를 눌러야 한다.
+# ① 채도 상한 0.60 — 킷 에셋과 같은 대역(decor.gd KIT_SAT_CAP, 선형 albedo 0.60 = 화면 0.42~0.49).
+#    마을 팔레트 상수 최고치가 개나리 0.51·보라 기와 0.30이다. 여덟 중 이걸 넘는 건 finn(0.64) 하나뿐 —
+#    더 내리면 finn이 rosa(색상 26° vs 28°, 사실상 같은 주황)와 붙어 이번엔 둘이 복제가 된다.
+# ② 밝기 천장 0.745 — **이쪽이 "형광"의 진짜 정체다.** 마을 전체가 지키는 정오 클리핑 상한인데
+#    (world.gd C_GRASS·decor.gd KIT_TINT 주석의 실측), 여덟 중 일곱이 넘긴다:
+#    rosa 0.95 · luna 0.92 · mira 0.90 · finn 0.88 · momo/pip 0.85 · tom 0.78.
+#    넘기면 최대 채널만 255로 포화하고 나머지 둘은 안 포화 → 화면 채도가 원본보다 올라가 혼자 빛난다.
+#    비율 유지 축소라 색상·채도는 보존된다 = 여덟이 서로 안 붙는다(test_core가 최소 거리를 핀).
+const NPC_SAT_CAP := 0.60
+const NPC_VAL_CEIL := 0.745
+# 체형 변주 — npcs.json 옵션 필드 height(세로)·build(가로). 없으면 1.0 = 옛 동작 그대로.
+# 넓게 열면 주민이 기괴해진다(가로만 1.2면 두 배 넓은 고양이). 범위는 test_core가 데이터에 핀을 박는다.
+const HEIGHT_MIN := 0.88
+const HEIGHT_MAX := 1.12
+const BUILD_MIN := 0.90
+const BUILD_MAX := 1.12
+# 개체 애니 재생속도 1.0 ± 이 값. 시작 위상만 어긋내면 속도가 같아 계속 평행하게 가므로,
+# 미세하게 갈라야 시간이 지나며 계속 섞인다. 0.05를 넘기면 걸음 보폭이 눈에 띄게 달라진다.
+const SPEED_JITTER := 0.05
 # 배회 파라미터
 const WANDER_SPEED := 1.6     # 플레이어 5.0보다 느리게 (npcs.json "walk_speed"로 주민별 덮어쓰기)
 const WANDER_R_MIN := 4.0
@@ -110,15 +135,17 @@ var _farm: Node
 func _ready() -> void:
 	add_to_group("npc_system")
 	_farm = get_tree().get_first_node_in_group("farm")
+	var idx := 0
 	for id in GameData.npcs:
 		state[id] = {"affection_points": 0, "talked_today": false, "gifted_today": false, "dates_seen": 0,
 			"last_gift_day": -1}
-		_spawn(id)
+		_spawn(id, idx)   # idx = 유휴 애니 위상·속도의 씨앗 (데이터 등록 순서)
+		idx += 1
 	snap_to_schedule()  # 시작 시각의 장소에서 출발 (새 게임 06시면 전원 집)
 	if not GameClock.day_changed.is_connected(_on_day_changed):
 		GameClock.day_changed.connect(_on_day_changed)
 
-func _spawn(id: String) -> void:
+func _spawn(id: String, idx := 0) -> void:
 	var n: Dictionary = GameData.npcs[id]
 	var root := Node3D.new()
 	var home: Array = n["home"]
@@ -139,15 +166,20 @@ func _spawn(id: String) -> void:
 	root.add_child(area)
 	# 접지 그림자. root.y는 지면(0, 다리 위면 데크 리프트)이라 판을 자식으로 달면 존·다리를
 	# 가리지 않고 늘 발밑 지면 높이에 온다.
-	var shadow := ToonChar.contact_shadow(ToonChar.CONTACT_R * (KID_MULT if id in KID_IDS else 1.0))
+	# 반경은 build(가로)도 반영한다 — 안 그러면 통통한 주민 발밑에만 작은 그림자가 남는다.
+	var shadow := ToonChar.contact_shadow(ToonChar.CONTACT_R * (KID_MULT if id in KID_IDS else 1.0) * body_scale(n).x)
 	shadow.position.y = ToonChar.CONTACT_Y
 	root.add_child(shadow)
 	add_child(root)
 	_attach_springs(vis)   # 트리에 붙은 뒤에 — 스켈레톤이 준비돼야 본 이름 조회가 된다
+	var anim: AnimationPlayer = ToonChar.find_anim(vis) if vis != null else null
+	if anim != null and anim.has_animation("idle"):
+		play_phased(anim, "idle", -1.0, anim_phase(idx), anim_speed(idx))  # 트리에 붙은 뒤에 — seek()가 먹혀야 한다
 	npc_nodes[id] = root
 	_wander[id] = {
 		"target": root.position, "wait": randf_range(0.0, WAIT_MAX),
-		"anim": ToonChar.find_anim(vis) if vis != null else null, "cur": "",
+		"anim": anim, "cur": "",
+		"phase": anim_phase(idx), "speed_mult": anim_speed(idx),  # 전환 때도 같은 값을 쓴다
 		"place": "home", "path": [],   # path = 남은 경유 웨이포인트(Vector2)
 		"speed": float(n.get("walk_speed", WANDER_SPEED)),  # 수녀님처럼 느긋한 주민용
 		"vis": vis, "area": area, "shadow": shadow, "hidden": false,  # 밤 귀가 페이드용
@@ -158,39 +190,95 @@ func _spawn(id: String) -> void:
 # 성인 키 = cat×NPC_SCALE 에 맞춰 AABB 높이 정규화(꼬마면 ×KID_MULT). 없으면 기존 고양이 색조.
 const MODEL_TARGET_H := 2.1    # 실물 GLB NPC 목표 월드 높이 (성인 기준)
 
+# 마을 채도·밝기 대역으로 클램프한 개체 색조 (순수 함수 — test_core 단위검증).
+# 순서는 셰이더와 같다: 채도 먼저(최대 채널 쪽으로 당기므로 밝기 불변), 그다음 밝기 천장.
+static func village_tint(c: Color) -> Color:
+	var mx := maxf(c.r, maxf(c.g, c.b))
+	if mx <= 0.0:
+		return c
+	var sv := (mx - minf(c.r, minf(c.g, c.b))) / mx   # 셰이더 sat_cap과 같은 채도 정의
+	if sv > NPC_SAT_CAP:
+		var k := NPC_SAT_CAP / sv
+		c = Color(mx + (c.r - mx) * k, mx + (c.g - mx) * k, mx + (c.b - mx) * k)
+	if mx > NPC_VAL_CEIL:
+		var d := NPC_VAL_CEIL / mx   # 비율 유지 = 색상·채도 보존
+		c = Color(c.r * d, c.g * d, c.b * d)
+	return c
+
+# 체형 배율 (x=build 가로, y=height 세로). 필드가 없으면 1.0, 있으면 범위로 자른다.
+static func body_scale(ndef: Dictionary) -> Vector2:
+	return Vector2(
+		clampf(float(ndef.get("build", 1.0)), BUILD_MIN, BUILD_MAX),
+		clampf(float(ndef.get("height", 1.0)), HEIGHT_MIN, HEIGHT_MAX))
+
 func _make_visual(id: String, ndef: Dictionary) -> Node3D:
+	var hb := body_scale(ndef)   # x=build(가로) y=height(세로)
+	var kid := KID_MULT if id in KID_IDS else 1.0
 	var model_path := String(ndef.get("model", ""))
 	if model_path != "":
 		var m: Node3D = ToonChar.load_glb(model_path, ToonChar.OUTLINE_WORLD)  # tint=흰=원본색
 		if m != null:
-			var box := ToonChar.aabb_of(m)
+			var box := ToonChar.aabb_of(m)   # 배율 적용 **전** = native 공간
 			var ms := 1.0
 			if box.size.y > 0.001:
-				ms = MODEL_TARGET_H / box.size.y * (KID_MULT if id in KID_IDS else 1.0)
-			m.scale = Vector3(ms, ms, ms)
+				ms = MODEL_TARGET_H / box.size.y * kid
+			m.scale = Vector3(ms * hb.x, ms * hb.y, ms * hb.x)
 			ToonChar.set_outline_width(m, ToonChar.OUTLINE_WORLD / ms)  # 오브젝트→월드 굵기 보정
-			m.position.y = NPC_Y - box.position.y * ms  # 모델 발바닥(AABB 최저점)을 접지
+			m.position.y = NPC_Y - box.position.y * ms * hb.y  # 모델 발바닥(AABB 최저점)을 접지
 			m.rotation.y = PI  # 앞=+Z → look_at(-Z) 보정 (cat과 동일)
 			return m
 		# 로드 실패 시 아래 고양이 색조 폴백으로 진행
 	var c: Array = ndef["color"]
-	var tint := Color(c[0], c[1], c[2])
+	var tint := village_tint(Color(c[0], c[1], c[2]))  # 폴백 캡슐도 같은 tint를 받는다
 	var cat: Node3D = ToonChar.load_glb(CAT_GLB, ToonChar.OUTLINE_WORLD, tint)
 	if cat == null:
 		return _fallback_capsule(tint)  # 폴백: 색상 캡슐
-	var s := NPC_SCALE * (KID_MULT if id in KID_IDS else 1.0)
-	cat.scale = Vector3(s, s, s)
+	var box := ToonChar.aabb_of(cat)  # 배율 적용 전 (model 경로와 같은 규약)
+	var s := NPC_SCALE * kid
+	cat.scale = Vector3(s * hb.x, s * hb.y, s * hb.x)
 	ToonChar.set_outline_width(cat, ToonChar.OUTLINE_WORLD / s)  # 오브젝트→월드 굵기 보정
-	cat.position.y = NPC_Y
+	# 세로 배율을 주면 NPC_Y 고정으로는 발이 뜨거나 땅에 묻힌다. model 경로와 같은 AABB 최저점
+	# 접지인데 **차분만** 보정한다 — 절대 접지로 바꾸면 스크린샷으로 튜닝한 NPC_Y가 통째로
+	# 무시돼 전 주민(과 플레이어와의 정합)이 같이 움직인다. height=1.0이면 옛 값과 글자 그대로 동일.
+	# 실측: 지금 쓰는 cat_anim.glb는 AABB 최저점이 정확히 0(발이 원점)이라 보정량이 0이다.
+	# ponytail: 그래도 항을 남긴다 — 원점이 발이 아닌 모델로 갈아끼우는 순간 조용히 공중에 뜬다.
+	cat.position.y = NPC_Y - box.position.y * s * (hb.y - 1.0)
 	cat.rotation.y = PI  # 앞=+Z, look_at은 -Z 기준 → 180° 보정 (player와 동일)
 	var anim := ToonChar.find_anim(cat)
 	if anim != null:
 		for a in ["idle", "walk"]:
 			if anim.has_animation(a):
 				anim.get_animation(a).loop_mode = Animation.LOOP_LINEAR
-		if anim.has_animation("idle"):
-			anim.play("idle")
+	# 최초 idle 재생은 _spawn이 **트리에 붙은 뒤** 한다 — seek()는 트리 밖에서 조용히 먹힌다.
 	return cat
+
+# ── 유휴 애니 위상 어긋내기 ───────────────────────────────────────
+# 여덟이 월드 빌드 때 한 루프에서 생성돼 전원 같은 프레임에 idle 0프레임을 재생한다. 클립이 루프라
+# 이 동기화가 **영원히 안 풀린다** — 광장에 선 여덟이 같은 박자로 숨 쉬고 같은 순간에 몸을 기울인다.
+# 정지 컷에서는 모델이 같은 게 티 나지만, 움직이는 내내 티 나는 건 이쪽이다.
+# randf()는 금지다 — 켤 때마다 달라지면 스크린샷 회귀 검증이 불가능해진다. 그래서 주민의 데이터
+# 순번(npcs.json 등록 순서)에서 **황금비 저불일치 수열**로 뽑는다.
+# 시도 후 되돌림: 처음엔 ID 해시(`id.hash() % 997`)를 썼다. 결정론이긴 한데 결국 난수라 아홉 중
+# 둘이 0.003 간격으로 붙는 draw가 실제로 나왔다(실측) — 그 둘은 여전히 한 박자로 숨 쉰다.
+# frac(i·φ)는 세 거리 정리로 항상 고르게 벌어져서 로스터가 몇 명이든 최소 간격이 보장된다.
+const PHI_FRAC := 0.6180339887498949   # 황금비의 소수부 (1/φ)
+
+# 클립 길이에 대한 시작 위상 비율 0~1 (순수 함수 — test_core 단위검증)
+static func anim_phase(idx: int) -> float:
+	return fposmod(float(idx) * PHI_FRAC, 1.0)
+
+# 개체 재생속도 배율. 같은 수열을 반 바퀴 돌려 쓴다 — 시작점만 어긋내면 속도가 같아 계속
+# 평행하게 가므로, 여기까지 갈라야 시간이 지나며 계속 섞인다.
+static func anim_speed(idx: int) -> float:
+	return 1.0 - SPEED_JITTER + 2.0 * SPEED_JITTER * fposmod(0.5 + float(idx) * PHI_FRAC, 1.0)
+
+# 클립 재생 — **스폰과 전환 양쪽이 다 이 함수를 타야 한다.** play()가 매번 위상을 0으로 리셋하므로
+# 스폰만 어긋내면 걷다 멈추는 순간 다시 동기화되고, 주민들은 공용 스케줄로 움직여 여럿이 비슷한
+# 시각에 목적지에 도착한다 = 조용히 군무로 되돌아온다.
+# 속도는 여기 한 곳에서만 곱한다(AnimationPlayer.speed_scale에도 걸면 이중으로 곱해진다).
+static func play_phased(anim: AnimationPlayer, clip: String, blend: float, phase: float, speed: float) -> void:
+	anim.play(clip, blend, speed)
+	anim.seek(anim.get_animation(clip).length * phase, true)  # play() 뒤라야 한다
 
 # 옷 물리(베일·치마·펜던트) — 모델에 물리본이 있는 NPC만. 없으면 아무것도 안 한다.
 # 셋업은 lookdev/nun_physics.gd 의 검증된 static 을 그대로 재사용.
@@ -561,7 +649,9 @@ func _set_walk(id: String, walking: bool) -> void:
 		return
 	st["cur"] = want
 	if anim.has_animation(want):
-		anim.play(want, 0.2, WALK_SCALE if walking else 1.0)
+		# 스폰과 같은 위상·속도. 스폰만 고치면 걷다 멈추는 순간 여기서 조용히 다시 동기화된다.
+		play_phased(anim, want, 0.2, float(st["phase"]),
+			float(st["speed_mult"]) * (WALK_SCALE if walking else 1.0))
 
 # 스크린샷용: 전 주민 카메라 앞 격자 배치 + 배회 정지 (world.gd "npcs" cmdline)
 func pose_for_shot() -> void:

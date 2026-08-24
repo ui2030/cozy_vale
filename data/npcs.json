@@ -1,31 +1,31 @@
 {
 	"npc.mira": {
 		"name": "Mira", "archetype": "cheerful", "birthday": {"season": "spring", "day": 12},
-		"home": [-20, -9], "color": [0.90, 0.55, 0.62], "candidate": true,
+		"home": [-20, -9], "color": [0.90, 0.55, 0.62], "candidate": true, "height": 0.96, "build": 0.94,
 		"schedule": [{"h": 8, "place": "home"}, {"h": 10, "place": "plaza"}, {"h": 13, "place": "shop"}, {"h": 16, "place": "plaza"}, {"h": 19, "place": "home"}],
 		"gifts": {"loved": ["crop.strawberry", "crop.watermelon"], "liked": ["crop.turnip", "forage.dandelion", "forage.wild_apple", "forage.holly"], "disliked": ["crop.potato"]}
 	},
 	"npc.tom": {
 		"name": "Tom", "archetype": "gruff", "birthday": {"season": "spring", "day": 20},
-		"home": [22, 17], "color": [0.45, 0.55, 0.78],
+		"home": [22, 17], "color": [0.45, 0.55, 0.78], "height": 1.10, "build": 1.12,
 		"schedule": [{"h": 8, "place": "home"}, {"h": 10, "place": "windmill"}, {"h": 13, "place": "plaza"}, {"h": 16, "place": "windmill"}, {"h": 18, "place": "home"}],
 		"gifts": {"loved": ["crop.potato", "crop.eggplant"], "liked": ["crop.cabbage", "crop.corn", "forage.chestnut", "fish.perch"], "disliked": ["crop.strawberry", "forage.lavender"]}
 	},
 	"npc.luna": {
 		"name": "Luna", "archetype": "shy", "birthday": {"season": "spring", "day": 5},
-		"home": [-19, 20], "color": [0.92, 0.90, 0.86], "candidate": true,
+		"home": [-19, 20], "color": [0.92, 0.90, 0.86], "candidate": true, "height": 1.04, "build": 0.90,
 		"schedule": [{"h": 9, "place": "home"}, {"h": 12, "place": "plaza"}, {"h": 14, "place": "pond"}, {"h": 17, "place": "plaza"}, {"h": 19, "place": "home"}],
 		"gifts": {"loved": ["crop.cabbage", "forage.lavender"], "liked": ["crop.strawberry", "forage.leek", "forage.blackberry", "forage.pine_nut"], "disliked": ["crop.turnip"]}
 	},
 	"npc.finn": {
 		"name": "Finn", "archetype": "energetic", "birthday": {"season": "spring", "day": 25},
-		"home": [-6, 19], "color": [0.88, 0.58, 0.32], "candidate": true,
+		"home": [-6, 19], "color": [0.88, 0.58, 0.32], "candidate": true, "height": 1.06, "build": 0.98,
 		"schedule": [{"h": 8, "place": "home"}, {"h": 10, "place": "plaza"}, {"h": 12, "place": "pond"}, {"h": 15, "place": "bridge"}, {"h": 18, "place": "home"}],
 		"gifts": {"loved": ["fish.bass", "crop.turnip", "fish.tuna"], "liked": ["fish.bluegill", "crop.potato", "fish.pike", "fish.sturgeon"], "disliked": ["crop.cabbage"]}
 	},
 	"npc.rosa": {
 		"name": "Rosa", "archetype": "easygoing", "birthday": {"season": "summer", "day": 8},
-		"home": [-24, -3], "color": [0.95, 0.72, 0.55],
+		"home": [-24, -3], "color": [0.95, 0.72, 0.55], "height": 0.92, "build": 1.10,
 		"schedule": [{"h": 9, "place": "home"}, {"h": 11, "place": "shop"}, {"h": 14, "place": "plaza"}, {"h": 17, "place": "shop"}, {"h": 19, "place": "home"}],
 		"gifts": {"loved": ["crop.cabbage", "forage.leek", "forage.chanterelle"], "liked": ["crop.potato", "forage.horseradish", "forage.mint", "forage.winter_root"], "disliked": ["fish.smelt"]}
 	},
@@ -37,13 +37,13 @@
 	},
 	"npc.momo": {
 		"name": "Momo", "archetype": "playful", "birthday": {"season": "summer", "day": 21},
-		"home": [-8, 6], "color": [0.70, 0.85, 0.55],
+		"home": [-8, 6], "color": [0.70, 0.85, 0.55], "build": 1.06,
 		"schedule": [{"h": 8, "place": "home"}, {"h": 10, "place": "shop"}, {"h": 13, "place": "plaza"}, {"h": 16, "place": "pond"}, {"h": 19, "place": "home"}],
 		"gifts": {"loved": ["forage.horseradish", "forage.dandelion", "forage.blackberry"], "liked": ["forage.leek", "crop.strawberry", "forage.blueberry", "forage.pine_nut"], "disliked": ["fish.carp"]}
 	},
 	"npc.pip": {
 		"name": "Pip", "archetype": "curious", "birthday": {"season": "winter", "day": 10},
-		"home": [-8, -4], "color": [0.55, 0.80, 0.85],
+		"home": [-8, -4], "color": [0.55, 0.80, 0.85], "height": 0.94, "build": 0.92,
 		"schedule": [{"h": 8, "place": "home"}, {"h": 11, "place": "pond"}, {"h": 14, "place": "bridge"}, {"h": 17, "place": "plaza"}, {"h": 19, "place": "home"}],
 		"gifts": {"loved": ["fish.smelt", "fish.bluegill", "fish.squid"], "liked": ["fish.carp", "crop.cabbage", "fish.flounder", "forage.snow_berry"], "disliked": ["crop.potato"]}
 	},
