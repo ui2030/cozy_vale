@@ -904,6 +904,17 @@ static func tree_variant_index(nm: String, season: int) -> int:
 static func tree_frosted(nm: String, season: int) -> bool:
 	return tree_variant_index(nm, season) == 1
 
+# 활엽수 한 종의 계절 사본 한 벌 — 슬롯 순서는 위 tree_variant_index의 계약 [원색, 겨울, 가을]이다.
+# 겨울·가을 사본은 빌드 때 미리 뽑는다(전환 때 로드하지 않게). 텍스처는 그대로 두고 채도만 지우고
+# 밝기를 올린 별개 Mesh — 옛 방식(수관 albedo를 단색으로 교체)은 킷 나무에선 잎 결까지 통째로
+# 뭉개져 그 계절에만 다시 통짜가 된다. 봄·여름은 원색을 공유한다 = 종당 사본 2개(나무 2종에 Mesh 4장).
+# **_place_forest와 test_core가 같이 부르는 유일한 통로다.** 인자를 테스트에 복사해 두면 여기 처방이
+# 옛 판으로 되돌아가도 핀이 안 문다(02b11cd에서 같은 구멍을 한 번 겪었다).
+func tree_slots(nm: String) -> Array:
+	return [_kit_mesh(nm),
+		_kit_mesh(nm, TREE_WINTER_GAIN, VEG_WINTER_SAT),
+		_kit_mesh(nm, TREE_AUTUMN_GAIN, KIT_SAT_CAP, Color(0, 0, 0, 0), TREE_AUTUMN_EXTRA)]
+
 # 만개한 꽃(화분·꽃수레의 개별 꽃 GLB, 등나무 드레이프)은 겨울에만 숨긴다. 서리톤으로 남기지 않는
 # 이유: 회색으로 물든 만개 송이는 눈 위에 매달린 이물처럼 보인다 — 빈 화분·빈 수레·맨 퍼걸러가
 # 겨울 그림으로 맞다.
@@ -1115,18 +1126,11 @@ func _place_forest() -> void:
 		if (buckets[nm] as Array).is_empty():
 			continue
 		var full: String = "Forest_" + nm
-		var summer := _kit_mesh(nm)
-		_multimesh(summer, buckets[nm], full)
+		var slots := tree_slots(nm)
+		_multimesh(slots[tree_variant_index(full, SUMMER)], buckets[nm], full)
 		_n_trees += (buckets[nm] as Array).size()
 		if tree_frosted(full, WINTER):
-			# 겨울·가을 사본을 빌드 때 미리 뽑아 둔다(전환 때 로드하지 않게). 텍스처는 그대로 두고
-			# 채도만 지우고 밝기를 올린 별개 Mesh — 옛 방식(수관 albedo를 단색으로 교체)은
-			# 킷 나무에선 잎 결까지 통째로 뭉개져 그 계절에만 다시 통짜가 된다.
-			# 슬롯 순서는 tree_variant_index의 계약이다 [원색, 겨울, 가을]. 봄·여름은 원색을 공유한다
-			# = 종당 사본 2개 = 나무 2종에 Mesh 4장.
-			_tree_mesh[full] = [summer,
-				_kit_mesh(nm, TREE_WINTER_GAIN, VEG_WINTER_SAT),
-				_kit_mesh(nm, TREE_AUTUMN_GAIN, KIT_SAT_CAP, Color(0, 0, 0, 0), TREE_AUTUMN_EXTRA)]
+			_tree_mesh[full] = slots
 
 	# 강변 바위 몇 개 — 물길이 지형에 박혀 보이게(개별 노드, 무충돌)
 	var rocks := Node3D.new()

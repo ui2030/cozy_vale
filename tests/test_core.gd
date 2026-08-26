@@ -1444,8 +1444,11 @@ func _test_winter_veg_look() -> void:
 	assert(atlas != null, "파크 킷 아틀라스를 못 읽음")
 	var dec: Node = D.new()
 	var grass: Mesh = dec._flora_mesh("grass_A")     # 여름 원본 = 겨울에도 같은 지오메트리
-	var tree_s: Mesh = dec._kit_mesh("tree")         # 여름 원본 수관(기본 VEG_GAIN·KIT_SAT_CAP)
-	var tree_w: Mesh = dec._kit_mesh("tree", D.TREE_WINTER_GAIN, D.VEG_WINTER_SAT)  # 겨울 스왑 사본
+	# 나무 사본은 _place_forest가 부르는 그 함수(tree_slots)로 뽑고, 슬롯은 그 계약 함수로 고른다 —
+	# 인자를 여기 복사해 두면 decor의 처방이 되돌아가도 이 핀이 안 문다(02b11cd와 같은 구멍).
+	var slots: Array = dec.tree_slots("tree")
+	var tree_s: Mesh = slots[D.tree_variant_index("Forest_tree", D.SUMMER)]
+	var tree_w: Mesh = slots[D.tree_variant_index("Forest_tree", D.WINTER)]
 	assert(grass != null and tree_s != null and tree_w != null, "킷 메시 로드 실패 — 에셋 경로 확인")
 	var frost: ShaderMaterial = dec._frost_mat()     # 지피 서리 = MMI material_override
 	assert(frost.get_shader_parameter("use_tex"), "서리 override가 아틀라스를 안 물었다(단색 폴백)")
@@ -1490,10 +1493,12 @@ func _test_autumn_veg_look() -> void:
 	var atlas := Image.load_from_file(D.TT_PARK + "tiny_treats_texture_1.png")
 	assert(atlas != null, "파크 킷 아틀라스를 못 읽음")
 	var dec: Node = D.new()
-	# 슬롯 사본은 decor의 _place_forest와 **같은 인자**로 뽑는다(겨울 테스트와 같은 전례).
-	var tree_s: Mesh = dec._kit_mesh("tree")
-	var tree_a: Mesh = dec._kit_mesh("tree", D.TREE_AUTUMN_GAIN, D.KIT_SAT_CAP, Color(0, 0, 0, 0), D.TREE_AUTUMN_EXTRA)
-	var tree_w: Mesh = dec._kit_mesh("tree", D.TREE_WINTER_GAIN, D.VEG_WINTER_SAT)
+	# 슬롯 사본은 _place_forest가 실제로 부르는 함수(tree_slots)에서 받는다 — 인자를 복사해 두면
+	# decor 쪽 처방이 옛 판(줄기까지 물드는 회귀)으로 되돌아가도 이 핀이 안 문다.
+	var slots: Array = dec.tree_slots("tree")
+	var tree_s: Mesh = slots[D.tree_variant_index("Forest_tree", D.SUMMER)]
+	var tree_a: Mesh = slots[D.tree_variant_index("Forest_tree", D.AUTUMN)]
+	var tree_w: Mesh = slots[D.tree_variant_index("Forest_tree", D.WINTER)]
 	var litter: Mesh = dec._kit_mesh("flower_A", D.LEAF_GAIN, D.LEAF_SAT, D.LEAF_TINT)
 	var bush: Mesh = dec._flora_mesh("bush")
 	var grass: Mesh = dec._flora_mesh("grass_A")
