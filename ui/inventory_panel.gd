@@ -108,11 +108,15 @@ func _head(text: String) -> void:
 	_list.add_child(h)
 
 # 씨앗 ID는 display_name 소스(작물·물고기·채집물)에 없다 — 작물 이름으로 되짚어 표기.
+# 단 주운 채집물을 그대로 심는 항목은 씨앗이 아니라 그 아이템 자체라 "Seed"를 붙이지 않는다.
 func _seed_btn(p: Node, sid: String) -> Button:
 	var b := Button.new()
 	var sel: bool = sid == p.active_seed()
-	b.text = "%s %s Seed   x%d" % [
-		"▶" if sel else "  ", GameData.display_name(GameData.crop_from_seed(sid)), p.count(sid),
+	var item: bool = GameData.is_collectible(sid)
+	b.text = "%s %s%s   x%d" % [
+		"▶" if sel else "  ",
+		GameData.display_name(sid if item else GameData.crop_from_seed(sid)),
+		"" if item else " Seed", p.count(sid),
 	]
 	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	b.add_theme_font_size_override("font_size", 16)

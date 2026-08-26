@@ -60,6 +60,7 @@ func _ready() -> void:
 	_test_cooking()
 	_test_dialogue_context()
 	_test_npc_personality()
+	_test_forage_crops()  # 날짜를 여러 해 돌리므로 맨 뒤 (앞 테스트의 시계·주민 상태를 안 흔들게)
 	print("ALL CORE TESTS PASS")
 	get_tree().quit()
 
@@ -170,12 +171,23 @@ func _test_farm_loop() -> void:
 # ── H-1: 작물 12종 (봄4·여름4·가을4·겨울0) ──────────────────────
 # 한 계절(DAYS_PER_SEASON일)에 밭 한 칸이 내는 gold/day. 단발 작물은 즉시 재파종, 재수확 작물은 regrow 주기로 계산.
 # 밸런스 대역이 데이터로만 유지되도록 게임 코드가 아니라 테스트에 둔다(런타임은 이 값을 안 쓴다).
-func _gold_per_day(d: Dictionary) -> float:
+#
+# 씨앗값 규약 3종 (다년생·채집물 재배가 들어오며 갈렸다):
+#  - 씨앗 전용 아이템(상점 구매) → seed_cost 그대로
+#  - 주운 채집물을 그대로 심는 **한해살이** → 씨앗값 = 그 아이템 판매가.
+#    한 개를 안 팔고 묻는 기회비용이 진짜 원가다(그래서 첫 수확은 본전이고 재수확부터 이득).
+#  - **다년생** → 0. 한 번 심으면 해마다 다시 열려 파종 비용이 무한히 분할상환된다.
+#    (되돌린 시도: 다년생에도 매 계절 씨앗값을 물려 봤더니 첫해만 재는 셈이라 정상 상태를
+#     과소평가했다 — 대역 상한이 독주를 못 잡는다. 정상 상태로 재는 쪽을 택했다.)
+func _gold_per_day(cid: String) -> float:
+	var d: Dictionary = GameData.crops[cid]
 	var season := GameClock.DAYS_PER_SEASON
 	var grow := int(d["grow_days"])
 	var regrow := int(d.get("regrow_days", 0))
-	var sell := int(d["sell_price"])
-	var cost := int(d["seed_cost"])
+	var sell := GameData.sell_price(cid)  # 프로덕션 해석 — 채집물 재배는 그 채집물 값을 본다
+	var cost := 0
+	if not GameData.crop_perennial(cid):
+		cost = sell if GameData.crop_yield(cid) != cid else int(d["seed_cost"])
 	if regrow > 0:
 		var harvests := 1 + maxi(0, (season - grow) / regrow)
 		return float(harvests * sell - cost) / float(season)
@@ -184,21 +196,41 @@ func _gold_per_day(d: Dictionary) -> float:
 
 func _test_crops_h1() -> void:
 	# ── 데이터 정합: 종수·계절 분포·겨울 공백(설계)·색 구분
-	assert(GameData.crops.size() == 12, "작물 12종 (실제 %d)" % GameData.crops.size())
-	assert(GameData.season_seed_ids("spring").size() == 4, "봄 씨앗 4종")
-	assert(GameData.season_seed_ids("summer").size() == 4, "여름 씨앗 4종")
-	assert(GameData.season_seed_ids("autumn").size() == 5, "가을 씨앗 5종(가을 전용 4 + 두 계절 corn)")
-	assert(GameData.season_seed_ids("winter").is_empty(), "겨울 = 씨앗 없음(설계: 낚시·채집의 계절)")
+	# 기존 작물 12 + 재배 가능 채집물 13(버섯 3종 제외 — 동굴 해금 후 포자 재배, DESIGN 6.2)
+	assert(GameData.crops.size() == 25, "재배 항목 25종 (실제 %d)" % GameData.crops.size())
+	# 상점 재고는 **씨앗 전용 아이템**만 — 주운 채집물을 그대로 심는 항목은 상점에 없다(채집이 공급원).
+	# 이 셋은 승인된 12종의 고정 집합이라 정확히 센다.
+	assert(GameData.season_seed_ids("spring").size() == 4, "봄 상점 씨앗 4종")
+	assert(GameData.season_seed_ids("summer").size() == 4, "여름 상점 씨앗 4종")
+	assert(GameData.season_seed_ids("autumn").size() == 5, "가을 상점 씨앗 5종(가을 전용 4 + 두 계절 corn)")
+	# ⚠ 옛 핀은 "겨울 = 씨앗 없음" 하나였다. 다년생이 들어오며 둘로 갈린다:
+	#   겨울에 **심을 수 있는** 것은 없고(파종 금지 유지), 겨울에 **열리는** 것은 있다(가을에 심어둔 다년생).
+	#   계약은 "겨울 파종 불가"지 "겨울 작물 없음"이 아니다.
+	assert(GameData.season_seed_ids("winter").is_empty(), "겨울 상점 재고 0(설계: 파종 없는 계절)")
+	var plantable := {}
+	for s in GameData.SEASON_IDS:
+		plantable[s] = []
+		for cid2 in GameData.crops:
+			if GameData.crop_plantable(cid2, s):
+				plantable[s].append(cid2)
+	# 심을 수 있는 종은 **하한**으로 잡는다 — 종이 늘 때마다 숫자를 고치게 되면 그게 부패다.
+	for s in ["spring", "summer", "autumn"]:
+		assert(plantable[s].size() >= 7, "%s 심을 수 있는 종 %d개 — 하한 7" % [s, plantable[s].size()])
+	assert(plantable["winter"].is_empty(), "겨울엔 어떤 종도 못 심는다(파종 금지)")
+	assert(GameData.season_filter(GameData.crops, "winter").size() >= 4,
+		"겨울에 열리는 재배 종 하한 4 (실제 %d)" % GameData.season_filter(GameData.crops, "winter").size())
 	assert(GameData.crop_in_season("crop.corn", "summer") and GameData.crop_in_season("crop.corn", "autumn"),
 		"corn = 여름·가을 두 계절 작물")
 	var colors := {}
 	for cid in GameData.crops:
-		var c: Array = GameData.crops[cid].get("color", [])
-		assert(c.size() == 3, "%s color 없음(밭에서 구분 불가)" % cid)
-		var key := "%.2f,%.2f,%.2f" % [c[0], c[1], c[2]]
+		# 밭이 실제로 칠하는 색(프로덕션 경로)을 잰다 — 채집물 재배는 색을 다시 안 적고
+		# 그 채집물 hex를 해석해 쓰므로, json 배열만 보면 배선이 끊겨도 통과한다.
+		var c: Color = _farm.crop_color(cid)
+		assert(c != _farm.RIPE_FALLBACK, "%s 색 미해석 — 밭에서 구분 불가(폴백으로 떨어짐)" % cid)
+		var key := "%.2f,%.2f,%.2f" % [c.r, c.g, c.b]
 		assert(not colors.has(key), "성장 단계 색 중복: %s ↔ %s" % [cid, str(colors.get(key))])
 		colors[key] = cid
-		# 씨앗 ↔ 작물 왕복 (참조 무결성은 GameData._validate가 보지만 신규 8종 매핑을 명시 확인)
+		# 씨앗 ↔ 작물 왕복 (참조 무결성은 GameData._validate가 보지만 신규 종 매핑을 명시 확인)
 		assert(GameData.crop_from_seed(GameData.crops[cid]["seed_id"]) == cid, "%s 씨앗 매핑" % cid)
 	# 밭 시각화가 실제로 데이터 색을 쓴다(하드코딩 회귀 방지)
 	assert(_farm.crop_color("crop.pumpkin") != _farm.crop_color("crop.eggplant"), "작물별 색 반영")
@@ -207,7 +239,7 @@ func _test_crops_h1() -> void:
 	# ── 밸런스 대역: 계절 안에서 한 작물이 압도하지 않는다
 	var per_season := {}
 	for cid in GameData.crops:
-		var gpd := _gold_per_day(GameData.crops[cid])
+		var gpd := _gold_per_day(cid)
 		# 계절 30일화 때 cranberry가 재수확 임계(30-9=21, 21/5 → 4→5회)로 26.67 독주 →
 		# 기획 판정: sell 180→160(수확 5회×160=23.33, 재수확 프리미엄 1위 유지·독주 해소). 상한 26 복원.
 		assert(gpd >= 8.0 and gpd <= 26.0, "%s gold/day 대역(8~26) 밖: %.2f" % [cid, gpd])
@@ -2301,3 +2333,146 @@ func _phase_spread() -> int:
 			if absf(pos[i] - pos[j]) < 0.01:
 				same += 1
 	return same
+
+# ── 채집물 재배 + 다년생 ────────────────────────────────────────
+# ⚠ 최대 함정은 기른 것과 주운 것이 **다른 아이템**으로 갈리는 것이다(요리·선물·도감이 두 갈래).
+# 그래서 json 정합만 보지 않고, 실제로 심어 키워 **수확된 id를 재고** 그걸 그대로 선물해 본다.
+# 종 이름은 한 줄도 안 박는다 — 조건(다년생·겨울에 열림·가을에 심음)으로 데이터에서 골라 온다.
+func _test_forage_crops() -> void:
+	# ── 0. 심는 계절 ↔ 열리는 계절의 정합 (전 종 공통)
+	# 심을 수 있는데 그 계절엔 안 열리는 종(가을에 심어 겨울에 여는 다년생)은 **반드시 다년생**이어야
+	# 한다. 아니면 심은 다음 아침 _season_deaths가 조용히 없애 주운 아이템만 증발한다.
+	for cid in GameData.crops:
+		for s in GameData.SEASON_IDS:
+			if GameData.crop_plantable(cid, s) and not GameData.crop_in_season(cid, s):
+				assert(GameData.crop_perennial(cid),
+					"%s: %s에 심는데 그 계절엔 안 열린다 — 다년생이 아니면 다음 아침 고사" % [cid, s])
+
+	# ── 1. 데이터: 재배 항목 ↔ 채집물 아이템 계약
+	var grown := {}  # 채집물 id → 그것을 맺는 재배 항목 id
+	for cid in GameData.crops:
+		var yid := GameData.crop_yield(cid)
+		if yid == cid:
+			continue  # 씨앗을 사서 심는 기존 작물
+		assert(GameData.forage.has(yid), "%s 산출물이 채집물이 아님: %s" % [cid, yid])
+		assert(not grown.has(yid), "%s와 %s가 같은 채집물을 맺는다: %s" % [cid, str(grown.get(yid)), yid])
+		grown[yid] = cid
+		# 새 씨앗 아이템 금지: 심는 것이 곧 거두는 것(동물의 숲 방식, 초반 공급원 = 채집)
+		assert(String(GameData.crops[cid]["seed_id"]) == yid, "%s 씨앗이 산출물과 다름" % cid)
+		# 재배 항목 자체는 아이템이 아니다 — 도감·판매·선물에 유령 항목이 새면 안 된다
+		assert(not GameData.is_collectible(cid) and not GameData.is_produce(cid), "%s가 아이템으로 샌다" % cid)
+		assert(GameData.is_collectible(yid), "%s 산출물이 도감 대상이 아님" % yid)
+		# 이름·값은 산출물 단일 출처 (두 번 적혀 갈리는 순간 여기서 걸린다)
+		assert(GameData.display_name(cid) == GameData.display_name(yid), "%s 이름이 산출물과 갈림" % cid)
+		assert(GameData.sell_price(cid) == GameData.sell_price(yid), "%s 판매가가 산출물과 갈림" % cid)
+		assert(GameData.sell_price(cid) > 0, "%s 판매가 0 — 산출물 해석 실패" % cid)
+		# 주울 수 있는 계절엔 밭에서도 열린다(같은 물건이라는 감각이 계절에서 깨지지 않게)
+		for s in GameData.forage[yid]["seasons"]:
+			assert(GameData.crop_in_season(cid, s), "%s: %s에 주울 수 있는데 밭에선 안 열림" % [cid, s])
+	assert(grown.size() == 13, "재배 가능 채집물 13종 (실제 %d)" % grown.size())
+	# 버섯은 이번 범위 밖(동굴 해금 후 포자 재배 — DESIGN 6.2). 엔진이 아니라 **데이터가** 막는다:
+	# crops.json에 항목이 없으면 자동으로 재배 불가다.
+	for fid in GameData.forage:
+		if GameData.forage[fid].get("rare", false):
+			assert(not grown.has(fid), "%s — 희귀 버섯은 아직 재배 대상이 아니다(동굴 해금 후)" % fid)
+	assert(GameData.forage.size() - grown.size() == 3, "재배 불가 채집물 3종(버섯)")
+	# 밭 타일에 새 필드를 안 만들었다 = 구세이브가 기본값으로 흡수된다. 무심코 범프하면 여기서 걸린다.
+	assert(SaveManager.WORLD_VERSION == 3, "채집물 재배·다년생은 밭 타일 스키마 무변경 = WORLD_VERSION 유지")
+
+	# ── 2. 배선: 가을에 심은 다년생이 겨울 경계를 넘어 살아남고, 겨울에 열린다.
+	#    _season_deaths·일변경 성장·수확을 전부 프로덕션 경로(GameClock.sleep_to_morning)로 태운다.
+	var wp := ""
+	for cid in GameData.crops:
+		if GameData.crop_perennial(cid) and GameData.crop_in_season(cid, "winter") \
+			and GameData.crop_plantable(cid, "autumn"):
+			wp = cid
+			break
+	assert(wp != "", "겨울에 열리는 다년생이 없다 — 겨울 농장이 성립 안 함")
+	var seed_w: String = GameData.crops[wp]["seed_id"]
+	var cp := Vector2i(0, 2)   # 앞선 테스트가 안 쓴 밭 줄(z=2)
+	var ca := Vector2i(1, 2)
+	GameClock.abs_day = 2 * GameClock.DAYS_PER_SEASON  # 가을 D1
+	GameClock.game_min = 360
+	assert(GameData.season_id(GameClock.season()) == "autumn", "전제: 가을 D1")
+	assert(_farm.till(cp) and _farm.till(ca), "가을 괭이질")
+	assert(not GameData.crop_plantable(wp, "winter"), "겨울 파종은 여전히 막힌다")
+	assert(_farm.plant(cp, seed_w), "겨울에 열리는 다년생은 가을에 심는다")
+	# 휴면: 제철이 아닌 동안은 물을 줘도 생장이 안 나아가고, 그래도 안 죽는다
+	_farm.water(cp)
+	GameClock.sleep_to_morning()
+	assert(int(_farm.get_tile(cp)["watered_growth_days"]) == 0, "제철 아닌 동안 휴면(생장 정지)")
+	assert(_farm.get_tile(cp)["crop_id"] == wp, "휴면 중에도 다년생은 안 죽는다")
+	assert(not _farm.is_mature_at(cp), "제철 아니면 수확 대상 아님")
+	# 계절 경계를 실제로 넘긴다: 가을 막날 → 겨울 D1. 한해살이 대조군을 나란히 둔다.
+	GameClock.abs_day = 3 * GameClock.DAYS_PER_SEASON - 1
+	assert(GameData.season_id(GameClock.season()) == "autumn", "전제: 가을 막날")
+	assert(_farm.plant(ca, "seed.corn"), "대조군: 한해살이 가을 작물")
+	GameClock.sleep_to_morning()
+	assert(GameData.season_id(GameClock.season()) == "winter", "겨울 진입")
+	assert(_farm.get_tile(ca)["crop_id"] == "", "대조군 한해살이는 계절 경계에서 고사")
+	assert(_farm.get_tile(cp)["crop_id"] == wp, "다년생은 계절 경계에서 살아남는다(_season_deaths 면제)")
+	# 겨울 = 제철 → 이제 자란다 → 수확
+	var gd := GameData.grow_days(wp)
+	for _i in gd:
+		_farm.water(cp)  # 비 오는 날은 이미 젖음
+		GameClock.sleep_to_morning()
+	assert(int(_farm.get_tile(cp)["watered_growth_days"]) == gd, "겨울엔 제철이라 생장이 나아간다")
+	assert(_farm.is_mature_at(cp), "겨울 수확 가능(가을 파종 → 겨울 수확)")
+	var got: String = _farm.harvest(cp)
+	assert(got == GameData.crop_yield(wp) and GameData.forage.has(got),
+		"수확물이 채집물 아이템 그대로여야 한다 (실제 %s)" % got)
+	# 재수확은 기존 regrow_days 기제 그대로 — 다년생용 새 기제를 만들지 않았다는 확인
+	var rg := int(GameData.crops[wp].get("regrow_days", 0))
+	assert(rg > 0, "%s 재수확 주기 없음 — 다년생인데 한 번만 열린다" % wp)
+	assert(_farm.get_tile(cp)["crop_id"] == wp and not _farm.is_mature_at(cp), "수확해도 그루가 남는다")
+	for _j in rg:
+		_farm.water(cp)
+		GameClock.sleep_to_morning()
+	assert(_farm.is_mature_at(cp), "regrow 주기 뒤 재성숙")
+	# 해를 넘긴다: 봄엔 남아 있되 열매가 없고(휴면), 이듬해 겨울에 다시 열린다
+	GameClock.abs_day = 4 * GameClock.DAYS_PER_SEASON - 1  # 겨울 막날
+	GameClock.sleep_to_morning()
+	assert(GameData.season_id(GameClock.season()) == "spring", "봄 진입")
+	assert(_farm.get_tile(cp)["crop_id"] == wp, "다년생은 해를 넘겨도 밭에 남는다")
+	assert(not _farm.is_mature_at(cp), "제철 아님 = 다 자랐어도 수확 불가(휴면)")
+	GameClock.abs_day = 7 * GameClock.DAYS_PER_SEASON  # 이듬해 겨울 D1
+	assert(GameData.season_id(GameClock.season()) == "winter", "전제: 이듬해 겨울")
+	assert(_farm.is_mature_at(cp), "이듬해 겨울에 다시 열린다 — 심은 것이 풍경으로 남는다")
+
+	# ── 3. 한해살이 채집물: 주운 것을 심어 **같은 아이템**을 거두고, 그게 선물 취향에 그대로 먹힌다
+	var sp := ""
+	for cid in GameData.crops:
+		if not GameData.crop_perennial(cid) and GameData.crop_yield(cid) != cid \
+			and GameData.crop_plantable(cid, "spring"):
+			sp = cid
+			break
+	assert(sp != "", "봄에 심을 수 있는 한해살이 채집물이 없다")
+	var gs := GameData.grow_days(sp)
+	GameClock.abs_day = _clear_run(gs + 1)  # 수동 물주기 경로 — 맑은 구간 고정
+	assert(GameClock.abs_day >= 0, "봄에 맑은 %d일 연속 구간이 없음" % (gs + 1))
+	GameClock.game_min = 360
+	var cs := Vector2i(2, 2)
+	assert(_farm.till(cs) and _farm.plant(cs, GameData.crops[sp]["seed_id"]), "주운 채집물을 그대로 심는다")
+	for _k in gs:
+		assert(_farm.water(cs), "물주기")
+		GameClock.sleep_to_morning()
+	var picked: String = _farm.harvest(cs)
+	assert(picked == GameData.crop_yield(sp) and GameData.forage.has(picked),
+		"기른 것 = 주운 것 (실제 %s)" % picked)
+	# 도감·판매·요리 재료 자격이 기른 것에도 그대로 붙는가
+	assert(GameData.is_collectible(picked) and GameData.is_produce(picked), "%s 도감·판매 대상" % picked)
+	assert(_farm.deposit(picked, 1) == 1, "기른 채집물도 판매상자가 받는다")
+	# 선물 취향: **수확된 id 그대로** 줬을 때 중립이 아니어야 한다.
+	# (기른 것이 crop.* 로 갈리면 여기서 "받음"이 되어 걸린다 — 이게 §2-2의 실제 증상이다)
+	var fan := ""
+	for nid in GameData.npcs:
+		var g: Dictionary = GameData.npcs[nid]["gifts"]
+		if picked in g.get("loved", []) or picked in g.get("liked", []):
+			fan = nid
+			break
+	assert(fan != "", "%s를 좋아하는 주민이 없어 취향 경로를 못 잰다" % picked)
+	_npcsys.state[fan]["gifted_today"] = false  # 앞선 테스트가 오늘 몫을 썼을 수 있다
+	var r: Dictionary = _npcsys.give(fan, picked)
+	assert(r["ok"], "선물 실패: %s" % r["msg"])
+	assert(String(r["msg"]).contains("좋아함") or String(r["msg"]).contains("기뻐함"),
+		"기른 채집물에 취향이 안 먹힘 — 아이템이 갈렸다: %s" % r["msg"])

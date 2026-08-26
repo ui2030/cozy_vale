@@ -50,15 +50,32 @@ func _load_json(path: String) -> Dictionary:
 func _validate() -> void:
 	# 참조 무결성: 필수 필드 + seed_id 유일성
 	var seeds := {}
+	var yields := {}
 	for cid in crops:
 		var c: Dictionary = crops[cid]
-		for key in ["name", "seed_id", "seasons", "grow_days", "sell_price", "seed_cost", "stages"]:
+		var yid := crop_yield(cid)
+		# 산출물이 따로 있는 항목(주운 채집물을 그대로 심는다)은 name·sell_price·seed_cost를
+		# 다시 적지 않는다 — 그 아이템 정의가 단일 출처다(두 번 적으면 값이 갈린다).
+		var need := ["seed_id", "seasons", "grow_days", "stages"] if yid != cid \
+			else ["name", "seed_id", "seasons", "grow_days", "sell_price", "seed_cost", "stages"]
+		for key in need:
 			assert(c.has(key), "%s 에 %s 누락" % [cid, key])
+		if yid != cid:
+			assert(fish.has(yid) or forage.has(yid), "%s yield_id가 없는 산출물: %s" % [cid, yid])
+			assert(not yields.has(yid), "%s와 %s가 같은 산출물을 맺음: %s" % [cid, str(yields.get(yid)), yid])
+			yields[yid] = cid
+			# 씨앗 = 산출물 그 자체. 새 씨앗 아이템을 만들면 여기서 걸린다.
+			assert(String(c["seed_id"]) == yid, "%s 씨앗(%s)이 산출물(%s)과 다름" % [cid, c["seed_id"], yid])
 		assert(not seeds.has(c["seed_id"]), "seed_id 중복: " + c["seed_id"])
 		seeds[c["seed_id"]] = true
 		assert(not c["seasons"].is_empty(), "%s 계절 비어있음(어디서도 못 심음)" % cid)
 		for s in c["seasons"]:
 			assert(s in SEASON_IDS, "%s 계절 잘못됨: %s" % [cid, str(s)])
+		# plant_seasons(선택) = 심을 수 있는 계절. 없으면 seasons와 같다.
+		if c.has("plant_seasons"):
+			assert(not c["plant_seasons"].is_empty(), "%s plant_seasons 비어있음(어디서도 못 심음)" % cid)
+			for s in c["plant_seasons"]:
+				assert(s in SEASON_IDS, "%s plant_seasons 잘못됨: %s" % [cid, str(s)])
 		# color(성장 단계 색)는 선택 필드 — 있으면 [r,g,b] 0..1. 없으면 런타임 기본값.
 		var col: Array = c.get("color", [])
 		assert(col.is_empty() or col.size() == 3, "%s color = [r,g,b] 아님" % cid)
@@ -101,8 +118,13 @@ func _validate() -> void:
 			assert(is_collectible(iid), "%s 재료 %s 없는 아이템(또는 요리)" % [rid, iid])
 			assert(int(r["ingredients"][iid]) > 0, "%s 재료 %s 수량 0 이하" % [rid, iid])
 	# 아이템 ID 전역 유일성: crop/seed/fish/forage/dish 충돌시 조회가 조용히 가려짐 (Codex)
+	# 씨앗이 곧 산출물인 항목은 새 id를 만들지 않으므로 여기서 뺀다(자기 자신과 충돌 판정된다).
+	var seed_only := []
+	for cid in crops:
+		if String(crops[cid]["seed_id"]) != crop_yield(cid):
+			seed_only.append(crops[cid]["seed_id"])
 	var ids := {}
-	for key in crops.keys() + _seed_to_crop.keys() + fish.keys() + forage.keys() + recipes.keys():
+	for key in crops.keys() + seed_only + fish.keys() + forage.keys() + recipes.keys():
 		assert(not ids.has(key), "아이템 ID 충돌: " + key)
 		ids[key] = true
 	# NPC 선물 목록의 아이템 ID 참조 무결성 (통합 검사)
@@ -160,8 +182,20 @@ func is_produce(item_id: String) -> bool:
 	return is_collectible(item_id) or recipes.has(item_id)
 
 # 도감 대상 = 자연 산출물만. 요리는 만든 것이라 도감에 넣지 않는다(수집 진도율 왜곡 방지).
+# 산출물이 따로 있는 재배 항목(채집물 재배)도 제외: 그건 아이템이 아니라 "기르는 법"이고
+# 실제 아이템은 그 채집물 쪽이다 — 넣으면 도감·판매·선물이 두 갈래로 갈린다.
 func is_collectible(item_id: String) -> bool:
-	return crops.has(item_id) or fish.has(item_id) or forage.has(item_id)
+	return (crops.has(item_id) and crop_yield(item_id) == item_id) or fish.has(item_id) or forage.has(item_id)
+
+# 재배 산출물 id. 없으면 작물 id 자신(씨앗을 사서 심는 기존 작물).
+# 주운 채집물을 그대로 심는 항목은 **그 채집물 아이템**을 맺는다 — 기른 것과 주운 것이 같은
+# 아이템이라야 요리 재료·선물 취향·도감이 한 갈래로 남는다(설계 §2-2).
+func crop_yield(crop_id: String) -> String:
+	return String(crops.get(crop_id, {}).get("yield_id", crop_id))
+
+# 다년생 = 계절 경계에서 뽑히지 않는다. 그게 다년생의 정의다 — 제철이 아니면 휴면할 뿐 죽지 않는다.
+func crop_perennial(crop_id: String) -> bool:
+	return bool(crops.get(crop_id, {}).get("perennial", false))
 
 # 가중치·시간대·낚시터 반영 물고기 선택 (순수 함수, test_core 단위검증).
 # defs=fish 정의 맵, pool=계절 통과 fish_id 목록, rng_value∈[0,1), hour=현재 시(0..23),
@@ -209,23 +243,34 @@ func season_filter(source: Dictionary, sid: String) -> Array:
 func crop_from_seed(seed_id: String) -> String:
 	return _seed_to_crop.get(seed_id, "")
 
-# 그 계절에 심을 수 있는 작물인가 — 상점 재고·심기 차단·계절 고사가 전부 이 한 판정을 쓴다.
+# 그 계절에 **열매가 맺히는가**. 계절 고사·휴면·수확 가능 판정이 이 한 판정을 쓴다.
+# (다년생 도입 전에는 "심을 수 있는 계절"과 같은 뜻이었다 — 이제 crop_plantable로 갈렸다.)
 func crop_in_season(crop_id: String, sid: String) -> bool:
 	return sid in crops.get(crop_id, {}).get("seasons", [])
 
-# 그 계절 상점 재고(= 심을 수 있는 씨앗). 정렬은 all_seed_ids 순서 단일 출처라
-# 상점·Q순환·가방 패널의 순서가 어긋날 수 없다. 겨울은 빈 배열(설계: 낚시·채집의 계절).
+# 그 계절에 **심을 수 있는가**. 겨울에 열리는 다년생은 가을에만 심는다(겨울 파종은 설계상 없다)
+# — 그런 항목만 plant_seasons를 적고, 없으면 seasons와 같다.
+func crop_plantable(crop_id: String, sid: String) -> bool:
+	var c: Dictionary = crops.get(crop_id, {})
+	return sid in c.get("plant_seasons", c.get("seasons", []))
+
+# 그 계절 상점 재고. 정렬은 all_seed_ids 순서 단일 출처라 상점·Q순환·가방 패널의 순서가
+# 어긋날 수 없다. 겨울은 빈 배열(설계: 파종 없는 계절 = 낚시·채집의 계절).
+# 씨앗이 곧 산출물인 항목(주운 채집물을 그대로 심는다)은 재고에서 뺀다: 씨앗값에 사서
+# 산출물로 되팔면 무한 골드가 되고, 애초에 채집이 그 공급원이라는 설계다.
 func season_seed_ids(sid: String) -> Array:
 	var out := []
 	for seed_id in all_seed_ids():
-		if crop_in_season(_seed_to_crop[seed_id], sid):
+		if crop_plantable(_seed_to_crop[seed_id], sid) and not is_collectible(seed_id):
 			out.append(seed_id)
 	return out
 
+# 재배 항목을 물어봐도 산출물 값으로 답한다(값을 두 번 적지 않는다).
 func sell_price(item_id: String) -> int:
+	var y := crop_yield(item_id)
 	for src in [crops, fish, forage, recipes]:
-		if src.has(item_id):
-			return int(src[item_id].get("sell_price", 0))
+		if src.has(y):
+			return int(src[y].get("sell_price", 0))
 	return 0
 
 func seed_cost(seed_id: String) -> int:
@@ -244,9 +289,10 @@ func all_seed_ids() -> Array:
 func display_name(item_id: String) -> String:
 	if item_id == RING_ID:
 		return RING_NAME
+	var y := crop_yield(item_id)  # 재배 항목은 이름도 산출물 것 — 두 번 적으면 갈린다
 	for src in [crops, fish, forage, recipes]:
-		if src.has(item_id):
-			return src[item_id].get("name", item_id)
+		if src.has(y):
+			return src[y].get("name", y)
 	return item_id
 
 func season_id(idx: int) -> String:

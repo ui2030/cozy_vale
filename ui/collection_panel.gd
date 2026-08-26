@@ -47,19 +47,25 @@ func _rebuild() -> void:
 	_section("채집물", GameData.forage, col)
 
 func _section(title: String, source: Dictionary, col: Array) -> void:
-	var found := 0
+	# 아이템인 것만 센다 — 산출물이 따로 있는 재배 항목(채집물 재배)은 도감 슬롯이 아니다.
+	# 넣으면 영영 못 채우는 "???"가 생겨 진도율이 고장난다.
+	var ids := []
 	for id in source:
+		if GameData.is_collectible(id):
+			ids.append(id)
+	var found := 0
+	for id in ids:
 		if id in col:
 			found += 1
 	var head := Label.new()
 	head.add_theme_font_size_override("font_size", 18)
-	head.text = "%s  (%d/%d)" % [title, found, source.size()]
+	head.text = "%s  (%d/%d)" % [title, found, ids.size()]
 	_list.add_child(head)
 	var grid := GridContainer.new()
 	grid.columns = 3
 	grid.add_theme_constant_override("h_separation", 6)
 	grid.add_theme_constant_override("v_separation", 4)
-	for id in source:
+	for id in ids:
 		var cell := Label.new()
 		cell.add_theme_font_size_override("font_size", 15)
 		cell.custom_minimum_size = Vector2(110, 26)
