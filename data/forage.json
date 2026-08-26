@@ -1,35 +1,35 @@
 {
 	"forage.dandelion": {
 		"name": "Dandelion", "seasons": ["spring"], "sell_price": 20,
-		"color": "#bf9615"
+		"shape": "leaf_bloom", "color": "#bf9615"
 	},
 	"forage.leek": {
 		"name": "Leek", "seasons": ["spring"], "sell_price": 35,
-		"color": "#8fbf6a"
+		"shape": "leaf_blade", "color": "#8fbf6a"
 	},
 	"forage.horseradish": {
 		"name": "Horseradish", "seasons": ["spring"], "sell_price": 30,
-		"color": "#bfb08c"
+		"shape": "leaf_root", "color": "#bfb08c"
 	},
 	"forage.morel": {
 		"name": "Morel", "seasons": ["spring"], "sell_price": 90, "rare": true,
-		"color": "#b05c3a"
+		"shape": "mushroom_cone", "color": "#b05c3a"
 	},
 	"forage.lavender": {
 		"name": "Wild Lavender", "seasons": ["summer"], "sell_price": 55,
-		"color": "#7a5ebf"
+		"shape": "floret_spike", "color": "#7a5ebf"
 	},
 	"forage.mint": {
 		"name": "Wild Mint", "seasons": ["summer"], "sell_price": 30,
-		"color": "#4fbf8f"
+		"shape": "leaf_bush", "color": "#4fbf8f"
 	},
 	"forage.blueberry": {
 		"name": "Blueberry", "seasons": ["summer"], "sell_price": 45,
-		"color": "#3f6fbf"
+		"shape": "berry_bunch", "color": "#3f6fbf"
 	},
 	"forage.red_mushroom": {
 		"name": "Red Mushroom", "seasons": ["summer"], "sell_price": 90, "rare": true,
-		"color": "#bf2f2f"
+		"shape": "mushroom_dome", "color": "#bf2f2f"
 	},
 	"forage.wild_apple": {
 		"name": "Wild Apple", "seasons": ["autumn"], "sell_price": 55,
@@ -37,19 +37,19 @@
 	},
 	"forage.chestnut": {
 		"name": "Chestnut", "seasons": ["autumn"], "sell_price": 40,
-		"color": "#6b4a2a"
+		"shape": "nut_round", "color": "#6b4a2a"
 	},
 	"forage.blackberry": {
 		"name": "Blackberry", "seasons": ["autumn"], "sell_price": 35,
-		"color": "#5c3a72"
+		"shape": "berry_drupe", "color": "#5c3a72"
 	},
 	"forage.chanterelle": {
 		"name": "Chanterelle", "seasons": ["autumn"], "sell_price": 100, "rare": true,
-		"color": "#bf9f5f"
+		"shape": "mushroom_flare", "color": "#bf9f5f"
 	},
 	"forage.winter_root": {
 		"name": "Winter Root", "seasons": ["winter"], "sell_price": 40,
-		"color": "#bf7a2e"
+		"shape": "leaf_root", "color": "#bf7a2e"
 	},
 	"forage.snow_berry": {
 		"name": "Snow Berry", "seasons": ["winter"], "sell_price": 50,
@@ -57,10 +57,10 @@
 	},
 	"forage.holly": {
 		"name": "Holly Berry", "seasons": ["winter"], "sell_price": 45,
-		"color": "#a82f28"
+		"shape": "leaf_sprig", "color": "#a82f28"
 	},
 	"forage.pine_nut": {
 		"name": "Pine Nut", "seasons": ["winter"], "sell_price": 55,
-		"color": "#8c6a3f"
+		"shape": "nut_cone", "color": "#8c6a3f"
 	}
 }

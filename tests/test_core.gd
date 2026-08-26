@@ -1106,6 +1106,13 @@ func _test_forage_look() -> void:
 			var D2 := preload("res://world/decor.gd")
 			assert(not full.begins_with(D2.TT_PARK), "%s — 파크 킷은 데코 배경 어휘다: %s" % [fid, mp])
 			assert(not D2.FLORA_SCALE.has(parts[1]), "%s — 데코가 흩뿌리는 종과 같은 메시: %s" % [fid, mp])
+		# ── 구체 폴백 금지. 이 작업의 핵심 계약이다: 16종 중 14종이 형태 미지정이라 조용히 색
+		# 구체로 떨어져 있었다(주우러 다니는 대상이 떠 있는 공). 새 종을 넣고 형태를 안 줘도
+		# 같은 일이 다시 조용히 벌어지므로 데이터 쪽에서 막는다.
+		var shp := String(d.get("shape", ""))
+		assert(mp != "" or shp != "", "%s — 겉모습 형태 미지정: 킷 mesh도 절차 shape도 없다 = 색 구체로 떨어진다" % fid)
+		if shp != "":
+			assert(FS.SHAPES.has(shp), "%s — 모르는 절차 원형: %s" % [fid, shp])
 		# 종끼리 색이 붙어 있으면 구분이 안 된다 — 어느 한 채널이라도 0.08은 벌어져야
 		for prev in seen:
 			var p: Color = seen[prev]
@@ -1154,8 +1161,68 @@ func _test_forage_look() -> void:
 				% [fid3, GameData.season_id(sea2), GameClock.DAYS_PER_SEASON])
 	fs2.free()
 
-# 스폰된 채집물 노드가 화면에 내는 색. 구체는 material_override의 albedo, 킷 메시는 surface
-# override의 char_tint(아틀라스 곱)다 — 두 경로 중 먼저 잡히는 것.
+	# ── 실경로 실측: _look()이 종마다 **실제로 만드는 노드를 자로 잰다** ────────────
+	# 위 블록들은 json을 읽거나 색만 본다 = 형태 배선이 통째로 끊겨도 통과한다. 어제 세 번
+	# 겪은 구멍(02b11cd·99e89ac·e1c0540)이 정확히 이 모양이었다 — 인자 사본을 재거나 통로만
+	# 모아 놓고 값을 안 재면 프로덕션이 되돌아가도 핀이 안 문다. 여기선 프로덕션 _look을 부른다.
+	var TC := preload("res://common/toon_character.gd")
+	var fs3: Node = preload("res://forage/forage_system.gd").new()
+	var proc_w := []   # 절차 원형의 폭 — 실루엣이 갈리는지 재는 축
+	var forms := {}
+	for fid4 in GameData.forage:
+		var d4: Dictionary = GameData.forage[fid4]
+		var nd: Node3D = fs3._look(fid4, d4.get("rare", false))
+		# 색 구체 폴백을 탔는가. 절차 원형은 SurfaceTool로 구운 ArrayMesh라 SphereMesh가 아니다.
+		assert(not (nd is MeshInstance3D and (nd as MeshInstance3D).mesh is SphereMesh),
+			"%s — 색 구체 폴백을 탔다: 형태 지정이 실경로에 안 닿는다" % fid4)
+		var ab := TC.aabb_of(nd)
+		# 접지: 밑동이 y=0. 구체 시절엔 중심 피벗이라 띄워 놨는데, 킷·절차는 바닥 기준이다.
+		# 킷 포도 송이가 원점 아래로 0.069 늘어져 땅에 묻혀 있었다(실측) — 그 회귀를 여기서 문다.
+		assert(absf(ab.position.y) <= 0.02, "%s — 밑동이 지면에서 %+.3f (묻히거나 떴다)" % [fid4, ab.position.y])
+		# 전고는 LOOK_H 대역. 벗어나면 줍는 반경(0.9)과의 관계가 깨지고 원거리 가독도 흔들린다.
+		assert(ab.size.y >= 0.34 and ab.size.y <= 0.52,
+			"%s — 전고 %.3f가 LOOK_H(%.2f) 대역 밖" % [fid4, ab.size.y, FS.LOOK_H])
+		assert(maxf(ab.size.x, ab.size.z) <= 0.80, "%s — 폭 %.3f: 줍는 반경만큼 퍼졌다" % [fid4, maxf(ab.size.x, ab.size.z)])
+		var shp4 := String(d4.get("shape", ""))
+		if shp4 != "":
+			proc_w.append(maxf(ab.size.x, ab.size.z))
+			forms[String(FS.SHAPES[shp4][0])] = true
+		nd.free()
+	# 원형끼리 실루엣이 갈리는가. 전고는 다 같은 대역이니 **폭**이 가르는 축이다.
+	# 실측(2026-08-26): 0.130(이삭)~0.386(낮고 퍼진 잎다발) = 2.97배.
+	proc_w.sort()
+	assert(proc_w.size() >= 12, "절차 원형을 쓰는 종이 %d개뿐 — 나머지는 아직 구체다" % proc_w.size())
+	assert(proc_w[-1] / proc_w[0] >= 1.8,
+		"채집물 폭이 %.2f배밖에 안 갈린다 = 색만 다른 같은 실루엣" % (proc_w[-1] / proc_w[0]))
+	assert(forms.size() >= 4, "형태 계열이 %d종뿐 — 14종이 한두 실루엣으로 뭉친다" % forms.size())
+	# 원형 표에 사본이 있으면 두 종이 "색만 다른 같은 물건"이 된다
+	var sk: Array = FS.SHAPES.keys()
+	for i in sk.size():
+		for j in range(i + 1, sk.size()):
+			assert(FS.SHAPES[sk[i]] != FS.SHAPES[sk[j]], "형태 원형 %s와 %s가 같은 파라미터" % [sk[i], sk[j]])
+	# 메시 캐시: 한 종이 여러 지점에 스폰돼도 메시는 한 장 (decor._flora_cache 규약)
+	var any_shape := ""
+	for fid5 in GameData.forage:
+		if GameData.forage[fid5].has("shape"):
+			any_shape = fid5
+			break
+	var c1: Node3D = fs3._look(any_shape, false)
+	var c2: Node3D = fs3._look(any_shape, false)
+	assert((c1 as MeshInstance3D).mesh == (c2 as MeshInstance3D).mesh,
+		"%s — 스폰마다 형태 메시를 새로 깎는다(종당 1장 캐시 계약)" % any_shape)
+	c1.free()
+	c2.free()
+	fs3.free()
+	# 형태 배정이 **데이터에서** 오는가. 엔진에 종 이름이 박히면 종이 늘 때마다 엔진을 고치게 되고
+	# 그게 이 저장소의 단일 출처 규약이 무너지는 지점이다(color·mesh가 이미 그 규약을 지킨다).
+	var src := FileAccess.get_file_as_string("res://forage/forage_system.gd")
+	for fid6 in GameData.forage:
+		var bare: String = fid6.get_slice(".", 1)
+		assert(not src.contains(bare), "forage_system.gd에 종 이름이 하드코딩됐다: %s" % bare)
+
+# 스폰된 채집물 노드가 화면에 내는 색. 세 경로다 — 구체는 material_override의 albedo,
+# 킷 메시는 surface override의 char_tint(아틀라스 곱), 절차 원형은 **메시 표면 0**에 구운
+# albedo(표면 1은 곁들이 고정색이라 종 색이 아니다). 먼저 잡히는 것.
 func _look_color(node: Node) -> Color:
 	if node is MeshInstance3D:
 		var mi := node as MeshInstance3D
@@ -1166,6 +1233,10 @@ func _look_color(node: Node) -> Color:
 			var sm := mi.get_surface_override_material(i) as ShaderMaterial
 			if sm != null:
 				return sm.get_shader_parameter("char_tint")
+		if mi.mesh != null and mi.mesh.get_surface_count() > 0:
+			var pm := mi.mesh.surface_get_material(0) as ShaderMaterial
+			if pm != null:
+				return pm.get_shader_parameter("albedo")
 	for c in node.get_children():
 		var r := _look_color(c)
 		if r != Color.BLACK:
