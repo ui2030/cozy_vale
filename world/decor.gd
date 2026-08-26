@@ -804,6 +804,12 @@ const LEAF_TINT := Color(0.700, 0.438, 0.262)
 const LEAF_SAT := 0.14
 const LEAF_GAIN := 1.55
 
+# 바닥 낙엽 사본 한 벌 — 채도를 지우고(sat) 낙엽색을 tint로 주는 순서는 단풍 사본과 같다.
+# **_place_leaf_litter와 test_core가 같이 부르는 유일한 통로다.** 인자를 테스트에 복사해 두면
+# 여기 처방이 되돌아가도 핀이 안 문다(tree_slots와 같은 이유 — 02b11cd·99e89ac에서 두 번 겪었다).
+func leaf_litter_mesh() -> Mesh:
+	return _kit_mesh("flower_A", LEAF_GAIN, LEAF_SAT, LEAF_TINT)
+
 # rng는 **전용 고정 시드**다. 공용 스트림에 끼어들면 그 뒤에 뽑히는 나무·강변 바위·소품 자리가
 # 통째로 밀린다(_lavender_rows·_place_forest 원경 띠가 같은 이유로 전용 시드를 쓴다 — 실증).
 func _place_leaf_litter() -> void:
@@ -822,7 +828,7 @@ func _place_leaf_litter() -> void:
 			t = t.rotated(Vector3.UP, rng.randf() * TAU)
 			t.origin = Vector3(p.x, GROUND_Y, p.y)
 			xf.append(t)
-	_multimesh(_kit_mesh("flower_A", LEAF_GAIN, LEAF_SAT, LEAF_TINT), xf, LEAF_MM)
+	_multimesh(leaf_litter_mesh(), xf, LEAF_MM)
 
 # 한 자리에 3~6포기를 뭉쳐 심는다 — 낱개로 흩뿌리면 "잡초 노이즈"로 보이고 화단으로 안 읽힌다.
 func _add_flora(buckets: Dictionary, at: Vector2, rng: RandomNumberGenerator, kinds: Array) -> void:

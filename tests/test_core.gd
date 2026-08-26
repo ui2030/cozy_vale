@@ -1499,7 +1499,8 @@ func _test_autumn_veg_look() -> void:
 	var tree_s: Mesh = slots[D.tree_variant_index("Forest_tree", D.SUMMER)]
 	var tree_a: Mesh = slots[D.tree_variant_index("Forest_tree", D.AUTUMN)]
 	var tree_w: Mesh = slots[D.tree_variant_index("Forest_tree", D.WINTER)]
-	var litter: Mesh = dec._kit_mesh("flower_A", D.LEAF_GAIN, D.LEAF_SAT, D.LEAF_TINT)
+	# 낙엽 사본도 _place_leaf_litter가 실제로 부르는 함수에서 받는다(나무 슬롯과 같은 이유).
+	var litter: Mesh = dec.leaf_litter_mesh()
 	var bush: Mesh = dec._flora_mesh("bush")
 	var grass: Mesh = dec._flora_mesh("grass_A")
 	assert(tree_s != null and tree_a != null and litter != null and bush != null, "킷 메시 로드 실패 — 에셋 경로 확인")
@@ -1553,6 +1554,10 @@ func _test_autumn_veg_look() -> void:
 	var fmsg := " (정오 화면: 덤불 %s · 풀 %s · 수관 %s · 낙엽 %s · 지면 %s / 여름 덤불 %s)" \
 		% [_px(s_bush), _px(s_grass), _px(s_canopy), _px(s_litter), _px(s_ground), _px(s_summer)]
 	print("autumn flora screen:" + fmsg)
+	# 낙엽은 **화면에서** 갈색이어야 한다. 위 LEAF_TINT 상수 서열 핀은 상수만 보므로 프로덕션이
+	# 색조를 잃어도(예: KIT_TINT) 안 문다 — 실측 R−B는 승인점 0.573 vs 색조 소실판 0.043이라
+	# 0.25가 둘을 가른다. 색조를 잃으면 바닥이 흰 데이지 밭으로 남는다.
+	assert(s_litter.r - s_litter.b >= 0.25, "낙엽이 갈색이 아니다 — 색조가 소실돼 바닥에 흰 꽃이 깔린다" + fmsg)
 	# 가을 화면엔 이미 주황·노랑이 넷이다 — 덤불까지 그 계열로 밀면 한 색으로 뭉개져 깊이가 죽는다.
 	# 승인점 실측 최소는 덤불↔수관 0.265라 0.20이 승인점을 통과시키고 "지면에 붙는" 판을 걸러낸다
 	# (색조를 KIT_TINT로 되돌린 판의 덤불↔지면 = 0.171).
