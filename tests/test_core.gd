@@ -50,6 +50,7 @@ func _ready() -> void:
 	_test_ui_panel_skin()
 	_test_winter_pass()
 	_test_winter_veg_look()
+	_test_autumn_veg_look()
 	_test_collection_roundtrip()
 	_test_daynight()
 	_test_ambience_curve()
@@ -1477,7 +1478,97 @@ func _test_winter_veg_look() -> void:
 	assert(t_win.g > t_sum.g * 1.25, "서리 수관이 어둡다 — 눈 덮인 나무가 아니라 바위로 읽힌다" + msg)
 	assert(t_win.g > g_win.g * 1.25, "수관·지피 서리 밝기 목표가 갈리지 않았다" + msg)
 
-# toon.gdshader fragment의 albedo 경로를 선형공간에서 그대로 계산한다(채도 상한 → 밝기 곱 → char_tint).
+# ══ 가을 식생 룩 — **실제 경로**를 계산으로 검증 ═══════════════════════
+# 겨울(_test_winter_veg_look)과 같은 방식이다: 상수 서열이 아니라 decor가 실제로 만든 머티리얼로
+# 실물 아틀라스를 샘플링해 셰이더 경로를 그대로 계산한다. 여기서 보는 것은 셋이다.
+#   ① 나무: 단풍이 **잎 텍셀에만** 걸리는가(게이트). 죽으면 줄기가 다시 수관과 같은 주황이 된다.
+#   ② 지피: 덤불·풀만 가을 톤을 타고 꽃은 안 타는가(꽃에 걸리면 가을 화단이 덮여 사라진다).
+#   ③ 대비: 가을 4요소(수관·낙엽·지면·덤불)가 화면에서 서로 떨어져 있는가 = **단색 방지**.
+func _test_autumn_veg_look() -> void:
+	var W := preload("res://world/world.gd")
+	var D := preload("res://world/decor.gd")
+	var atlas := Image.load_from_file(D.TT_PARK + "tiny_treats_texture_1.png")
+	assert(atlas != null, "파크 킷 아틀라스를 못 읽음")
+	var dec: Node = D.new()
+	# 슬롯 사본은 decor의 _place_forest와 **같은 인자**로 뽑는다(겨울 테스트와 같은 전례).
+	var tree_s: Mesh = dec._kit_mesh("tree")
+	var tree_a: Mesh = dec._kit_mesh("tree", D.TREE_AUTUMN_GAIN, D.KIT_SAT_CAP, Color(0, 0, 0, 0), D.TREE_AUTUMN_EXTRA)
+	var tree_w: Mesh = dec._kit_mesh("tree", D.TREE_WINTER_GAIN, D.VEG_WINTER_SAT)
+	var litter: Mesh = dec._kit_mesh("flower_A", D.LEAF_GAIN, D.LEAF_SAT, D.LEAF_TINT)
+	var bush: Mesh = dec._flora_mesh("bush")
+	var grass: Mesh = dec._flora_mesh("grass_A")
+	assert(tree_s != null and tree_a != null and litter != null and bush != null, "킷 메시 로드 실패 — 에셋 경로 확인")
+	var aut: ShaderMaterial = dec._autumn_mat()
+	var m_s := tree_s.surface_get_material(0) as ShaderMaterial
+	var m_a := tree_a.surface_get_material(0) as ShaderMaterial
+	# ── 게이트 항등 규약: 켠 곳이 단풍 사본 **하나뿐**이어야 한다. 이 셰이더는 캐릭터·가구·킷
+	# 소품·겨울 서리가 전부 공유하므로, 게이트가 새면 마을 전체 색이 조용히 바뀐다.
+	# 기본값은 소스에서 직접 본다 — RenderingServer.shader_get_parameter_default는 --headless에서
+	# 셰이더가 컴파일되지 않아 null을 준다(실증).
+	for decl in ["uniform float green_gate = 0.0;", "uniform float leaf_sat : hint_range(0.0, 1.0) = 1.0;",
+			"uniform vec4 leaf_tint : source_color = vec4(1.0, 1.0, 1.0, 1.0);"]:
+		assert(ToonCharacter.TOON.code.contains(decl),
+			"게이트 uniform 기본값이 항등이 아니다 — 이 셰이더를 쓰는 전 오브젝트가 영향을 받는다: %s" % decl)
+	assert(m_s.get_shader_parameter("green_gate") == null, "여름 사본에 게이트가 샜다")
+	assert(tree_w.surface_get_material(0).get_shader_parameter("green_gate") == null, "겨울 사본에 게이트가 샜다")
+	assert(dec._frost_mat().get_shader_parameter("green_gate") == null, "서리 override에 게이트가 샜다")
+	assert(aut.get_shader_parameter("green_gate") == null, "지피 override엔 게이트가 불필요하다(덤불엔 수피가 없다)")
+	# ── ① 나무: 수피는 사계절 같은 색, 잎만 단풍 ──────────────────────
+	var bark_s := _kit_albedo(tree_s, atlas, m_s, -1, true)
+	var bark_a := _kit_albedo(tree_a, atlas, m_a, -1, true)
+	var leaf_s := _kit_albedo(tree_s, atlas, m_s, 1, true)
+	var leaf_a := _kit_albedo(tree_a, atlas, m_a, 1, true)
+	var tmsg := " (수피 여름 %s → 가을 %s / 잎 여름 %s → 가을 %s)" % [str(bark_s), str(bark_a), str(leaf_s), str(leaf_a)]
+	print("autumn tree albedo(lin):" + tmsg)   # assert보다 먼저 — 실패해도 실측값이 로그에 남는다
+	assert(leaf_s.g > leaf_s.r, "여름 잎이 초록이 아니다 — 게이트 판정이 잎을 잘못 골랐다" + tmsg)
+	assert(leaf_a.r > leaf_a.g and leaf_a.g > leaf_a.b, "단풍 잎이 주황(R>G>B)이 아니다" + tmsg)
+	# 수피는 val_gain 차이(1.90/1.85 = 1.027)만 타야 한다. 게이트가 죽으면 여기서 걸린다 —
+	# 게이트 없던 판의 실측 비는 (1.25, 0.82, 0.38)이었다(= 줄기가 통째로 주황).
+	for ch in 3:
+		var r: float = bark_a[ch] / maxf(bark_s[ch], 1e-4)
+		assert(r >= 1.00 and r <= 1.06, "가을 수피가 여름 수피에서 벗어났다 — 단풍이 줄기까지 물든다" + tmsg)
+	# ── ② 지피 술어: 덤불·풀만, 꽃은 사계절 제외, 겨울은 서리가 이긴다 ──
+	for nm in ["Flora_bush", "Flora_bush_large", "Flora_grass_A", "Flora_grass_B"]:
+		assert(D.flora_autumn(nm, 2), "%s 가을에 톤이 안 걸린다" % nm)
+		for s in [0, 1, 3]:
+			assert(not D.flora_autumn(nm, s), "%s 계절 %d에 가을 톤이 걸린다" % [nm, s])
+		assert(D.flora_frosted(nm, 3) and not D.flora_autumn(nm, 3), "%s 겨울엔 서리가 이겨야 한다" % nm)
+	for nm in ["Flora_flower_A", "Flora_flower_A~white", "Flora_flower_A~pink", "Flora_flower_A~lavender", "Flora_flower_B"]:
+		for s in 4:
+			assert(not D.flora_autumn(nm, s), "%s 꽃에 override가 걸리면 가을 화단이 덮여 사라진다" % nm)
+	assert(not D.flora_autumn("Forest_tree", 2), "나무는 flora 규칙 밖(메시 스왑 경로)")
+	# ── ③ 대비: 가을 4요소가 화면에서 서로 떨어져 있는가 ──────────────
+	var s_bush := _noon_screen(_kit_albedo(bush, atlas, aut, 0, true))
+	var s_grass := _noon_screen(_kit_albedo(grass, atlas, aut, 0, true))
+	var s_summer := _noon_screen(_kit_albedo(bush, atlas, bush.surface_get_material(0) as ShaderMaterial, 0, true))
+	var s_canopy := _noon_screen(leaf_a)
+	var s_litter := _noon_screen(_kit_albedo(litter, atlas, litter.surface_get_material(0) as ShaderMaterial, 0, true))
+	var s_ground := _noon_screen(W.C_GRASS_A.srgb_to_linear())
+	dec.free()
+	var fmsg := " (정오 화면: 덤불 %s · 풀 %s · 수관 %s · 낙엽 %s · 지면 %s / 여름 덤불 %s)" \
+		% [_px(s_bush), _px(s_grass), _px(s_canopy), _px(s_litter), _px(s_ground), _px(s_summer)]
+	print("autumn flora screen:" + fmsg)
+	# 가을 화면엔 이미 주황·노랑이 넷이다 — 덤불까지 그 계열로 밀면 한 색으로 뭉개져 깊이가 죽는다.
+	# 승인점 실측 최소는 덤불↔수관 0.265라 0.20이 승인점을 통과시키고 "지면에 붙는" 판을 걸러낸다
+	# (색조를 KIT_TINT로 되돌린 판의 덤불↔지면 = 0.171).
+	# 수관↔낙엽(0.082)은 일부러 붙여 둔 승인된 쌍이라 여기서 재지 않는다.
+	for p in [[s_bush, "덤불"], [s_grass, "풀"]]:
+		for q in [[s_canopy, "수관"], [s_litter, "낙엽"], [s_ground, "지면"]]:
+			assert(_cdist(p[0], q[0]) >= 0.20, "가을 %s과 %s이 화면에서 붙었다 — 계절이 단색으로 뭉갠다%s" % [p[1], q[1], fmsg])
+	# "단풍든 덤불"이 아니라 "물기가 빠진 덤불"이다 — 초록기가 여름의 절반 아래로 내려가야 한다.
+	# 덤불 tint를 원색으로 되돌리면 정확히 이 핀이 걸린다.
+	var g_aut := s_bush.g - maxf(s_bush.r, s_bush.b)
+	var g_sum := s_summer.g - maxf(s_summer.r, s_summer.b)
+	assert(g_aut < g_sum * 0.5, "가을 덤불이 여전히 원색 초록이다 (초록기 %.3f / 여름 %.3f)%s" % [g_aut, g_sum, fmsg])
+	# 지면보다 한 단 진해야 중경 실루엣이 남는다(겨울 서리 풀과 같은 이유).
+	assert(s_bush.v < s_ground.v * 0.90, "가을 덤불이 지면에 묻힌다" + fmsg)
+	assert(maxf(D.FLORA_AUTUMN_TINT.r, maxf(D.FLORA_AUTUMN_TINT.g, D.FLORA_AUTUMN_TINT.b)) <= 0.75,
+		"가을 지피 색조가 정오 클리핑 상한 0.75를 넘는다: %s" % str(D.FLORA_AUTUMN_TINT))
+
+func _px(c: Color) -> String:
+	return "(%d,%d,%d)" % [roundi(c.r * 255), roundi(c.g * 255), roundi(c.b * 255)]
+
+# toon.gdshader grade()를 선형공간에서 그대로 계산한다(채도 상한 → 밝기 곱 → tint).
 func _toon_albedo(src: Color, sat: float, gain: float, tint: Color) -> Color:
 	var mx := maxf(src.r, maxf(src.g, src.b))
 	if sat < 1.0:
@@ -1489,10 +1580,25 @@ func _toon_albedo(src: Color, sat: float, gain: float, tint: Color) -> Color:
 
 # 메시가 실제로 참조하는 아틀라스 텍셀들의 평균 albedo(선형). 킷 UV는 팔레트 패치를 찍으므로
 # 정점 UV 평균이 그 종의 대표색이 된다.
-func _kit_albedo(mesh: Mesh, atlas: Image, m: ShaderMaterial) -> Color:
+# only: 0 = 전 텍셀 / +1 = 잎(초록) 텍셀만 / −1 = 그 밖(수피) 텍셀만. 킷 나무는 표면이 한 장이라
+# 수관·수피를 갈라 재려면 셰이더 게이트와 **같은 판정**을 여기서도 써야 한다.
+# lin: 색조를 선형으로 환산해 곱한다 = **셰이더가 실제로 하는 일**(source_color uniform은 업로드
+# 때 srgb_to_linear를 탄다). 실측 대조 — lin=true 가을 덤불 (153,173,87) vs 스크린샷 (156,181,60),
+# lin=false는 (201,225,156)로 한참 밝다. 그러니 절대 화면색을 재는 가을 대비 핀은 true를 쓴다.
+# ponytail: 기본값을 false로 남긴 건 _test_winter_veg_look의 승인 대역([1.05,1.20] 등)이 옛
+# 근사값에 맞춰 튜닝돼 있어서다 — 그 테스트는 같은 모델 안의 **비율**만 보므로 뜻은 안 상한다.
+# 겨울 룩을 다시 만질 일이 생기면 그때 대역을 lin=true 기준(2.15 → 1.026)으로 옮기고 이 인자를 지운다.
+func _kit_albedo(mesh: Mesh, atlas: Image, m: ShaderMaterial, only := 0, lin := false) -> Color:
 	var sat: float = m.get_shader_parameter("sat_cap")
 	var gain: float = m.get_shader_parameter("val_gain")
 	var tint: Color = m.get_shader_parameter("char_tint")
+	var gv = m.get_shader_parameter("green_gate")
+	var gate: float = 0.0 if gv == null else float(gv)
+	var lsat: float = 1.0 if gate <= 0.0 else float(m.get_shader_parameter("leaf_sat"))
+	var ltint: Color = Color.WHITE if gate <= 0.0 else m.get_shader_parameter("leaf_tint") as Color
+	if lin:
+		tint = tint.srgb_to_linear()
+		ltint = ltint.srgb_to_linear()
 	var acc := Color(0, 0, 0)
 	var n := 0
 	for s in mesh.get_surface_count():
@@ -1500,10 +1606,21 @@ func _kit_albedo(mesh: Mesh, atlas: Image, m: ShaderMaterial) -> Color:
 		for uv in uvs:
 			var px := atlas.get_pixel(
 				clampi(int(uv.x * atlas.get_width()), 0, atlas.get_width() - 1),
-				clampi(int(uv.y * atlas.get_height()), 0, atlas.get_height() - 1))
-			acc += _toon_albedo(px.srgb_to_linear(), sat, gain, tint)
+				clampi(int(uv.y * atlas.get_height()), 0, atlas.get_height() - 1)).srgb_to_linear()
+			var grn := px.g - maxf(px.r, px.b)
+			if (only > 0 and grn <= 0.0) or (only < 0 and grn > 0.0):
+				continue
+			var base := _toon_albedo(px, sat, gain, tint)
+			if gate > 0.0:
+				base = base.lerp(_toon_albedo(px, lsat, gain, ltint),
+					smoothstep(gate - 0.05, gate + 0.05, grn))
+			acc += base
 			n += 1
 	return acc / maxf(n, 1)
+
+# 선형 albedo → 정오 수평면 화면색(sRGB). 이 저장소의 실측 환산 계수는 ×1.90이다.
+func _noon_screen(alb: Color) -> Color:
+	return Color(minf(alb.r * 1.90, 1.0), minf(alb.g * 1.90, 1.0), minf(alb.b * 1.90, 1.0)).linear_to_srgb()
 
 # 채집 배치 스냅샷 [위치, forage_id] — _clear()가 queue_free 하므로 다음 _respawn 전에 뜬다.
 func _forage_snapshot(fs: Node) -> Array:

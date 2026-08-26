@@ -200,24 +200,47 @@ const FLORA_WINTER_GAIN := 2.15  # 지피 목표 = 옛 C_FROST 화면값 (166,16
 # 서리 풀은 청록이 아니라 **마른 풀**이어야 한다(옛 C_FROST 주석: B>R 청록은 "유리조각"으로 읽혔다).
 # KIT_TINT × C_FROST를 최대 채널로 정규화한 비율 = 명도 천장은 그대로, 색상만 R>G>B로 돌린다.
 const FLORA_WINTER_TINT := Color(0.760, 0.711, 0.608)
-# ── 가을 단풍 (겨울 서리와 **같은 처방**: 채도를 지우고 → 밝히고 → char_tint로 색을 준다) ──
+# ── 가을 단풍 (겨울 서리와 **같은 처방**: 채도를 지우고 → 밝히고 → 색을 준다. 단 **잎만**) ──
 # 킷 잎 텍셀은 초록이다(실측 sRGB (0.294,0.639,0.373)). 여기에 주황을 곱하기만 해서는 단풍이
 # 안 된다: R을 G 위로 올리려면 R/G 비를 3배 넘게 밀어야 하는데, 그 배율이면 G가 셰이더의
 # min(src*gain, 1.0)에 잘려 잎 텍셀이 전부 같은 값으로 붙는다 = 잎 결이 통째로 날아간 통짜(계산).
-# 그래서 서리 사본과 같은 순서로 간다 — sat_cap으로 잎을 거의 무채색 중간톤(실측 (0.584,0.629,0.593))
-# 으로 만든 뒤 char_tint로 단풍색을 입힌다. 잎 결은 텍셀별 **명도차**로 남는다(잎 텍셀 최대채널
+# 그래서 서리 사본과 같은 순서로 간다 — 채도 상한으로 잎을 거의 무채색 중간톤(실측 (0.584,0.629,0.593))
+# 으로 만든 뒤 색조를 입힌다. 잎 결은 텍셀별 **명도차**로 남는다(잎 텍셀 최대채널
 # 0.549~0.733 = 1.9배 폭이 그대로 살아있다).
-# sat_cap을 겨울(0.06)까지 지우면 수피까지 같은 주황 한 덩어리가 된다 — 0.18은 수피의 붉은기를
-# 남겨 수관 (0.634,0.454,0.253)과 줄기 (0.737,0.457,0.264)가 화면에서 명도로 갈린다.
-# ponytail: 킷 나무는 **표면이 하나**라(수관·수피가 같은 머티리얼) 줄기도 같이 주황으로 물든다.
-# 겨울 서리 사본이 이미 같은 거래를 하고 있고(전 그루가 흰색) 게임 카메라 거리에선 줄기가
-# 가늘어 읽히지 않는다. 근경에서 거슬리면 UV 영역으로 표면을 갈라(수관/수피) 수관에만 tint를
-# 거는 게 다음 단계다 — ArrayMesh 재구성이 필요해서 지금은 안 한다.
+# 표면이 하나라 예전엔 줄기까지 같이 주황으로 물들었다(스크린샷 실측 autumn_fix/before_forest_h12:
+# 줄기 (218,117,58) vs 수관 (181,105,47) = 같은 주황 막대. 고친 뒤 줄기 (202,134,103) = 여름 줄기
+# (189,138,110)과 같은 자리, 수관은 (180,105,47)로 무변경).
+# ArrayMesh를 가르는 대신 셰이더가 **색으로** 가른다(toon.gdshader green_gate) — 단풍 사본은
+# sat_cap·char_tint를 **킷 기본값 그대로** 두고(= 줄기가 사계절 같은 색), 잎 텍셀만
+# leaf_sat·leaf_tint로 덮는다. 그래서 아래 두 값은 이제 **잎 전용**이다.
+# 문턱 0.02는 아틀라스 실측 공백(수피 −0.317~−0.254 / 잎 +0.079~+0.392)의 안쪽 0 근처다.
 # 두 값 다 최대채널이 정오 클리핑 상한 0.75 아래다(지면 핀과 같은 천장 — 넘으면 255로 포화).
 # 화면 실측 환산(정오 = 선형 ×1.90): 수관 (211,154,89) = 크림 하늘을 배경으로 읽히는 따뜻한 주황.
 const TREE_AUTUMN_SAT := 0.18
 const TREE_AUTUMN_GAIN := 1.90
 const TREE_AUTUMN_TINT := Color(0.831, 0.552, 0.326)
+# 단풍 사본이 얹는 셰이더 파라미터 한 벌. val_gain은 잎·수피가 함께 탄다(1.90 vs 여름 1.85 =
+# 줄기가 2.7% 밝을 뿐, 화면에서 1/255 수준).
+const TREE_AUTUMN_EXTRA := {
+	"green_gate": 0.02, "leaf_sat": TREE_AUTUMN_SAT, "leaf_tint": TREE_AUTUMN_TINT,
+}
+# ── 가을 지피(덤불·풀) — 겨울 서리와 **같은 구조**: 공용 override 한 장(드로우콜 추가 0) ──
+# 가을에도 원색 초록으로 남아 있어서, 주황 나무 아래 형광 초록 덤불이 계절을 반만 온 것처럼
+# 보였다(스크린샷 실측 autumn_fix/before_forest_h12: 덤불 (162,236,130) → 고친 뒤 (156,181,60)).
+# **주황으로 밀면 안 된다.** 가을 화면엔 이미 주황·노랑이 넷이다(수관·낙엽·지면·꽃) — 덤불까지
+# 같은 계열로 보내면 화면이 한 색으로 뭉개져 깊이가 죽는다. 목표는 "단풍든 덤불"이 아니라
+# **"물기가 빠진 덤불"** = 올리브/황록. 지면에서 한 단 진하고, 낙엽·수관과는 확실히 갈리는 자리.
+# 화면 실측 환산(정오 = 선형 ×1.90, 아틀라스 정점 UV 전수. test_core가 같은 식으로 다시 잰다):
+#   덤불 (153,173,87) · 풀 (141,160,82)  ← 여름 원색 덤불 (148,216,143)
+#   지면 (208,218,142) · 낙엽 (238,150,92) · 수관 (219,159,88)
+#   (환산값은 자기 그림자가 없는 평면 기준이라 스크린샷보다 조금 밝다 — 덤불 실측 (156,181,60).)
+#   화면 거리(정규화 RGB): 덤불↔수관 0.265 · 덤불↔낙엽 0.344 · 덤불↔지면 0.349
+#   (수관↔낙엽 0.082는 승인된 기존 쌍 — 둘은 일부러 붙어 있다. 그래서 대비 핀은 덤불 쪽만 잰다.)
+# 덤불과 풀은 0.073밖에 안 떨어져 한 장을 공유한다(겨울 서리와 같은 판단).
+# 최대 채널 0.623 < 정오 클리핑 상한 0.75.
+const FLORA_AUTUMN_SAT := 0.22   # 잎 결을 명도차로 남길 만큼만(겨울 0.06까지 지우면 통짜)
+const FLORA_AUTUMN_GAIN := 1.70  # 여름 1.85에서 한 단 어둡게 = 물기가 빠진 쪽
+const FLORA_AUTUMN_TINT := Color(0.613, 0.623, 0.347)
 const WALK_HALF := 33.0     # 초지 스프링클 범위(숲 띠 안쪽)
 
 # ── 소품 배치표 [종류, x, z, yaw(도)] ────────────────────────────────
@@ -290,6 +313,7 @@ var _cache := {}                       # glb 이름 → 원본 노드(반복 로
 var _lights: Array[OmniLight3D] = []
 var _glow: ShaderMaterial              # 가로등 유리 발광 판 공용 머티리얼 (_glow_mat)
 var _frost: ShaderMaterial             # 겨울 식생 서리 override 공용 머티리얼 (_frost_mat)
+var _autumn: ShaderMaterial            # 가을 지피 톤 override 공용 머티리얼 (_autumn_mat)
 var _atlas: Texture2D                  # 파크 킷 아틀라스 — 전 식생이 공유(서리 머티리얼이 재사용)
 var _blooms: Array[Node3D] = []        # 겨울에 숨길 만개 노드(화분·꽃수레 꽃, 등나무 드레이프 루트)
 var _tree_mesh := {}                   # 활엽수 MMI 이름 → [원색, 겨울 서리, 가을 단풍] (tree_variant_index 계약)
@@ -378,7 +402,9 @@ func _kit(path: String, sc: float, gain := 1.0) -> Node3D:
 # 변형하지 않는다(Codex MUST-FIX). 겨울 사본도 이 함수로 따로 뽑는다(sat/gain만 다른 별개 Mesh).
 # 배율은 인스턴스 transform이 지므로 여기선 항상 native(1.0)로 굽는다.
 # tint: 계절 사본이 색을 직접 줄 때만 넘긴다(a=0 = 미지정 → 기존 종별 색조표 경로).
-func _kit_mesh(nm: String, gain := VEG_GAIN, sat := KIT_SAT_CAP, tint := Color(0, 0, 0, 0)) -> Mesh:
+# extra: 셰이더 파라미터를 그대로 얹는다(단풍 사본의 잎 전용 게이트 3종). 빈 사전 = 옛 경로.
+func _kit_mesh(nm: String, gain := VEG_GAIN, sat := KIT_SAT_CAP, tint := Color(0, 0, 0, 0),
+		extra := {}) -> Mesh:
 	var n := load_kit(TT_PARK + kit_of(nm) + ".gltf", 1.0, 0.0, gain)
 	if n == null:
 		return null
@@ -394,6 +420,8 @@ func _kit_mesh(nm: String, gain := VEG_GAIN, sat := KIT_SAT_CAP, tint := Color(0
 		var m := mi.get_surface_override_material(i) as ShaderMaterial
 		if m != null:
 			m.set_shader_parameter("sat_cap", sat)  # 계절 사본은 여기만 다르다
+			for k in extra:
+				m.set_shader_parameter(k, extra[k])
 			if tint.a > 0.0:  # 단풍·낙엽 사본 = 색을 명시로 준다
 				m.set_shader_parameter("char_tint", tint)
 			elif FLORA_TINT.has(nm) and sat >= KIT_SAT_CAP:  # 겨울 서리 사본엔 종별 색조를 안 입힌다
@@ -857,6 +885,11 @@ static func flora_visible(nm: String, season: int) -> bool:
 static func flora_frosted(nm: String, season: int) -> bool:
 	return season == WINTER and nm.begins_with("Flora_") and flora_visible(nm, season)
 
+# 가을 지피 톤은 **풀·덤불만**이다. 꽃(flower_A 노랑)에 걸면 FLORA_TINT가 덮여 가을 화단이
+# 통째로 사라진다 — 배제는 flora_visible과 같은 접두 규칙을 쓴다(목록이면 새 변종에서 샌다).
+static func flora_autumn(nm: String, season: int) -> bool:
+	return season == AUTUMN and nm.begins_with("Flora_") and not nm.begins_with(FLORA_FLOWER_PREFIX)
+
 # 활엽수 메시 슬롯 [원색, 겨울 서리, 가을 단풍] 중 하나. 인라인 삼항을 중첩하지 않고 순수 함수로
 # 두는 이유: 슬롯이 늘 때마다 apply_season 안의 인덱스 식이 조용히 깨진다(옛 판은 2슬롯 계약인
 # `[1 if ... else 0]`이었다) — 여기 있으면 노드 없이 테스트가 잡는다.
@@ -903,7 +936,11 @@ func apply_season(sea: int) -> void:
 		# 색은 MultiMeshInstance3D의 material_override로만 바꾼다. MultiMesh의 Mesh 표면
 		# 머티리얼을 고쳐 쓰면 같은 킷을 쓰는 개별 소품(화분 꽃·꽃수레)과 리소스를 공유할
 		# 위험 + 원색 복구용 백업 보관까지 딸려온다. override는 null로 지우면 원색이 돌아온다.
-		mmi.material_override = _frost_mat() if flora_frosted(nm, sea) else null
+		mmi.material_override = null
+		if flora_frosted(nm, sea):
+			mmi.material_override = _frost_mat()
+		elif flora_autumn(nm, sea):
+			mmi.material_override = _autumn_mat()
 	for b in _blooms:
 		b.visible = bloom_visible(sea)
 
@@ -912,17 +949,27 @@ func apply_season(sea: int) -> void:
 # 통짜가 되므로 텍스처는 살리고 채도만 지운 뒤 밝기를 올린다 = 잎 결이 남은 "서리 앉은 풀".
 func _frost_mat() -> ShaderMaterial:
 	if _frost == null:
-		_frost = ShaderMaterial.new()
-		_frost.shader = ToonChar.TOON
-		_frost.set_shader_parameter("char_tint", FLORA_WINTER_TINT)
-		_frost.set_shader_parameter("sat_cap", VEG_WINTER_SAT)
-		_frost.set_shader_parameter("val_gain", FLORA_WINTER_GAIN)
-		if _atlas != null:
-			_frost.set_shader_parameter("use_tex", true)
-			_frost.set_shader_parameter("albedo_tex", _atlas)
-		else:
-			_frost.set_shader_parameter("albedo", C_FROST)  # 에셋 누락 폴백
+		_frost = _veg_mat(FLORA_WINTER_TINT, VEG_WINTER_SAT, FLORA_WINTER_GAIN, C_FROST)
 	return _frost
+
+# 가을 지피도 같은 한 장을 공유한다(같은 아틀라스). 꽃은 flora_autumn이 접두로 뺀다.
+func _autumn_mat() -> ShaderMaterial:
+	if _autumn == null:
+		_autumn = _veg_mat(FLORA_AUTUMN_TINT, FLORA_AUTUMN_SAT, FLORA_AUTUMN_GAIN, FLORA_AUTUMN_TINT)
+	return _autumn
+
+func _veg_mat(tint: Color, sat: float, gain: float, fallback: Color) -> ShaderMaterial:
+	var m := ShaderMaterial.new()
+	m.shader = ToonChar.TOON
+	m.set_shader_parameter("char_tint", tint)
+	m.set_shader_parameter("sat_cap", sat)
+	m.set_shader_parameter("val_gain", gain)
+	if _atlas != null:
+		m.set_shader_parameter("use_tex", true)
+		m.set_shader_parameter("albedo_tex", _atlas)
+	else:
+		m.set_shader_parameter("albedo", fallback)  # 에셋 누락 폴백
+	return m
 
 # ══ 절차 블롭 나무 (해변 해송 전용으로 축소) ══════════════════════════
 # 마을 나무 218그루는 킷 모델로 전면 교체했다(_place_forest). 여기 남은 건 **해변 해송 한 종뿐**이다
@@ -1079,7 +1126,7 @@ func _place_forest() -> void:
 			# = 종당 사본 2개 = 나무 2종에 Mesh 4장.
 			_tree_mesh[full] = [summer,
 				_kit_mesh(nm, TREE_WINTER_GAIN, VEG_WINTER_SAT),
-				_kit_mesh(nm, TREE_AUTUMN_GAIN, TREE_AUTUMN_SAT, TREE_AUTUMN_TINT)]
+				_kit_mesh(nm, TREE_AUTUMN_GAIN, KIT_SAT_CAP, Color(0, 0, 0, 0), TREE_AUTUMN_EXTRA)]
 
 	# 강변 바위 몇 개 — 물길이 지형에 박혀 보이게(개별 노드, 무충돌)
 	var rocks := Node3D.new()
