@@ -60,6 +60,7 @@ func _ready() -> void:
 	_test_cooking()
 	_test_dialogue_context()
 	_test_npc_personality()
+	_test_crop_look()
 	_test_forage_crops()  # 날짜를 여러 해 돌리므로 맨 뒤 (앞 테스트의 시계·주민 상태를 안 흔들게)
 	print("ALL CORE TESTS PASS")
 	get_tree().quit()
@@ -1115,7 +1116,7 @@ func _test_forage_rare() -> void:
 # 옛 판은 전 종이 같은 초록 구체라 6종이 화면에서 하나로 보였고, 그 초록이 설원 위에서 형광
 # 점으로 떴다. 값 자체가 아니라 **구분되는가·설원에서 읽히는가**를 핀한다.
 func _test_forage_look() -> void:
-	var FS := preload("res://forage/forage_system.gd")
+	var PS := preload("res://common/plant_shapes.gd")  # 원형 표·생성기는 밭 작물과 공용
 	var W := preload("res://world/world.gd")
 	var seen := {}
 	for fid in GameData.forage:
@@ -1130,11 +1131,11 @@ func _test_forage_look() -> void:
 		var mp := String(d.get("mesh", ""))
 		if mp != "":
 			var parts := mp.split("/", false, 1)
-			assert(parts.size() == 2 and FS.KIT_DIR.has(parts[0]), "%s — 알 수 없는 킷 경로: %s" % [fid, mp])
-			var full: String = FS.KIT_DIR[parts[0]] + parts[1] + ".gltf"
+			assert(parts.size() == 2 and PS.KIT_DIR.has(parts[0]), "%s — 알 수 없는 킷 경로: %s" % [fid, mp])
+			var full: String = PS.KIT_DIR[parts[0]] + parts[1] + ".gltf"
 			# 런타임 GLTFDocument 로드라 임포트 리소스가 아니다 → 파일 존재로 본다
 			assert(FileAccess.file_exists(full), "%s — 킷 메시 없음: %s" % [fid, mp])
-			# 배경 식생과 같은 메시를 쓰면 채집물이 데코에 위장된다(FS.KIT_DIR 주석의 실측).
+			# 배경 식생과 같은 메시를 쓰면 채집물이 데코에 위장된다(PS.KIT_DIR 주석의 실측).
 			var D2 := preload("res://world/decor.gd")
 			assert(not full.begins_with(D2.TT_PARK), "%s — 파크 킷은 데코 배경 어휘다: %s" % [fid, mp])
 			assert(not D2.FLORA_SCALE.has(parts[1]), "%s — 데코가 흩뿌리는 종과 같은 메시: %s" % [fid, mp])
@@ -1144,7 +1145,7 @@ func _test_forage_look() -> void:
 		var shp := String(d.get("shape", ""))
 		assert(mp != "" or shp != "", "%s — 겉모습 형태 미지정: 킷 mesh도 절차 shape도 없다 = 색 구체로 떨어진다" % fid)
 		if shp != "":
-			assert(FS.SHAPES.has(shp), "%s — 모르는 절차 원형: %s" % [fid, shp])
+			assert(PS.SHAPES.has(shp), "%s — 모르는 절차 원형: %s" % [fid, shp])
 		# 종끼리 색이 붙어 있으면 구분이 안 된다 — 어느 한 채널이라도 0.08은 벌어져야
 		for prev in seen:
 			var p: Color = seen[prev]
@@ -1213,12 +1214,12 @@ func _test_forage_look() -> void:
 		assert(absf(ab.position.y) <= 0.02, "%s — 밑동이 지면에서 %+.3f (묻히거나 떴다)" % [fid4, ab.position.y])
 		# 전고는 LOOK_H 대역. 벗어나면 줍는 반경(0.9)과의 관계가 깨지고 원거리 가독도 흔들린다.
 		assert(ab.size.y >= 0.34 and ab.size.y <= 0.52,
-			"%s — 전고 %.3f가 LOOK_H(%.2f) 대역 밖" % [fid4, ab.size.y, FS.LOOK_H])
+			"%s — 전고 %.3f가 LOOK_H(%.2f) 대역 밖" % [fid4, ab.size.y, PS.LOOK_H])
 		assert(maxf(ab.size.x, ab.size.z) <= 0.80, "%s — 폭 %.3f: 줍는 반경만큼 퍼졌다" % [fid4, maxf(ab.size.x, ab.size.z)])
 		var shp4 := String(d4.get("shape", ""))
 		if shp4 != "":
 			proc_w.append(maxf(ab.size.x, ab.size.z))
-			forms[String(FS.SHAPES[shp4][0])] = true
+			forms[String(PS.SHAPES[shp4][0])] = true
 		nd.free()
 	# 원형끼리 실루엣이 갈리는가. 전고는 다 같은 대역이니 **폭**이 가르는 축이다.
 	# 실측(2026-08-26): 0.130(이삭)~0.386(낮고 퍼진 잎다발) = 2.97배.
@@ -1228,10 +1229,10 @@ func _test_forage_look() -> void:
 		"채집물 폭이 %.2f배밖에 안 갈린다 = 색만 다른 같은 실루엣" % (proc_w[-1] / proc_w[0]))
 	assert(forms.size() >= 4, "형태 계열이 %d종뿐 — 14종이 한두 실루엣으로 뭉친다" % forms.size())
 	# 원형 표에 사본이 있으면 두 종이 "색만 다른 같은 물건"이 된다
-	var sk: Array = FS.SHAPES.keys()
+	var sk: Array = PS.SHAPES.keys()
 	for i in sk.size():
 		for j in range(i + 1, sk.size()):
-			assert(FS.SHAPES[sk[i]] != FS.SHAPES[sk[j]], "형태 원형 %s와 %s가 같은 파라미터" % [sk[i], sk[j]])
+			assert(PS.SHAPES[sk[i]] != PS.SHAPES[sk[j]], "형태 원형 %s와 %s가 같은 파라미터" % [sk[i], sk[j]])
 	# 메시 캐시: 한 종이 여러 지점에 스폰돼도 메시는 한 장 (decor._flora_cache 규약)
 	var any_shape := ""
 	for fid5 in GameData.forage:
@@ -1247,10 +1248,11 @@ func _test_forage_look() -> void:
 	fs3.free()
 	# 형태 배정이 **데이터에서** 오는가. 엔진에 종 이름이 박히면 종이 늘 때마다 엔진을 고치게 되고
 	# 그게 이 저장소의 단일 출처 규약이 무너지는 지점이다(color·mesh가 이미 그 규약을 지킨다).
-	var src := FileAccess.get_file_as_string("res://forage/forage_system.gd")
-	for fid6 in GameData.forage:
-		var bare: String = fid6.get_slice(".", 1)
-		assert(not src.contains(bare), "forage_system.gd에 종 이름이 하드코딩됐다: %s" % bare)
+	for path in ["res://forage/forage_system.gd", "res://common/plant_shapes.gd"]:
+		var src := FileAccess.get_file_as_string(path)
+		for fid6 in GameData.forage:
+			var bare: String = fid6.get_slice(".", 1)
+			assert(not src.contains(bare), "%s에 종 이름이 하드코딩됐다: %s" % [path, bare])
 
 # 스폰된 채집물 노드가 화면에 내는 색. 세 경로다 — 구체는 material_override의 albedo,
 # 킷 메시는 surface override의 char_tint(아틀라스 곱), 절차 원형은 **메시 표면 0**에 구운
@@ -2333,6 +2335,208 @@ func _phase_spread() -> int:
 			if absf(pos[i] - pos[j]) < 0.01:
 				same += 1
 	return same
+
+# ── 밭 작물 겉모습: 실물화 + 성장 단계 + 접지 ──────────────────────
+# 옛 판은 25종 전부가 같은 색 상자(0.35×0.7×0.35)를 성장률로 세로만 늘인 것이라 종 구분이
+# 색 하나뿐이었다. 여기서 무는 것은 **값이 아니라**: ① 상자 폴백을 아무도 안 타는가
+# ② 기른 것과 주운 것이 같은 물건으로 보이는가 ③ 단계가 형태로 갈리는가 ④ 밑동이 흙에 닿는가
+# ⑤ 이웃 칸을 안 침범하는가. 전부 **프로덕션이 부르는 함수를 그대로 불러** 자로 잰다
+# (인자 사본을 재던 옛 구멍 02b11cd·99e89ac·e1c0540과 같은 실패를 안 반복한다).
+func _test_crop_look() -> void:
+	var PS := preload("res://common/plant_shapes.gd")
+	var TC := preload("res://common/toon_character.gd")
+	var F := preload("res://farm/farm_system.gd")
+
+	# ── 1. 데이터: 전 작물에 형태가 있고, 재배 채집물은 형태를 **다시 적지 않는다** ──────
+	var own_shapes := {}
+	for cid in GameData.crops:
+		var yid := GameData.crop_yield(cid)
+		if yid != cid:
+			# 재배 채집물: 형태도 산출물이 정한다. crops.json에 또 적으면 기른 것과 주운 것이 갈린다.
+			assert(not GameData.crops[cid].has("shape"),
+				"%s가 형태를 따로 적었다 — 산출물(%s)이 단일 출처다" % [cid, yid])
+			assert(not GameData.crops[cid].has("mesh"), "%s가 메시를 따로 적었다" % cid)
+			var fd: Dictionary = GameData.forage[yid]
+			assert(fd.has("shape") or fd.has("mesh"), "%s 산출물 %s에 형태가 없다" % [cid, yid])
+			continue
+		# 씨앗을 사서 심는 작물: crops.json의 shape가 표에 있어야 한다. 없으면 조용히 상자가 된다 —
+		# 이번 계약의 핵심이라 데이터 쪽에서 막는다(새 작물을 넣고 형태를 안 줘도 여기서 걸린다).
+		var shp := String(GameData.crops[cid].get("shape", ""))
+		assert(shp != "", "%s — 겉모습 형태 미지정: 색 상자로 떨어진다" % cid)
+		assert(PS.SHAPES.has(shp), "%s — 모르는 절차 원형: %s" % [cid, shp])
+		assert(not own_shapes.has(shp), "%s와 %s가 같은 원형 — 색만 다른 같은 물건이 된다"
+			% [cid, str(own_shapes.get(shp))])
+		own_shapes[shp] = cid
+	assert(own_shapes.size() == 12, "씨앗 작물 12종에 저마다의 원형 (실제 %d)" % own_shapes.size())
+
+	# ── 2. 단계 판정(순수 함수) ────────────────────────────────────
+	# 마지막 단계는 수확 가능해질 때만 — "다 자라 보이는데 못 거두는 칸"을 안 만든다.
+	for st in [3, 4]:
+		var g := 8
+		assert(F.stage_index(0, g, st) == 0, "심은 날은 새싹")
+		assert(F.stage_index(g, g, st) == st - 1, "성숙일에 마지막 단계")
+		assert(F.stage_index(g + 5, g, st) == st - 1, "재수확 초과분도 마지막 단계")
+		var prev := 0
+		for d in range(g):
+			var s: int = F.stage_index(d, g, st)
+			assert(s >= prev and s <= st - 2, "단계가 %d에서 역행하거나 성숙을 앞질렀다(%d)" % [d, s])
+			prev = s
+		assert(F.stage_index(g - 1, g, st) == st - 2, "성숙 직전은 마지막 바로 앞 단계")
+		assert(is_equal_approx(F.stage_scale(st - 1, st), 1.0), "마지막 단계는 원본 크기")
+		assert(F.stage_scale(1, st) > 0.4 and F.stage_scale(1, st) < 1.0, "중간 단계는 축소")
+	assert(F.stage_scale(1, 4) < F.stage_scale(2, 4), "단계가 오르면 커진다")
+
+	# ── 3. 배선 실측: 프로덕션 crop_look이 **실제로 만드는 노드를 자로 잰다** ──────────
+	var w_all := []
+	var h_all := []
+	var forms := {}
+	for cid2 in GameData.crops:
+		var stages := int(GameData.crops[cid2].get("stages", 3))
+		var node: Node3D = _farm.crop_look(cid2, stages - 1)
+		# 상자 폴백을 탔는가. 절차 원형은 SurfaceTool로 구운 ArrayMesh라 BoxMesh가 아니다.
+		assert(not (node is MeshInstance3D and (node as MeshInstance3D).mesh is BoxMesh),
+			"%s — 색 상자 폴백을 탔다: 형태 지정이 실경로에 안 닿는다" % cid2)
+		var ab := TC.aabb_of(node)
+		# 접지: 밑동이 흙 윗면에 SINK만큼 박힌다(자리 노드가 흙 윗면에 있으므로 여기선 -SINK).
+		assert(absf(ab.position.y + F.SINK) <= 0.006,
+			"%s — 밑동이 흙에서 %+.3f (묻히거나 떴다)" % [cid2, ab.position.y + F.SINK])
+		# 폭: 밭 한 칸이 0.92다. 넘으면 이웃 칸을 침범한다(양옆 0.06씩 여유를 남긴다).
+		var w: float = maxf(ab.size.x, ab.size.z)
+		assert(w <= 0.80, "%s — 폭 %.3f: 밭 한 칸(0.92)을 침범한다" % [cid2, w])
+		assert(ab.size.y >= 0.18 and ab.size.y <= 0.80,
+			"%s — 전고 %.3f가 밭 대역(0.18~0.80) 밖" % [cid2, ab.size.y])
+		w_all.append(w)
+		h_all.append(ab.size.y)
+		var look_shape := String(_farm.crop_look_data(cid2).get("shape", ""))
+		if look_shape != "":
+			forms[String(PS.SHAPES[look_shape][0])] = true
+		node.free()
+	# 실루엣이 갈리는가. 폭과 전고 두 축으로 본다(색 하나로만 갈리던 게 이번 작업의 문제였다).
+	# 실측(2026-08-26): 폭 0.132(이삭 모양 꽃대)~0.734(킷 송이) = 5.5배 · 전고 0.195(땅에 깔린
+	# 열매 포기)~0.640(키 큰 대) = 3.3배. 가장 넓은 종도 밭 한 칸 0.92 안에 0.09씩 여유가 남는다.
+	w_all.sort()
+	h_all.sort()
+	assert(w_all.size() == 25, "밭 작물 25종 (실제 %d)" % w_all.size())
+	assert(w_all[-1] / w_all[0] >= 1.8, "작물 폭이 %.2f배밖에 안 갈린다" % (w_all[-1] / w_all[0]))
+	assert(h_all[-1] / h_all[0] >= 1.8, "작물 전고가 %.2f배밖에 안 갈린다" % (h_all[-1] / h_all[0]))
+	assert(forms.size() >= 6, "형태 계열이 %d종뿐 — 25종이 몇 실루엣으로 뭉친다" % forms.size())
+
+	# ── 4. 기른 것 = 주운 것: 재배 채집물 13종은 채집물과 **같은 메시 한 장**을 쓴다 ───────
+	var fs: Node = preload("res://forage/forage_system.gd").new()
+	var shared := 0
+	for cid3 in GameData.crops:
+		var yid3 := GameData.crop_yield(cid3)
+		if yid3 == cid3:
+			continue
+		var grown: Node3D = _farm.crop_look(cid3, int(GameData.crops[cid3].get("stages", 3)) - 1)
+		var picked: Node3D = fs._look(yid3, GameData.forage[yid3].get("rare", false))
+		var gm := _first_mesh(grown)
+		var pm := _first_mesh(picked)
+		assert(gm != null and pm != null, "%s 겉모습에 메시가 없다" % cid3)
+		# 절차 원형은 캐시 키가 산출물 id라 **같은 메시 한 장**이다. 킷 메시(gltf)는 런타임 로드라
+		# 매번 새 리소스가 나오므로(캐시하면 정적 참조가 종료 시각까지 남는다) 자로 재서 본다.
+		if GameData.forage[yid3].has("shape"):
+			assert(gm == pm, "%s — 기른 것과 주운 것(%s)이 다른 메시를 쓴다" % [cid3, yid3])
+		var gs := TC.aabb_of(grown).size
+		var ps := TC.aabb_of(picked).size
+		assert((gs - ps).length() <= 0.01,
+			"%s — 기른 것과 주운 것(%s)의 크기가 다르다 (%s vs %s)" % [cid3, yid3, str(gs), str(ps)])
+		# 색도 같은 물건으로 읽혀야 한다(형태만 같고 색이 갈리면 여전히 다른 물건이다)
+		assert(_look_color(grown).is_equal_approx(_look_color(picked)),
+			"%s — 기른 것과 주운 것의 색이 갈린다" % cid3)
+		grown.free()
+		picked.free()
+		shared += 1
+	assert(shared == 13, "재배 채집물 13종이 채집물 형태를 그대로 쓴다 (실제 %d)" % shared)
+	fs.free()
+
+	# ── 5. 새싹은 공용 한 장, 종별 메시는 종당 한 장 ───────────────
+	var ids: Array = GameData.crops.keys()
+	var sp_a: Node3D = _farm.crop_look(ids[0], 0)
+	var sp_b: Node3D = _farm.crop_look(ids[-1], 0)
+	assert(_first_mesh(sp_a) == _first_mesh(sp_b), "새싹이 종마다 따로 깎인다(공용 한 장 계약)")
+	assert(TC.aabb_of(sp_a).size.y < 0.20, "새싹이 다 자란 작물만 하다")
+	sp_a.free()
+	sp_b.free()
+	var last_st: int = int(GameData.crops[ids[0]].get("stages", 3)) - 1
+	var m_a: Node3D = _farm.crop_look(ids[0], last_st)
+	var m_b: Node3D = _farm.crop_look(ids[0], last_st)
+	assert(_first_mesh(m_a) == _first_mesh(m_b), "%s — 그릴 때마다 메시를 새로 깎는다" % ids[0])
+	m_a.free()
+	m_b.free()
+
+	# ── 6. 단계가 실제로 형태로 갈리는가 (전 작물, 프로덕션 경로) ───
+	for cid4 in GameData.crops:
+		var st4 := int(GameData.crops[cid4].get("stages", 3))
+		var last := -1.0
+		for s4 in st4:
+			var nd: Node3D = _farm.crop_look(cid4, s4)
+			var hh: float = TC.aabb_of(nd).size.y
+			assert(hh > last, "%s 단계 %d에서 전고가 안 커진다 (%.3f ≤ %.3f)" % [cid4, s4, hh, last])
+			last = hh
+			nd.free()
+
+	# ── 7. 실경로 접지·휴면: **씬에 실제로 붙은 노드**를 잰다 ──────
+	# 위까지는 crop_look 반환값이다 = _refresh가 그걸 안 쓰고 옛 상자를 그려도 통과한다.
+	# 여기선 till→plant→_refresh를 태우고 밭에 서 있는 노드를 재서 그 통로를 막는다.
+	var per := ""   # 다년생(휴면 표현을 볼 종)
+	for cid5 in GameData.crops:
+		if GameData.crop_perennial(cid5):
+			per = cid5
+			break
+	assert(per != "", "다년생이 없어 휴면 표현을 못 잰다")
+	var plant_s := ""
+	var off_s := ""
+	for s5 in GameData.SEASON_IDS:
+		if plant_s == "" and GameData.crop_plantable(per, s5):
+			plant_s = s5
+		if off_s == "" and not GameData.crop_in_season(per, s5):
+			off_s = s5
+	assert(plant_s != "" and off_s != "", "%s의 제철/비제철 계절을 못 고름" % per)
+	var cell := Vector2i(4, 2)  # 앞선 테스트가 안 쓴 칸
+	GameClock.abs_day = GameData.SEASON_IDS.find(plant_s) * GameClock.DAYS_PER_SEASON + 2
+	assert(_farm.till(cell) and _farm.plant(cell, GameData.crops[per]["seed_id"]), "심기")
+	_farm.tiles[cell]["watered_growth_days"] = GameData.grow_days(per)
+	# 제철: 다 자란 실물이 흙 위에 선다
+	GameClock.abs_day = GameData.SEASON_IDS.find(GameData.crops[per]["seasons"][0]) * GameClock.DAYS_PER_SEASON + 2
+	_farm._refresh(cell)
+	var slot: Node3D = _farm._nodes[cell]["crop"]
+	assert(slot.get_child_count() == 1, "밭 칸에 겉모습 노드가 하나가 아니다(%d)" % slot.get_child_count())
+	var wab := TC.aabb_of(slot)  # slot.transform 포함 = 밭 좌표계(=월드) y
+	assert(absf(wab.position.y - (F.SOIL_TOP - F.SINK)) <= 0.006,
+		"%s — 밭에 선 밑동이 흙 윗면에서 %+.3f" % [per, wab.position.y - F.SOIL_TOP])
+	assert(maxf(wab.size.x, wab.size.z) <= 0.80, "%s — 밭에서 폭 %.3f" % [per, maxf(wab.size.x, wab.size.z)])
+	var ripe_col := _look_color(slot)
+	assert(not ripe_col.is_equal_approx(F.DORMANT), "제철 작물이 휴면색으로 그려졌다")
+	# 휴면: 계절만 넘긴다. 그루는 남되 열매색이 사라져야 한다("다 자랐는데 왜 수확이 안 되지" 방지)
+	GameClock.abs_day = GameData.SEASON_IDS.find(off_s) * GameClock.DAYS_PER_SEASON + 2
+	_farm._refresh(cell)
+	assert(slot.visible and slot.get_child_count() >= 1, "휴면 중에도 그루는 밭에 남는다")
+	assert(_look_color(slot).is_equal_approx(F.DORMANT),
+		"%s 휴면이 성숙과 구분이 안 된다 (%s)" % [per, str(_look_color(slot))])
+	# 세이브 표면 무변경: 밭 타일 딕셔너리에 겉모습 필드가 새면 구세이브가 갈린다
+	var keys: Array = _farm.tiles[cell].keys()
+	keys.sort()
+	assert(keys == ["crop_id", "planted_abs_day", "tilled", "watered", "watered_growth_days"],
+		"밭 타일에 필드가 늘었다: %s" % str(keys))
+	_farm.tiles.erase(cell)
+	_farm._refresh(cell)  # 뒷 테스트가 쓰는 밭을 원상복구
+
+	# ── 8. 형태 배정이 데이터에서 오는가 (엔진에 종 이름 금지) ─────
+	var src := FileAccess.get_file_as_string("res://farm/farm_system.gd")
+	for cid6 in GameData.crops:
+		var bare: String = cid6.get_slice(".", 1)
+		assert(not src.contains(bare), "farm_system.gd에 종 이름이 하드코딩됐다: %s" % bare)
+
+# 겉모습 노드가 실제로 쓰는 첫 메시 (절차 원형 = 자기 자신, 킷 = 하위 MeshInstance3D)
+func _first_mesh(node: Node) -> Mesh:
+	if node is MeshInstance3D:
+		return (node as MeshInstance3D).mesh
+	for c in node.get_children():
+		var m := _first_mesh(c)
+		if m != null:
+			return m
+	return null
 
 # ── 채집물 재배 + 다년생 ────────────────────────────────────────
 # ⚠ 최대 함정은 기른 것과 주운 것이 **다른 아이템**으로 갈리는 것이다(요리·선물·도감이 두 갈래).
