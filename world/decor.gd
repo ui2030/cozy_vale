@@ -744,6 +744,7 @@ func _place_flora() -> void:
 		_add_flora(buckets, c, rng, ["grass_A", "grass_B", "flower_A~lavender", "grass_A", "bush_large"])
 
 	_lavender_rows(buckets)
+	_pond_edge(buckets)
 
 	for nm in buckets:
 		if (buckets[nm] as Array).is_empty():
@@ -788,6 +789,49 @@ func _lavender_rows(buckets: Dictionary) -> void:
 			t = t.rotated(Vector3.UP, rng.randf() * TAU)
 			t.origin = Vector3(p.x, GROUND_Y, p.y)
 			arr.append(t)
+
+# ══ 연못 물가 식생 ════════════════════════════════════════════════
+# 흔들리는 둑(world.gd pond_bank_offset)만으로는 부감에서 여전히 닫힌 타원으로 읽힌다
+# (실측 lookdev/shots/water/pond_wobble045_h12.png). 실루엣 자체를 가릴 게 필요하다.
+# **비대칭으로 몰아 심는다**: 카메라 기준 먼 쪽 호(서→북→북동)에만 두껍게, 남쪽 낚시 접근로
+# (10,3.8)와 동쪽 길은 통째로 비운다. 사방 균등하게 심으면 도넛에 테두리만 하나 더 두르는 꼴이다.
+# _blocked_flora는 연못을 반경 4.6 금지 존으로 보므로(NO_DECOR_CIRCLES) 여기서만 우회하고,
+# 길은 _seg_dist로 그대로 존중한다 — 우회 대상은 연못 원 하나뿐이다.
+# rng는 전용 고정 시드(_lavender_rows·_place_leaf_litter와 같은 이유): 공용 스트림에 끼어들면
+# 그 뒤에 뽑히는 나무·강변 바위가 통째로 밀린다.
+const POND_C := Vector2(10, 0)   # world.tscn Pond 중심. decor는 world.gd를 preload하지 않는다
+                                 # (역방향이 순환) — 어긋나면 test_core가 잡는다
+const POND_EDGE_R0 := 3.30       # 둑 바깥 최대 반경 3.15 + 여유 0.15 (풀이 둑 위에 안 얹힌다)
+const POND_EDGE_R1 := 4.60       # NO_DECOR_CIRCLES의 연못 반경과 같은 값 = 바깥은 기존 규칙대로
+const POND_ARC0 := PI * 0.80     # 서남서
+const POND_ARC1 := PI * 1.90     # 동북동 (사이로 서·북을 지난다. 남(0.5π)·동(0)은 비운다)
+const POND_EDGE_N := 22
+
+func _pond_edge(buckets: Dictionary) -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 20260826
+	for i in POND_EDGE_N:
+		# 호를 등간격으로 훑되 각도·반경을 흔든다 — 균등 추첨은 뭉치고 비는 자리가 생겨
+		# 가리려던 실루엣이 도로 뚫린다(강변 띠에서 겪은 그 문제).
+		var a: float = lerpf(POND_ARC0, POND_ARC1, (i + rng.randf_range(0.15, 0.85)) / float(POND_EDGE_N))
+		var rad := rng.randf_range(POND_EDGE_R0, POND_EDGE_R1)
+		var p: Vector2 = POND_C + Vector2(cos(a), sin(a)) * rad
+		var on_road := false
+		for r in _roads:
+			if _seg_dist(p, r[0], r[1]) < ROAD_KEEP:
+				on_road = true
+				break
+		if on_road:
+			continue
+		# 덤불·풀 위주 — 물가에 필요한 건 꽃밭이 아니라 **키 있는 실루엣**이다(갈대 킷이 없다).
+		var kinds := ["bush_large", "grass_B", "bush_large", "grass_A", "flower_A~white", "bush"]
+		var nm: String = kinds[rng.randi() % kinds.size()]
+		var sc: Vector2 = FLORA_SCALE[kit_of(nm)]
+		var t := Transform3D()
+		t = t.scaled(Vector3.ONE * rng.randf_range(sc.x, sc.y))
+		t = t.rotated(Vector3.UP, rng.randf() * TAU)
+		t.origin = Vector3(p.x, GROUND_Y, p.y)
+		(buckets[nm] as Array).append(t)
 
 # ══ 가을 낙엽 산포 ═══════════════════════════════════════════════════
 # 가을은 꽃이 노랑 하나만 남아 화단 밀도가 빈다 — 그 자리를 바닥에 깔린 낙엽이 메운다.

@@ -150,6 +150,21 @@ func _ready() -> void:
 	for _k in _open:
 		if _k in OS.get_cmdline_user_args():
 			_frame_open(_open[_k])
+	# 연못 물가 근접 컷: `-- v_pond` — 남동에서 둑을 눈높이로 스친다. 추종 카메라(뒤 9.5·높이 6.5)는
+	# 둑 단면·이음매를 잡기엔 너무 멀다. 좌표는 Pond 노드에서 파생 — 연못을 옮기면 카메라도 따라온다.
+	if "v_pond" in OS.get_cmdline_user_args():
+		var cp := $Camera as Camera3D
+		cp.set_process(false)
+		var pnd := get_node_or_null("Pond") as Node3D
+		if pnd != null:
+			var pc := pnd.global_position
+			# 남남서에서. 정남동(+3.6,+4.4)은 동쪽 가로등 기둥이 프레임 우측 1/4를 먹었다(실측).
+			cp.global_position = pc + Vector3(-1.4, 1.10, 4.9)
+			cp.look_at(pc + Vector3(0.2, 0.25, -0.4), Vector3.UP)
+		var pv2 := get_tree().get_first_node_in_group("player")
+		if pv2 != null:
+			pv2.global_position = Vector3(16, 2, 8)  # 프레임 밖으로 치운다(둑만 본다)
+		_vp_pinned = true
 	if "pond" in OS.get_cmdline_user_args():  # 검증용: 연못 물가(낚시 프롬프트)
 		var pp := get_tree().get_first_node_in_group("player")
 		if pp != null:
@@ -1086,10 +1101,11 @@ static func _joint_ext(i: int, at_end: bool, off: float) -> float:
 # 수면 디스크·낚시 트리거·라벨은 손대지 않는다(세이브·프롬프트 계약) — 중심·반경은 수면 메시
 # AABB에서 읽으므로 tscn이 단일 출처다(weather.gd 파문 물영역이 쓰는 그 방식).
 # 강과 같은 값: 채널 바닥 상면 0.13 · 물과 둑 사이 틈 0.05(바닥이 실선으로 비침) · 둑 폭 BANK_W ·
-# 둑 상면 BANK_H. 다만 둑은 박스 줄이 아니라 토러스 한 장이다 — 원형 런에선 조각마다 마이터가
-# 겹쳐 이음매 외곽선이 이중선으로 뜬다(강둑 주석의 그 문제). 단면만 둥글고 폭·높이·색은 강과 같다.
+# 둑 상면 BANK_H. 다만 둑은 박스 줄이 아니라 **이음매 없는 링 한 장**이다(옛 판은 TorusMesh,
+# 지금은 아래 절차 링) — 원형 런에선 조각마다 마이터가 겹쳐 이음매 외곽선이 이중선으로 뜬다
+# (강둑 주석의 그 문제). 단면만 둥글고 폭·높이·색은 강과 같다.
 # 무충돌(강둑과 동일). NPC는 연못 keepout 2.9+BLOCK_PAD 0.3 = 3.2 밖으로만 다니므로 둑 바깥
-# 모서리(반경 3.15)를 밟지 않는다 — npc_system.BUILDING_KEEPOUT과의 계약.
+# 모서리(최대 반경 3.15)를 밟지 않는다 — npc_system.BUILDING_KEEPOUT과의 계약.
 func _pond_dig(parent: Node) -> void:
 	var mi := get_node_or_null("Pond/PondMesh") as MeshInstance3D
 	if mi == null or mi.mesh == null:
@@ -1100,13 +1116,68 @@ func _pond_dig(parent: Node) -> void:
 	var r := box.size.x * 0.5
 	_cyl(parent, Vector3(c.x, -0.02, c.z), r + 0.1, 0.3, C_CHANNEL, 0.0)  # 채널 바닥(상면 0.13)
 	var ring := MeshInstance3D.new()
-	var tm := TorusMesh.new()
-	tm.inner_radius = r + 0.05
-	tm.outer_radius = r + 0.05 + BANK_W
-	ring.mesh = tm
+	ring.mesh = pond_bank_mesh(r + 0.05 + BANK_W * 0.5, BANK_W * 0.5)
 	ring.material_override = ToonChar.make_solid(C_BANK, 0.004)
 	ring.position = Vector3(c.x, BANK_H - BANK_W * 0.5, c.z)  # 튜브 상면 = BANK_H
 	parent.add_child(ring)
+
+# ── 연못 둑 윤곽 ──────────────────────────────────────────────────
+# 재감사(2026-08-09) "연못이 완벽한 원형 도넛" — 수면 원반·채널·둑이 셋 다 정원이라 컴퍼스로
+# 그린 도넛으로 읽혔다. 수면 메시는 계약(세이브·낚시 트리거·라벨·파문 물영역)이라 못 건드리므로
+# **둑 윤곽만 깬다**: 각도마다 튜브 중심 반경이 안쪽으로만 0~POND_WOBBLE 파고든다.
+#  · 안쪽으로만 = 외곽 반경이 옛 토러스 값 3.15를 **절대 안 넘는다** → NPC keepout 계약 불변.
+#    (하모닉 셋이 동시에 마루에 서는 각도가 없어 실측 최댓값은 3.109다 — 상한을 다 쓰진 않는다.)
+#  · 안쪽 모서리는 2.10까지 들어와 수면(2.5)을 물어 **보이는 수면 윤곽도 같이 불규칙**해진다
+#    (수면 메시 자체는 그대로 = AABB 중심·반경 불변).
+#  · 채널 바닥(r+0.1 = 2.6)은 둑 외곽 최소(실측 2.704) 안이라 어느 각도에서도 안 드러난다.
+# 위상은 **상수**다 — RNG를 아예 안 쓴다. 공용 난수 스트림에 끼어들면 뒤에 뽑히는 나무·소품이
+# 통째로 밀린다(_lavender_rows·_place_leaf_litter가 전용 시드를 쓰는 그 함정). 전용 시드보다
+# 한 단 강한 쪽이 상수 위상이라 그렇게 뒀다.
+# 이음매는 정점을 **감아서 공유**한다(θ=0 링을 θ=2π에서 재사용) — 조각을 이어 붙이면 마이터가
+# 겹쳐 외곽선이 이중선으로 뜬다(옛 주석이 토러스 한 장을 고른 그 이유).
+const POND_WOBBLE := 0.45   # 진폭(m). 0.30은 부감에서 여전히 도넛으로 읽혔다(실측 pond_wobble030_h12).
+                            # 상한은 채널 바닥이 정한다: 둑 외곽 최소 2.85−w+0.3이 채널(2.6)보다
+                            # 커야 어두운 바닥이 잔디 위로 안 삐져나온다 → w < 0.55
+const POND_RING_SEG := 96   # 둘레 분할(TorusMesh 기본 64보다 촘촘) — 흔들림이 각지지 않게
+# 단면 분할. 아래 절반은 땅에 묻히므로 TorusMesh 기본 32는 낭비다. **4의 배수여야 한다** —
+# 4의 배수라야 φ=0(바깥 적도)과 φ=π/2(튜브 꼭대기)에 정점이 정확히 놓여 최대 반경과 둑 상면이
+# 계약값에 딱 맞는다. 10으로 뒀더니 꼭대기 정점이 없어 둑 상면이 0.435로 BANK_H(0.45)에
+# 1.5cm 못 미쳤다(실측 — 눈엔 안 보이지만 강둑과 높이가 갈린다).
+const POND_TUBE_SEG := 12
+
+# 각도 → 튜브 중심 반경 오프셋. 3·5·8차 하모닉 합 ∈ [-1,1]을 [-POND_WOBBLE, 0]으로 옮긴다.
+static func pond_bank_offset(theta: float) -> float:
+	var n := 0.60 * sin(theta * 3.0 + 0.70) + 0.30 * sin(theta * 5.0 + 2.35) \
+		+ 0.10 * sin(theta * 8.0 + 4.10)
+	return POND_WOBBLE * 0.5 * (n - 1.0)
+
+# 흔들리는 튜브 링 한 장(단면 원, 이음매 없음). 옛 TorusMesh(ring_r=2.85, tube_r=0.3)와 같은
+# 단면·같은 높이라 POND_WOBBLE=0이면 그림이 그대로다.
+static func pond_bank_mesh(ring_r: float, tube_r: float) -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for i in POND_RING_SEG:
+		var th := TAU * i / float(POND_RING_SEG)
+		var rr := ring_r + pond_bank_offset(th)
+		var dx := cos(th)
+		var dz := sin(th)
+		for j in POND_TUBE_SEG:
+			var ph := TAU * j / float(POND_TUBE_SEG)
+			var rad := rr + tube_r * cos(ph)
+			st.add_vertex(Vector3(dx * rad, tube_r * sin(ph), dz * rad))
+	for i in POND_RING_SEG:
+		var i2: int = (i + 1) % POND_RING_SEG
+		for j in POND_TUBE_SEG:
+			var j2: int = (j + 1) % POND_TUBE_SEG
+			var a: int = i * POND_TUBE_SEG + j
+			var b: int = i2 * POND_TUBE_SEG + j
+			var cc: int = i2 * POND_TUBE_SEG + j2
+			var d: int = i * POND_TUBE_SEG + j2
+			# (a,b,c)·(a,c,d) 순서면 generate_normals가 바깥을 향한다(∂φ×∂θ = outward).
+			st.add_index(a); st.add_index(b); st.add_index(cc)
+			st.add_index(a); st.add_index(cc); st.add_index(d)
+	st.generate_normals()   # 인덱스 공유 정점 = 이음매까지 연속 법선(외곽선 이중선 방지)
+	return st.commit()
 
 # 세그먼트를 ~1.4 간격 짧은 벽으로 채우되, 다리(BRIDGE_GAP) 근처 스텝은 비운다(다리로만 통과).
 func _river_wall_seg(parent: Node, a: Vector2, b: Vector2, ang: float) -> void:

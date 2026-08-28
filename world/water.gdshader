@@ -33,6 +33,27 @@ uniform float foam_z = 0.0;         // 위상 기준 월드 z = 물가선(여기
 uniform float foam_duty : hint_range(0.0, 0.5) = 0.13;  // 간격 중 흰 선이 차지하는 비율
 uniform float foam_speed = 0.045;   // 물가 쪽(+z)으로 밀려오는 속도(간격/초)
 uniform vec4 foam_color : source_color = vec4(1.0, 1.0, 1.0, 1.0);
+// ── 원경 대기 띠 (해변 전용 — haze 0이면 분기 자체가 꺼진다) ──
+// 재감사(2026-08-09) "수평선이 칼직선". 곡률 캡(curve_cap)이 원경을 평평하게 세워 수평선을
+// 만들어 주지만, 그 대가로 판 끝이 자로 그은 경계로 하늘과 맞붙는다 — 실측 sea_before_h12에서
+// 경계 위 하늘 (222,231,242) / 아래 물 (168,219,243), R만 54단차라 칼금으로 읽힌다.
+// 판 끝으로 갈수록 물색을 하늘 쪽으로 녹여 그 단차를 0에 가깝게 만든다(대기 원근).
+// 이 띠는 **조명을 안 받는다**(ALBEDO를 비우고 EMISSION으로만 그린다). 대기는 태양을 반사하는
+// 면이 아니라 하늘빛을 산란하는 것이라서다. 처음엔 albedo로 얹어 봤고 정오는 딱 맞았지만
+// (실측: 하늘 222,231,242 / 수평선 물 221,230,243), 노을엔 **원리적으로 못 맞춘다** —
+// 18시 태양이 주황(B 0.42×0.95)이라 조명을 받는 면은 albedo를 1.0까지 올려도 B가 178에서
+// 막히는데 하늘은 218이다. 무광원으로 빼면 시각과 무관하게 하늘값을 그대로 쓸 수 있다.
+uniform float haze : hint_range(0.0, 1.0) = 0.0;
+// 세 값 다 **화면 실측 역산**이다(lookdev/shots/water/sea_cal_h*.png, 1차 근사 후 1회 보정).
+// 시간대 셋으로 가른 건 sky.gdshader의 DAY_H/SUN_H/NIT_H와 같은 규약이다 — 수평선에서 맞춰야
+// 하는 상대가 바로 그 세 값이라서다.
+//   정오 하늘 (222,231,242) / 노을 (251,236,218) / 밤 21시 (108,101,122)
+uniform vec4 haze_color : source_color = vec4(0.760, 0.813, 0.875, 1.0);  // 낮 수평선 하늘
+uniform vec4 haze_warm : source_color = vec4(0.953, 0.863, 0.760, 1.0);   // 노을 수평선 하늘
+// 밤값이 유난히 푸른 건 위 합성 순서 때문이다: 21시에도 warm이 0.08 남아 haze_warm(크림)이
+// 6.8% 섞이므로 R·G는 거기서 온다 — 밤 상수는 그 나머지만 채운다(하늘이 NIT_H에 SUN_H를
+// 같은 비율로 얹는 것과 같은 구조). 이 상수만 따로 보고 "밤 하늘색"으로 읽으면 안 된다.
+uniform vec4 haze_night : source_color = vec4(0.187, 0.195, 0.324, 1.0);  // 밤 수평선 하늘
 global uniform float time_of_day;   // day_night.gd가 매 프레임 주입(0~24 연속). 하늘과 같은 단일 출처.
 
 varying vec2 world_xz;
@@ -85,8 +106,25 @@ void fragment() {
 		// 노을엔 흰 선이 물 자체의 웜 하이라이트에 묻힌다 — 절반만 물들여 한 단 더 밝게 남긴다.
 		col = mix(col, mix(foam_color.rgb, warm_highlight.rgb, warm * 0.5), step(ph, foam_duty) * near);
 	}
-	ALBEDO = col;
-	EMISSION = col * warm * warm_glow;
+	// 파도선 **뒤에** 건다 — 원경 파도선까지 같이 녹아야 한다(멀리서 흰 선이 또렷하면
+	// 대기 띠가 무색해지고, 간격이 픽셀 이하로 압축돼 모아레가 남는다).
+	// 0.70~1.35·cap(=28~54): 물가선 뷰 깊이가 최대 36이라 0.70(28)보다 이르게 시작하면
+	// 걸어다니는 자리 앞바다까지 뿌옇게 뜬다(파도선 페이드 0.85~1.3과 같은 근거·한 단 넓게).
+	// 밤엔 day로 띠를 통째로 껐었다(무광원이라 밤에 띠만 발광할까 봐). 되돌렸다 —
+	// 밤 수평선이야말로 단차가 제일 컸다(실측 21시: 하늘 108,101,122 vs 물 38,61,92).
+	// 밤 색을 따로 주는 쪽이 맞다.
+	float hz = 0.0;
+	vec3 hcol = vec3(0.0);
+	if (haze > 0.0) {
+		hz = smoothstep(0.70, 1.35, -VERTEX.z / curve_cap) * haze;
+		// 합성 순서까지 sky.gdshader의 지평선(hor)과 **글자 그대로** 같다: 밤↔낮을 day로 섞고
+		// 그 위에 노을을 warm*0.85로 덮는다. 순서를 바꿔 봤더니(밤↔노을을 day로 섞기) 새벽 7시에
+		// 하늘은 이미 주황인데 띠만 35% 밤색이라 20레벨 어긋났다(실측 sea_after_h7).
+		float day = clamp(smoothstep(5.5, 8.0, time_of_day) - smoothstep(17.5, 20.5, time_of_day), 0.0, 1.0);
+		hcol = mix(mix(haze_night.rgb, haze_color.rgb, day), haze_warm.rgb, warm * 0.85);
+	}
+	ALBEDO = col * (1.0 - hz);
+	EMISSION = col * warm * warm_glow * (1.0 - hz) + hcol * hz;
 	ROUGHNESS = 1.0;
 	SPECULAR = 0.0;
 }

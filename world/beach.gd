@@ -137,6 +137,10 @@ func _sea() -> void:
 	m.set_shader_parameter("foam_z", ORIGIN.z + WET_Z)  # 위상 0 = 물가선(젖은 모래 띠 한가운데)
 	# ③ 하이라이트 패치를 좁힌다: 연못 값(0.60)이면 수면 절반이 흰 얼룩이라 파도선이 묻힌다.
 	m.set_shader_parameter("coverage", 0.74)
+	# ④ 원경 대기 띠 — 수평선 칼직선 해소. 색은 셰이더 기본값(haze_color)이 단일 출처다:
+	# GDScript에서 source_color uniform에 Color를 넣으면 sRGB 변환 규약이 호출부마다 갈리므로
+	# 여기서는 스위치만 켠다(연못·강은 haze 0 = 분기 자체가 안 돈다).
+	m.set_shader_parameter("haze", 1.0)
 	var sea := _plane(SEA_REL + Vector3(0, WATER_Y, 0), SEA_W, SEA_D, 40, C_SAND)
 	sea.material_override = m  # 색은 물 셰이더로 덮음
 	# 캡의 대가: 이 판만 툰 곡률로 말려 내려가지 않으니 150 떨어진 마을 컷 하늘에 물비늘 리본으로

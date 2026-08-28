@@ -58,6 +58,7 @@ func _ready() -> void:
 	_test_weather()
 	_test_interior()
 	_test_beach()
+	_test_water_look()
 	_test_cooking()
 	_test_dialogue_context()
 	_test_npc_personality()
@@ -2093,6 +2094,170 @@ func _test_beach() -> void:
 	# 마을 쪽 신규물은 전부 무충돌(장식 길·표지판 + Area3D 게이트)이라 구세이브가 박힐 수 없다
 	# → WORLD_VERSION 유지. 이 단언이 무심코 범프하는 것을 잡는 트립와이어.
 	assert(SaveManager.WORLD_VERSION == 3, "해변 추가는 마을 충돌체 무변경 = WORLD_VERSION 유지")
+
+# ── 물 마감: 연못 둑 윤곽 + 바다 수평선 대기 띠 ─────────────────────
+# 무는 것: ① 수면 AABB(중심·반경)가 안 움직였는가 — 낚시 트리거·라벨·파문 물영역·NPC keepout이
+# 전부 여기서 파생하는 **모든 계약의 뿌리**다 ② 둑 최대 반경이 keepout 안인가 ③ 절차 링이
+# **실제로 흔들리는가**(값을 잰다 — 배선만 확인하면 진폭 0으로 되돌아가도 안 문다)
+# ④ 이음매가 정점을 공유하는가(공유 안 하면 법선이 갈려 외곽선이 이중선으로 뜬다)
+# ⑤ 수면이 둑을 안 넘는가 ⑥ 물가 식생이 낚시 동선을 안 막고 한쪽으로 몰렸는가
+# ⑦ 대기 띠가 **바다에만** 켜지는가(연못·강까지 켜지면 마을 물이 통째로 뿌옇게 뜬다).
+# 전부 프로덕션이 부르는 그 함수를 그대로 불러서 잰다 — 인자 사본 금지(02b11cd·99e89ac·e1c0540).
+func _test_water_look() -> void:
+	var W := preload("res://world/world.gd")
+	var D := preload("res://world/decor.gd")
+	var B := preload("res://world/beach.gd")
+	var N := preload("res://npc/npc_system.gd")
+
+	# ── 1. 수면 계약 — tscn이 단일 출처이므로 tscn에서 읽는다.
+	# Pond 노드만 떼어 world.gd 인스턴스에 붙인다. 호스트는 **빈 Node3D로 먼저 트리에 넣고
+	# 그 다음에 스크립트를 붙인다** — _ready는 트리 진입 때 한 번 지나가므로 마을이 안 지어진다.
+	# 트리 안이어야 하는 이유: Node3D.global_transform은 트리 밖에서 단위행렬을 돌려준다
+	# (실측: AABB 중심이 (0,0,0)으로 나와 핀이 헛것을 쟀다) = _pond_dig의 실제 입력이 아니다.
+	var ws: Node3D = preload("res://world/world.tscn").instantiate()
+	var pond := ws.get_node("Pond") as Node3D
+	ws.remove_child(pond)
+	ws.free()
+	var host := Node3D.new()
+	add_child(host)
+	host.set_script(W)
+	host.add_child(pond)   # 이름 "Pond" 유지 → _pond_dig의 get_node 경로가 그대로 산다
+	var pmesh := host.get_node("Pond/PondMesh") as MeshInstance3D
+	var box: AABB = pmesh.global_transform * pmesh.mesh.get_aabb()
+	var pcen := box.get_center()
+	var prad := box.size.x * 0.5
+	assert(pcen.is_equal_approx(Vector3(10, 0.1, 0)), "연못 수면 AABB 중심이 움직였다: %s" % pcen)
+	assert(is_equal_approx(prad, 2.5), "연못 수면 반경이 움직였다: %.4f" % prad)
+	assert(is_equal_approx(box.size.z * 0.5, prad), "수면이 원반이 아니다 (x %.3f vs z %.3f)" % [prad, box.size.z * 0.5])
+	var water_top: float = box.position.y + box.size.y
+
+	# ── 2. 둑 — 프로덕션 _pond_dig가 만든 메시의 정점을 자로 잰다.
+	var holder := Node3D.new()
+	host._pond_dig(holder)
+	var ring: MeshInstance3D = null
+	var chan: MeshInstance3D = null
+	for ch in holder.get_children():
+		var mi := ch as MeshInstance3D
+		if mi == null:
+			continue
+		if mi.mesh is ArrayMesh:
+			ring = mi
+		elif mi.mesh is CylinderMesh:
+			chan = mi
+	assert(ring != null and chan != null, "_pond_dig가 둑 링/채널 바닥을 안 만들었다")
+	var arrays: Array = (ring.mesh as ArrayMesh).surface_get_arrays(0)
+	var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	var idx: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
+	# 이음매 = 정점을 감아서 **공유**한다. θ=2π 링을 따로 두면 그 줄만 법선이 반쪽 평균이라
+	# 외곽선이 이중선으로 뜬다(옛 주석이 조각 대신 토러스 한 장을 고른 그 이유).
+	assert(verts.size() == W.POND_RING_SEG * W.POND_TUBE_SEG,
+		"둑 링에 이음매 중복 정점 (정점 %d, 기대 %d)" % [verts.size(), W.POND_RING_SEG * W.POND_TUBE_SEG])
+	assert(idx.size() == W.POND_RING_SEG * W.POND_TUBE_SEG * 6, "둑 링 인덱스 수가 어긋남 (%d)" % idx.size())
+	# 각도 칸마다 가장 먼 정점 = 바깥 실루엣. 칸별 최대의 최대/최소가 곧 흔들림 폭이다.
+	# 칸을 **반 칸 밀어** 링 단면의 각도가 칸 경계가 아니라 칸 한가운데 오게 한다(+0.5):
+	# 메시 정점은 float32라 같은 단면의 10개 정점이 경계에서 좌우로 흩어졌고, 그 바람에
+	# 어떤 칸은 바깥 적도 정점이 통째로 빠져 실루엣을 0.29 낮게 쟀다(실측 2.42 vs 2.70).
+	var bins := W.POND_RING_SEG
+	var sil := PackedFloat32Array()
+	sil.resize(bins)
+	sil.fill(0.0)
+	var top := -INF
+	for v in verts:
+		var d := Vector2(v.x, v.z).length()
+		top = maxf(top, v.y)
+		var bi: int = posmod(int(floor((atan2(v.z, v.x) + PI) / TAU * bins + 0.5)), bins)
+		sil[bi] = maxf(sil[bi], d)
+	var rmax := 0.0
+	var rmin := INF
+	for d in sil:
+		rmax = maxf(rmax, d)
+		rmin = minf(rmin, d)
+	var contract: float = prad + 0.05 + W.BANK_W   # 옛 토러스 outer_radius = 3.15 = 상한
+	# 상한은 절대 못 넘고(keepout), 그렇다고 통째로 쪼그라들지도 않는다. 실측 최대 3.109 —
+	# 하모닉 셋이 동시에 마루에 서는 각도가 없어 상한에 정확히 닿지는 않는다.
+	assert(rmax <= contract + 1e-3, "둑 최대 반경이 계약(%.3f)을 넘었다: %.4f" % [contract, rmax])
+	assert(rmax > contract - 0.10, "둑이 통째로 안으로 쪼그라들었다: %.4f (계약 %.3f)" % [rmax, contract])
+	var keep := 0.0
+	for ko in N.BUILDING_KEEPOUT:
+		if (ko[0] as Vector2).is_equal_approx(Vector2(pcen.x, pcen.z)):
+			keep = float(ko[1])
+	assert(keep > 0.0, "npc_system에 연못 keepout이 없다")
+	assert(rmax < keep + N.BLOCK_PAD, "둑 바깥(%.3f)이 NPC keepout(%.2f)을 넘었다 = 주민이 둑을 밟는다"
+		% [rmax, keep + N.BLOCK_PAD])
+	# **값을 재는** 핀: 링이 실제로 흔들리는가.
+	# 문턱은 **절대값**이다. 처음엔 W.POND_WOBBLE에서 파생시켰는데, 그러면 진폭을 0으로
+	# 되돌렸을 때 문턱까지 같이 0이 돼 float 오차만으로 통과했다(의도적 파손 1차에서 실증) —
+	# 프로덕션 인자를 베낀 핀이 못 무는 바로 그 실패다.
+	# 0.30 = 부감 컷 기준 링 반경 ~150px에서 ~16px 흔들림 = "도넛이 아니다"로 읽히는 최소선.
+	assert(rmax - rmin > 0.30,
+		"둑이 정원이다 — 바깥 실루엣 흔들림 %.3f (진폭 상수 %.2f)" % [rmax - rmin, W.POND_WOBBLE])
+	# 흔들림은 **안쪽으로만**: 어느 각도에서도 계약 반경을 넘지 않는다(위 rmax 계약의 근거).
+	for k in 720:
+		assert(W.pond_bank_offset(k * TAU / 720.0) <= 1e-5, "둑 오프셋이 양수 = 계약 반경을 넘는다")
+	# 채널 바닥(어두운 청회)은 어느 각도에서도 둑 바깥으로 안 삐져나온다.
+	assert((chan.mesh as CylinderMesh).top_radius < rmin,
+		"채널 바닥(%.2f)이 둑 실루엣 최소(%.2f) 밖 = 잔디 위에 어두운 테가 뜬다"
+		% [(chan.mesh as CylinderMesh).top_radius, rmin])
+	# §0 넘침 판정을 값으로 못박는다: 둑 상면이 수면보다 확실히 위다.
+	var bank_top: float = ring.position.y + top
+	assert(bank_top > water_top + 0.2, "수면(%.3f)이 둑 상면(%.3f)을 넘본다" % [water_top, bank_top])
+	assert(is_equal_approx(bank_top, W.BANK_H), "둑 상면이 강둑 높이(BANK_H)와 어긋남: %.3f" % bank_top)
+
+	# ── 3. 물가 식생 — decor의 프로덕션 배치 함수를 그대로 부른다.
+	assert(D.POND_C.is_equal_approx(Vector2(pcen.x, pcen.z)), "decor의 연못 중심 복제본이 tscn과 어긋남")
+	assert(D.POND_EDGE_R0 > contract, "물가 식생이 둑(%.2f) 위에서 시작한다" % contract)
+	var dec = D.new()
+	var buckets := {}
+	for nm in D.FLORA_BUCKETS:
+		buckets[nm] = []
+	dec._pond_edge(buckets)
+	var pts := []
+	for nm in buckets:
+		for t in buckets[nm]:
+			pts.append(Vector2((t as Transform3D).origin.x, (t as Transform3D).origin.z))
+	assert(pts.size() >= 15, "물가 식생이 %d포기 — 실루엣을 못 가린다" % pts.size())
+	var cg := Vector2.ZERO
+	for p in pts:
+		var d: float = p.distance_to(D.POND_C)
+		assert(d >= D.POND_EDGE_R0 - 1e-3 and d <= D.POND_EDGE_R1 + 1e-3, "물가 식생이 띠를 벗어남: %.3f" % d)
+		assert(d > rmax, "물가 식생이 둑 위에 얹혔다: %.3f" % d)
+		assert(p.distance_to(Vector2(10, 3.8)) > 2.0, "낚시 자리 앞을 막았다: %s" % p)
+		cg += p
+	cg /= float(pts.size())
+	# 사방 균등하게 심으면 도넛에 테두리만 하나 더 두르는 꼴이다 — 한쪽으로 몰려야 실루엣이 깨진다.
+	assert(cg.distance_to(D.POND_C) > 1.0, "물가 식생이 사방 균등(무게중심 이격 %.2f)" % cg.distance_to(D.POND_C))
+	dec.free()
+	holder.free()
+
+	# ── 4. 대기 띠는 바다에만 — 연못·강 물 머티리얼(프로덕션 _water_mat)엔 안 걸려야 한다.
+	var pond_mat := host._water_mat() as ShaderMaterial
+	var ph = pond_mat.get_shader_parameter("haze")
+	assert(ph == null or is_zero_approx(float(ph)), "연못·강 물에 대기 띠가 켜졌다 = 마을 물이 뿌옇게 뜬다")
+	remove_child(host)
+	host.free()
+	# 바다 쪽은 존을 실제로 지어서 그 판의 머티리얼을 읽는다(상수 복사 아님).
+	var bch = B.new()
+	add_child(bch)
+	var sea_mat: ShaderMaterial = null
+	for ch in bch.get_children():
+		var mi := ch as MeshInstance3D
+		if mi == null:
+			continue
+		var sm := mi.material_override as ShaderMaterial
+		if sm != null and sm.shader == B.WATER_SHADER:
+			sea_mat = sm
+	assert(sea_mat != null, "바다 판 물 머티리얼을 못 찾음")
+	# 미설정 uniform은 null을 돌려준다 — float(null)은 assert 안에서 터져도 **Assertion failed로
+	# 안 찍힌다**(의도적 파손 2차에서 실증: 배선을 지웠더니 핀 대신 'Nonexistent float constructor'가
+	# 났다). null을 먼저 물어야 실패가 자기 이름으로 보고된다.
+	var hz_p = sea_mat.get_shader_parameter("haze")
+	var cc_p = sea_mat.get_shader_parameter("curve_cap")
+	var fg_p = sea_mat.get_shader_parameter("foam_gap")
+	assert(hz_p != null and float(hz_p) > 0.0, "바다 수평선 대기 띠가 꺼졌다 = 칼직선으로 돌아간다")
+	assert(cc_p != null and is_equal_approx(float(cc_p), B.SEA_CURVE_CAP), "바다 곡률 캡 어긋남")
+	assert(fg_p != null and is_equal_approx(float(fg_p), B.FOAM_GAP), "바다 파도선(서프)이 꺼졌다")
+	remove_child(bch)
+	bch.free()
 
 # ── H-3: 요리 8종 (부엌 스토브) ─────────────────────────────────
 # 아이템이 나는 계절 (crop/fish/forage 공통 조회) — 요리 계절 커버리지 판정용.
