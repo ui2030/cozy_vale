@@ -46,6 +46,32 @@ static func _flat_style() -> StyleBoxFlat:
 	sb.set_content_margin_all(18)
 	return sb
 
+# 목록이 화면보다 길면 패널 아래가 통째로 잘려 나간다 — 도감 채집물 6행 중 4행만, 요리 14종 중
+# 13종만 보였다(실측 lookdev/shots/ui/before_collection·before_cooking). 종수는 앞으로 더 는다.
+# 칸 수를 줄이는 임시방편은 다음 항목 추가에서 또 터지므로, 목록을 스크롤에 담고 높이를
+# "화면 바닥까지 남은 만큼"으로 눌러 준다. 내용이 짧으면 내용 높이 그대로 = 짧을 때 모양은 무변경.
+const PANEL_BOTTOM_GAP := 28.0  # 패널 아래 여백. 하단 프롬프트 라벨(hud.tscn offset_top -56)을 피할 만큼.
+const PANEL_MIN_BODY := 120.0   # 창이 비정상적으로 낮아도 목록이 0으로 접히지 않게
+
+# 목록을 스크롤에 담아 패널에 붙인다. 패널의 자식은 이 반환값(목록이 아니라)이 된다.
+static func scroll_body(panel: Control, body: Control) -> ScrollContainer:
+	var sc := ScrollContainer.new()
+	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED  # 가로는 목록 폭 그대로
+	sc.follow_focus = true  # 키보드로 버튼을 훑어도 화면 밖 항목까지 따라간다
+	sc.add_child(body)
+	panel.add_child(sc)
+	return sc
+
+# 재빌드 **뒤**에 부른다 — 그때 내용 높이가 확정된다.
+# 패널 상단은 상수로 복제하지 않고 패널에게 물어본다: 패널 위치는 중앙 앵커 기준이라 창 크기가
+# 바뀌면 같이 움직인다(1280×720이 아닌 창에서 상수 100은 거짓이 된다).
+static func fit_scroll(sc: ScrollContainer) -> void:
+	var body := sc.get_child(0) as Control
+	var top_y: float = (sc.get_parent() as Control).position.y
+	# 36 = 패널 상하 안쪽 여백 18×2(panel_style content_margin_all)
+	var room: float = sc.get_viewport_rect().size.y - top_y - PANEL_BOTTOM_GAP - 36.0
+	sc.custom_minimum_size.y = minf(body.get_combined_minimum_size().y, maxf(room, PANEL_MIN_BODY))
+
 # 패널 하나를 통째로 꾸민다 = 배경 + 글자색 + 픽셀 필터. 셋을 갈라 놓으면 배경만 크림으로
 # 바꾸고 글자색을 잊는 순간 **흰 글자가 크림 위에서 사라진다** — 한 함수로 묶어 그걸 막는다.
 static func style_panel(p: Control) -> void:

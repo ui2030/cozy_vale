@@ -1,5 +1,5 @@
 extends Control
-# 요리 패널 (부엌 스토브 E로 열림, E/ESC로 닫힘). 레시피 8종 전부 나열 —
+# 요리 패널 (부엌 스토브 E로 열림, E/ESC로 닫힘). 레시피 전부 나열 —
 # 만들 수 있는 것은 활성 + 강조, 재료가 모자란 것은 비활성 행에 "재료 보유/필요"를 그대로 보여준다
 # (무엇이 모자란지 패널을 나가지 않고 알 수 있게). 가방 패널 관례를 그대로 따른다.
 
@@ -8,6 +8,7 @@ const Hud := preload("res://ui/hud.gd")  # 패널 배경 단일 출처(여백·�
 # "지금 할 수 있는 것" 강조 = 가방 패널과 같은 색(hud.gd 단일 출처).
 
 var _list: VBoxContainer
+var _scroll: ScrollContainer
 
 func _ready() -> void:
 	add_to_group("cooking_panel")
@@ -22,7 +23,7 @@ func _ready() -> void:
 	_list = VBoxContainer.new()
 	_list.add_theme_constant_override("separation", 6)
 	_list.custom_minimum_size = Vector2(560, 0)
-	panel.add_child(_list)
+	_scroll = Hud.scroll_body(panel, _list)
 	var p := get_tree().get_first_node_in_group("player")
 	if p != null:  # 요리 직후 재료 수량·가능 여부가 그 자리에서 갱신된다
 		p.stats_changed.connect(func(): if visible: _rebuild())
@@ -59,6 +60,7 @@ func _rebuild() -> void:
 	_list.add_child(head)
 	for rid in GameData.recipes:
 		_list.add_child(_recipe_btn(p, rid))
+	Hud.fit_scroll(_scroll)
 
 func _recipe_btn(p: Node, rid: String) -> Button:
 	var r: Dictionary = GameData.recipes[rid]

@@ -8,6 +8,7 @@ const Hud := preload("res://ui/hud.gd")  # 패널 배경 단일 출처(여백·�
 # 선택 강조색은 패널 배경에 따라 갈린다 — hud.gd 단일 출처(옛 금색은 어두운 패널 전제였다).
 
 var _list: VBoxContainer
+var _scroll: ScrollContainer
 
 func _ready() -> void:
 	add_to_group("inventory_panel")
@@ -22,7 +23,7 @@ func _ready() -> void:
 	_list = VBoxContainer.new()
 	_list.add_theme_constant_override("separation", 6)
 	_list.custom_minimum_size = Vector2(340, 0)
-	panel.add_child(_list)
+	_scroll = Hud.scroll_body(panel, _list)
 	var p := get_tree().get_first_node_in_group("player")
 	if p != null:  # 열려 있는 동안 수확·판매·씨앗변경 반영 (닫혀 있으면 열 때 어차피 다시 그림)
 		p.stats_changed.connect(func(): if visible: _rebuild())
@@ -85,6 +86,7 @@ func _rebuild() -> void:
 		empty.add_theme_font_size_override("font_size", 16)
 		empty.text = "(비어 있음)"
 		_list.add_child(empty)
+	Hud.fit_scroll(_scroll)
 
 # 프러포즈 아이템 행. 미보유면 구매 버튼(상점 앞에서만 성사 — player.buy_ring이 판정),
 # 보유면 소지 표시. 씨앗 목록과 분리해 Q 순환 집합을 오염시키지 않는다.

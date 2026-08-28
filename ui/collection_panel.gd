@@ -5,6 +5,7 @@ extends Control
 const Hud := preload("res://ui/hud.gd")  # 패널 배경 단일 출처(여백·불투명도)
 
 var _list: VBoxContainer
+var _scroll: ScrollContainer
 
 func _ready() -> void:
 	add_to_group("collection_panel")
@@ -19,7 +20,7 @@ func _ready() -> void:
 	_list = VBoxContainer.new()
 	_list.add_theme_constant_override("separation", 8)
 	_list.custom_minimum_size = Vector2(360, 0)
-	panel.add_child(_list)
+	_scroll = Hud.scroll_body(panel, _list)
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("collection"):
@@ -33,7 +34,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 func _rebuild() -> void:
+	# 가방·요리 패널과 같은 이유로 먼저 떼고 지운다: queue_free만 하면 이번 프레임 끝까지 자식으로
+	# 남아 목록 높이가 옛 행까지 합산된다(높이를 재서 스크롤을 맞추므로 그대로면 두 배로 잡힌다).
 	for c in _list.get_children():
+		_list.remove_child(c)
 		c.queue_free()
 	var p := get_tree().get_first_node_in_group("player")
 	var col: Array = p.collection if p != null else []
@@ -45,6 +49,7 @@ func _rebuild() -> void:
 	_section("작물", GameData.crops, col)
 	_section("물고기", GameData.fish, col)
 	_section("채집물", GameData.forage, col)
+	Hud.fit_scroll(_scroll)
 
 func _section(title: String, source: Dictionary, col: Array) -> void:
 	# 아이템인 것만 센다 — 산출물이 따로 있는 재배 항목(채집물 재배)은 도감 슬롯이 아니다.
