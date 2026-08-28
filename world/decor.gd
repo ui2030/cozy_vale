@@ -45,7 +45,7 @@ const KIT_SAT_CAP := 0.60
 const C_WOOD   := Color(0.590, 0.480, 0.362)  # 브라운
 const C_WOOD_D := Color(0.470, 0.372, 0.283)  # 목재 음영
 const C_STONE  := Color(0.770, 0.758, 0.735)
-const C_CREAM  := Color(0.880, 0.844, 0.774)  # 크림 (world.gd C_WALL과 같은 값)
+const C_CREAM  := Color(0.742, 0.727, 0.690)  # 크림 (world.gd C_WALL과 같은 값 — 그쪽 주석이 처방)
 const C_ROOF   := Color(0.509, 0.429, 0.610)  # 보라 진
 # 풀포기·덤불. 옛 (0.652,0.710,0.494)는 채도 0.30·R/G 0.92의 카키라, 얇은 판때기 지오메트리가
 # 정오 직광을 받으면 (210,225,160)쯤으로 떠서 초지 위에 노란 종이조각이 흩어진 것처럼 보였다.

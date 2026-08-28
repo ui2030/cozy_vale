@@ -51,6 +51,7 @@ func _ready() -> void:
 	_test_winter_pass()
 	_test_winter_veg_look()
 	_test_autumn_veg_look()
+	_test_wall_face_look()
 	_test_collection_roundtrip()
 	_test_daynight()
 	_test_ambience_curve()
@@ -1585,6 +1586,60 @@ func _test_winter_veg_look() -> void:
 	#    덩어리). 두 목표가 반대라는 것이 옛 C_FROST_LEAF > C_FROST 서열의 실경로 판이다.
 	assert(t_win.g > t_sum.g * 1.25, "서리 수관이 어둡다 — 눈 덮인 나무가 아니라 바위로 읽힌다" + msg)
 	assert(t_win.g > g_win.g * 1.25, "수관·지피 서리 밝기 목표가 갈리지 않았다" + msg)
+
+# ══ 벽토 정오 화면값 — **실제 경로**를 계산으로 검증 ═══════════════════
+# 카드: "건물 벽면이 정오 직광에서 순백으로 날아간다. 흐린 비에도 흰색이다."
+# 상수 서열 핀으로는 못 잡던 결함이다 — 옛 값 (0.880,0.844,0.774)은 겨울 실루엣 핀을
+# 통과하면서도 화면에서는 세 채널이 다 255였다(실측 audit2_0809/beach_spawn_h12).
+# 그래서 여기서는 **프로덕션이 실제로 짓는 벽**의 머티리얼을 그대로 읽어(색·레버를 인자로
+# 복사하지 않는다 — e1c0540 교훈) 정오 직광면·그늘면 화면값을 계산하고 두 대역을 못박는다.
+# 배선(shadow_level)이 빠지면 그늘면 값이, 색이 되돌아가면 직광면 값이 각각 운다.
+func _test_wall_face_look() -> void:
+	var W := preload("res://world/world.gd")
+	var B := preload("res://world/beach.gd")
+	var DN := preload("res://world/day_night.gd")
+	# ── 전역 기본값 = 항등. 이 셰이더는 캐릭터·가구·식생·킷 소품이 전부 공유하므로 기본이
+	# 움직이면 마을 전체 명암이 조용히 바뀐다(sat_cap·green_gate와 같은 규약).
+	# 기본값은 소스에서 직접 본다 — shader_get_parameter_default는 --headless에서 null(실증).
+	var src := FileAccess.get_file_as_string("res://lookdev/toon.gdshader")
+	assert(src.contains("uniform float shadow_level : hint_range(0.0, 1.0) = 0.55;"),
+		"툰 shadow_level 전역 기본이 0.55가 아니다 — 벽 레버가 전역으로 샜다")
+	assert(src.contains("uniform vec4 shadow_tint : source_color = vec4(0.78, 0.66, 0.72, 1.0);"),
+		"툰 shadow_tint 기본이 바뀌었다 — 아래 화면값 환산의 전제")
+	var tint := Color(0.78, 0.66, 0.72)
+	# 벽 머티리얼은 **프로덕션이 짓는 그 오두막**에서 뽑는다(_roof_snow 핀과 같은 방식).
+	var bh: Node3D = B.new()
+	bh._hut()
+	var m := (bh.get_child(0) as MeshInstance3D).material_override as ShaderMaterial
+	var alb: Color = m.get_shader_parameter("albedo")
+	# 레버를 안 걸면 uniform 자체가 없다(null) = 셰이더 전역 기본을 탄다. 그 경우를 그대로
+	# 재현해야 "배선이 빠졌다"가 타입에러가 아니라 **값**으로 드러난다.
+	var slv: Variant = m.get_shader_parameter("shadow_level")
+	var sl: float = 0.55 if slv == null else float(slv)
+	bh.free()
+	assert(alb.is_equal_approx(W.C_WALL), "해변 오두막 벽이 마을 벽토 팔레트가 아니다: %s" % str(alb))
+	var lit := DN.face_screen(alb, sl, tint, true)
+	var shade := DN.face_screen(alb, sl, tint, false)
+	var msg := " (albedo %s · shadow_level %.2f → 직광 (%d,%d,%d) / 그늘 (%d,%d,%d))" % [str(alb), sl,
+		roundi(lit.r * 255.0), roundi(lit.g * 255.0), roundi(lit.b * 255.0),
+		roundi(shade.r * 255.0), roundi(shade.g * 255.0), roundi(shade.b * 255.0)]
+	print("wall face screen:" + msg)   # assert보다 먼저 — 실패해도 실측값이 로그에 남는다
+	# ① 직광면이 포화를 벗는다. 0.995 = 화면 254 — 한 채널이라도 여기 닿으면 곡률·음영이
+	#    통째로 날아가 "순백 덩어리"가 된다(카드의 원 증상).
+	assert(maxf(lit.r, maxf(lit.g, lit.b)) < 0.995, "벽 직광면이 정오에 포화한다" + msg)
+	# ② 그늘면은 파스텔 크림 대역에 남아야 한다. 0.80 = 화면 204.
+	#    알려진 실패 두 개가 여기 걸린다: albedo만 0.68로 내린 판(그늘 G 156)과
+	#    albedo를 내리고 shadow_level 레버를 안 건 판(그늘 G 189).
+	assert(shade.g >= 0.80, "벽 그늘면이 파스텔 크림에서 갈색으로 떨어졌다" + msg)
+	# ③ 그렇다고 그늘까지 포화하면 안 된다 — 벽이 통째로 흰 판이 되고 겨울 실루엣도 죽는다
+	#    (옛 albedo에 레버만 걸면 여기 걸린다: 그늘 (255,253,239)).
+	assert(maxf(shade.r, maxf(shade.g, shade.b)) < 0.995, "벽 그늘면까지 포화 — 면이 안 갈린다" + msg)
+	# ④ 두 면이 갈려야 형태가 읽힌다. 0.06 ≈ 화면 15레벨.
+	assert(lit.g - shade.g >= 0.06, "벽 직광·그늘 명암차 부족 — 평평한 판으로 읽힌다" + msg)
+	# ⑤ albedo 자체도 지면·채집물과 같은 천장 아래(발주 §5). 위 ①이 화면에서 같은 것을 재지만,
+	#    이쪽은 조명 모델과 무관하게 서는 값이라 남긴다. **①보다 뒤에 둔다** — 앞에 두면 색만
+	#    되돌린 회귀에서 이 assert가 먼저 터져 화면값 핀이 아예 안 돌아 로그에 실측이 안 남는다.
+	assert(maxf(alb.r, maxf(alb.g, alb.b)) <= 0.75, "벽토 albedo가 정오 클리핑 상한 초과: %s" % str(alb))
 
 # ══ 가을 식생 룩 — **실제 경로**를 계산으로 검증 ═══════════════════════
 # 겨울(_test_winter_veg_look)과 같은 방식이다: 상수 서열이 아니라 decor가 실제로 만든 머티리얼로

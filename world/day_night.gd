@@ -119,3 +119,39 @@ static func sample(h: float) -> Dictionary:
 			}
 	var last: Dictionary = KEYS[KEYS.size() - 1]  # h가 [0,24] 밖(방어)
 	return {"sun_rot": last["sun_rot"], "sun_col": last["sun_col"], "sun_e": last["sun_e"], "amb_col": last["amb_col"], "amb_e": last["amb_e"]}
+
+# ══ 화면값 환산 — 툰 면(직광/그늘)이 정오에 화면에 어떻게 찍히는가 ══════════════════
+# 이 저장소의 색 판정은 전부 "화면 실측값"으로 하는데, 그 환산이 여태 주석 속 손계산이었다
+# (관행: "정오 수평면 = 선형 ×1.90", 클리핑 상한 albedo 0.75). 그래서 albedo 상수 서열은
+# 핀할 수 있어도 **그늘면이 어디 앉는지는 아무도 못 쟀다** — 벽면 순백 카드가 걸린 자리가
+# 정확히 거기다. 그 손계산을 순수 함수로 옮긴다.
+#
+# 모델: 화면선형 = albedo선형 × NOON_LIT × (그 면의 광량 / 직광면 광량), 1.0에서 클리핑.
+#   직광면 광량 = 태양 + 환경광 · 그늘면 광량 = 태양×shadow_level×shadow_tint + 환경광
+#   (툰 light()의 t=0 극단. 환경광은 shade에 안 곱해지므로 그늘 바닥을 받치는 항이다.)
+# 조명은 KEYS(단일 출처)에서 읽는다 = 승인 구간인 키프레임이 움직이면 색 핀이 같이 운다.
+#
+# NOON_LIT 1.90은 물리 유도값이 아니라 **실측 맞춤 상수**다(필믹 톤매퍼 곡선까지 접은 값).
+# albedo 0.76은 이미 화면 255고 0.75가 상한이라는 오랜 실측과 맞는다 — 0.5225×1.90 = 0.993.
+#
+# 정확도 대조(해변 오두막 h12 clear · lookdev/shots/wall/{A,B,C}_beach.png, 모델 vs 실측):
+#   A 벽 0.880/0.844/0.774 · sl 0.55 → 직광 (255,255,255)/(255,255,255) · 그늘 (238,220,207)/(243,219,211)
+#   B 벽 0.742/0.727/0.690 · sl 0.80 → 직광 (252,247,234)/(248,241,234) · 그늘 (220,206,201)/(221,199,199)
+#   C 벽 0.742/0.727/0.690 · sl 1.00 → 직광 (252,247,234)/(248,241,234) · 그늘 (234,218,213)/(230,209,208)
+# 최대 오차 9레벨(≈0.035). 방향(포화했나 / 파스텔인가 / 갈색인가)은 세 안 모두 정확하다.
+# 핀 대역은 이 오차보다 넓게 잡을 것 — 값을 소수점까지 못박는 데 쓰라고 만든 함수가 아니다.
+const NOON_LIT := 1.90
+
+static func face_screen(albedo: Color, shadow_level: float, shadow_tint: Color, lit: bool) -> Color:
+	var p := sample(12.0)
+	var amb: Color = p["amb_col"] * float(p["amb_e"])
+	var sun: Color = p["sun_col"] * float(p["sun_e"])
+	var f: Color = sun if lit else sun * shadow_tint * shadow_level
+	var a := albedo.srgb_to_linear()
+	return Color(
+		_face_ch(a.r, f.r, sun.r, amb.r),
+		_face_ch(a.g, f.g, sun.g, amb.g),
+		_face_ch(a.b, f.b, sun.b, amb.b)).linear_to_srgb()
+
+static func _face_ch(a: float, f: float, s: float, m: float) -> float:
+	return minf(a * NOON_LIT * (f + m) / (s + m), 1.0)

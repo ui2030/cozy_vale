@@ -12,6 +12,21 @@ const WOOD := preload("res://world/wood.gdshader")
 const WOOD_C := Color(0.590, 0.480, 0.362)
 const WOOD_D := Color(0.470, 0.372, 0.283)
 
+# ── 크림 벽토의 그림자 레버 (벽면 순백 포화 처방) ─────────────────────
+# 벽토는 정오 직광에서 세 채널이 다 255로 날아가 있었다(실측 beach_spawn_h12·windmill_h12:
+# 직광 (255,255,255) / 그늘 (243,219,211)). albedo 하나로는 못 푼다 — 툰 light()의 lit:그늘
+# 간격이 파스텔 대역보다 넓어서, 직광이 포화를 벗는 값까지 내리면 그늘이 갈색으로 떨어진다
+# (world.gd C_WALL 주석의 실패 기록). 그래서 **머티리얼별 shadow_level**로 간격 자체를 좁힌다.
+#
+# WALL_SHADOW는 그 레버의 단일 튜닝 지점이다(0.55=셰이더 전역 기본 … 1.0=그늘 밝기 최대).
+# 1.00에서도 벽은 평평해지지 않는다 — 그늘면 명암이 shadow_tint(0.78,0.66,0.72)에서 나오기
+# 때문이다(해변 오두막 h12 clear 실측: 직광 (248,241,234) vs 그늘 (230,209,208) = G 32레벨).
+# 상한값이라 여유가 없다: 그늘을 더 올려야 하면 다음 레버는 shadow_tint다.
+# 0.80도 찍어 봤다(shots/wall/B_*) — 그늘 (221,199,199)로 한 단 탁해져 근접 컷에서 크림이
+# 회색 쪽으로 읽힌다. 3안 비교표는 lookdev/shots/wall/비교표_벽면포화_20260829.md.
+const CREAM_C := Color(0.742, 0.727, 0.690)
+const WALL_SHADOW := 1.00
+
 # 접지 그림자 판이 놓이는 월드 높이. 마을·해변·실내의 지면 상면이 전부 0.10이고 그 위 0.10을 띄운다 —
 # 판이 밟고 선 표면보다 아래면 깊이 판정에 통째로 먹힌다. 넘어야 하는 것들(실측):
 # 마을 흙길 상면 0.185 · 판석 0.14 · 밭 흙 0.11 / 해변 젖은 모래 띠 0.18 · 소품 그림자 판 0.19
@@ -148,10 +163,24 @@ static func make_wood(color: Color, outline_width := 0.0, dir := Vector3.RIGHT) 
 	m.next_pass = outline_mat(outline_width)
 	return m
 
-static func make_solid(color: Color, outline_width := 0.0) -> ShaderMaterial:
+# shadow_level = 0.0 은 **항등**이다(uniform을 아예 안 건드림 → 셰이더 전역 기본 0.55).
+# 캐릭터·가구·식생·킷 소품이 이 셰이더를 전부 공유하므로 전역 기본은 손대지 않는다
+# (sat_cap·val_gain·green_gate와 같은 규약).
+#
+# 레버를 **색에서 파생**시키는 이유는 나뭇결(solid_or_wood)과 같다: 벽토는 마을 탑·시계탑·
+# 해변 오두막·표지판처럼 세 파일에 흩어져 있어서, 호출부마다 레버를 넘기게 하면 새로 짓는
+# 벽 조각이 조용히 옛 포화 경로로 빠진다. 팔레트 색이 곧 스위치면 그 누락이 불가능하다.
+# (발주는 make_solid에 선택 인자를 열라고 했는데, 그 모양이면 _box·_cyl·solid_or_wood·
+#  _wood_or·beach._box_at까지 인자를 관통시켜야 하고 누락 통로는 그대로 남는다.)
+static func make_solid(color: Color, outline_width := 0.0, shadow_level := 0.0) -> ShaderMaterial:
 	var m := ShaderMaterial.new()
 	m.shader = TOON
 	m.set_shader_parameter("albedo", color)
+	var sl := shadow_level
+	if sl <= 0.0 and color.is_equal_approx(CREAM_C):
+		sl = WALL_SHADOW
+	if sl > 0.0:
+		m.set_shader_parameter("shadow_level", sl)
 	m.next_pass = outline_mat(outline_width)
 	return m
 
