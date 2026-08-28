@@ -510,6 +510,10 @@ const C_ROOF2 := Color(0.656, 0.572, 0.740)  # 보라 중 — 지붕 밝은면
 # 화면 실측(해변 오두막 h12 clear, shots/wall/C_beach.png): 직광 (248,241,234) ·
 # 그늘 (230,209,208) = 옛 파스텔 크림 (243,219,211) 자리를 shadow_level이 그대로 받쳐 준다.
 # 3안 비교와 채택 근거는 lookdev/shots/wall/비교표_벽면포화_20260829.md.
+# 후속: 이 채도로는 그늘면이 크림이 아니라 **분홍**으로 앉았다(전역 shadow_tint의 B가 G보다
+# 높아서). 그것도 albedo로는 못 되돌린다(위 두 핀 사이가 R−G 0.025뿐) — 벽토 전용
+# shadow_tint로 풀었다(ToonChar.WALL_TINT). 즉 이 상수는 **명도** 담당이고 그늘의 **색**은
+# 이제 그쪽 레버가 쥔다. 벽 색을 손대야 하면 두 곳을 같이 본다.
 const C_WALL  := Color(0.742, 0.727, 0.690)  # 크림 — 벽토/석재 (ToonChar.CREAM_C와 같은 값)
 # 낮 창(window.gdshader day_tint/frame_tint). 창 판은 unshaded라 이 값이 화면에 거의 그대로 나온다 —
 # 유리는 문(C_WOOD)보다 어둡고 청기가 있어 목재 문과도 색으로 갈린다.

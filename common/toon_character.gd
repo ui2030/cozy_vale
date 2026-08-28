@@ -21,11 +21,26 @@ const WOOD_D := Color(0.470, 0.372, 0.283)
 # WALL_SHADOW는 그 레버의 단일 튜닝 지점이다(0.55=셰이더 전역 기본 … 1.0=그늘 밝기 최대).
 # 1.00에서도 벽은 평평해지지 않는다 — 그늘면 명암이 shadow_tint(0.78,0.66,0.72)에서 나오기
 # 때문이다(해변 오두막 h12 clear 실측: 직광 (248,241,234) vs 그늘 (230,209,208) = G 32레벨).
-# 상한값이라 여유가 없다: 그늘을 더 올려야 하면 다음 레버는 shadow_tint다.
+# 상한값이라 여유가 없다: 그늘을 더 올려야 하면 다음 레버는 shadow_tint다(아래 WALL_TINT에서 씀).
 # 0.80도 찍어 봤다(shots/wall/B_*) — 그늘 (221,199,199)로 한 단 탁해져 근접 컷에서 크림이
 # 회색 쪽으로 읽힌다. 3안 비교표는 lookdev/shots/wall/비교표_벽면포화_20260829.md.
 const CREAM_C := Color(0.742, 0.727, 0.690)
 const WALL_SHADOW := 1.00
+
+# ── 그 처방의 잔여 결함: 그늘면이 크림이 아니라 **분홍**으로 읽혔다 ──────
+# 옛 그늘 (243,219,211)은 G−B 8의 따뜻한 크림, 위 처방 뒤 (230,209,208)은 G−B 1 = 분홍이다.
+# 원인은 전역 shadow_tint (0.78,0.66,0.72)의 **B가 G보다 높다**는 것 — 캐릭터 피부 그림자용으로
+# 잡힌 살짝 자주빛 값이다. 옛날엔 벽 albedo 자체가 노래서(B가 R보다 0.106 낮음) 그 파랑을
+# 덮었는데, albedo가 0.742/0.727/0.690(채도 0.070)까지 깎이면서 tint가 그대로 드러났다.
+# albedo로는 못 되돌린다 — world.gd C_WALL 주석대로 위(클리핑 0.75)·아래(겨울 실루엣 0.725)가
+# 둘 다 핀이라 R−G가 0.025 안에 갇혀 있다. 그래서 다음 레버인 **머티리얼별 shadow_tint**를 쓴다.
+#
+# R·G는 전역 그대로 두고 B만 내린다: G를 올리면 그늘이 밝아지며 R−G(현행 21)가 같이 무너진다.
+# 화면 실측(해변 오두막 h12 clear, 벽 그늘면):
+#   0.72(전역) → (230,209,208) G−B 1 · 0.64 → (230,209,198) G−B 11 ← 채택 (옛 크림 8 근방)
+# 직광면은 tint를 안 타므로 그대로다(풍차 탑 실측 (252,247,238), 세 채널 다 포화 밖).
+# 노을(h18)도 같이 확인했다 — 그늘 (230,163,109) → (230,163,103)으로 결이 같은 방향이다.
+const WALL_TINT := Color(0.78, 0.66, 0.64)
 
 # 접지 그림자 판이 놓이는 월드 높이. 마을·해변·실내의 지면 상면이 전부 0.10이고 그 위 0.10을 띄운다 —
 # 판이 밟고 선 표면보다 아래면 깊이 판정에 통째로 먹힌다. 넘어야 하는 것들(실측):
@@ -177,8 +192,10 @@ static func make_solid(color: Color, outline_width := 0.0, shadow_level := 0.0) 
 	m.shader = TOON
 	m.set_shader_parameter("albedo", color)
 	var sl := shadow_level
-	if sl <= 0.0 and color.is_equal_approx(CREAM_C):
-		sl = WALL_SHADOW
+	if color.is_equal_approx(CREAM_C):
+		m.set_shader_parameter("shadow_tint", WALL_TINT)  # 벽토만 — 전역 기본은 캐릭터 것이다
+		if sl <= 0.0:
+			sl = WALL_SHADOW
 	if sl > 0.0:
 		m.set_shader_parameter("shadow_level", sl)
 	m.next_pass = outline_mat(outline_width)

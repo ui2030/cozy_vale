@@ -1607,7 +1607,7 @@ func _test_wall_face_look() -> void:
 		"툰 shadow_level 전역 기본이 0.55가 아니다 — 벽 레버가 전역으로 샜다")
 	assert(src.contains("uniform vec4 shadow_tint : source_color = vec4(0.78, 0.66, 0.72, 1.0);"),
 		"툰 shadow_tint 기본이 바뀌었다 — 아래 화면값 환산의 전제")
-	var tint := Color(0.78, 0.66, 0.72)
+	var g_tint := Color(0.78, 0.66, 0.72)  # 셰이더 전역 기본 = 레버를 안 건 머티리얼이 타는 값
 	# 벽 머티리얼은 **프로덕션이 짓는 그 오두막**에서 뽑는다(_roof_snow 핀과 같은 방식).
 	var bh: Node3D = B.new()
 	bh._hut()
@@ -1617,11 +1617,20 @@ func _test_wall_face_look() -> void:
 	# 재현해야 "배선이 빠졌다"가 타입에러가 아니라 **값**으로 드러난다.
 	var slv: Variant = m.get_shader_parameter("shadow_level")
 	var sl: float = 0.55 if slv == null else float(slv)
+	var tv: Variant = m.get_shader_parameter("shadow_tint")
+	var tint: Color = g_tint if tv == null else tv
+	# 항등 규약: 벽토가 **아닌** 머티리얼은 두 레버가 다 미설정이어야 한다(= 전역 기본 통과).
+	# 오두막 지붕(C_ROOF)도 같은 make_solid를 타므로 배선이 색 조건 밖으로 새면 여기서 잡힌다.
+	var roof := (bh.get_child(1) as MeshInstance3D).material_override as ShaderMaterial
+	var r_tint: Variant = roof.get_shader_parameter("shadow_tint")
+	var r_sl: Variant = roof.get_shader_parameter("shadow_level")
 	bh.free()
+	assert(r_tint == null and r_sl == null,
+		"벽토가 아닌 머티리얼(오두막 지붕)에 그늘 레버가 샜다 — tint %s · level %s" % [str(r_tint), str(r_sl)])
 	assert(alb.is_equal_approx(W.C_WALL), "해변 오두막 벽이 마을 벽토 팔레트가 아니다: %s" % str(alb))
 	var lit := DN.face_screen(alb, sl, tint, true)
 	var shade := DN.face_screen(alb, sl, tint, false)
-	var msg := " (albedo %s · shadow_level %.2f → 직광 (%d,%d,%d) / 그늘 (%d,%d,%d))" % [str(alb), sl,
+	var msg := " (albedo %s · shadow_level %.2f · shadow_tint %s → 직광 (%d,%d,%d) / 그늘 (%d,%d,%d))" % [str(alb), sl, str(tint),
 		roundi(lit.r * 255.0), roundi(lit.g * 255.0), roundi(lit.b * 255.0),
 		roundi(shade.r * 255.0), roundi(shade.g * 255.0), roundi(shade.b * 255.0)]
 	print("wall face screen:" + msg)   # assert보다 먼저 — 실패해도 실측값이 로그에 남는다
@@ -1641,6 +1650,13 @@ func _test_wall_face_look() -> void:
 	#    이쪽은 조명 모델과 무관하게 서는 값이라 남긴다. **①보다 뒤에 둔다** — 앞에 두면 색만
 	#    되돌린 회귀에서 이 assert가 먼저 터져 화면값 핀이 아예 안 돌아 로그에 실측이 안 남는다.
 	assert(maxf(alb.r, maxf(alb.g, alb.b)) <= 0.75, "벽토 albedo가 정오 클리핑 상한 초과: %s" % str(alb))
+	# ⑥ 그늘면이 **크림**으로 읽혀야 한다 = G가 B보다 위. 전역 shadow_tint는 B(0.72) > G(0.66)라
+	#    캐릭터 피부 그림자용의 자주빛이 섞여 있는데, 옛 벽 albedo는 노란기(B가 R보다 0.106 아래)로
+	#    그걸 덮고 있었다. albedo 채도가 0.070까지 깎이자 tint가 드러나 그늘이 분홍으로 뒤집혔다
+	#    (실측 (230,209,208) = G−B 1, 옛 크림은 (243,219,211) = G−B 8).
+	#    문턱은 **절대값**이다 — 프로덕션 상수에서 파생시키면 그 상수를 되돌렸을 때 문턱도 같이
+	#    되돌아가 핀이 안 문다(직전 작업이 실제로 밟은 함정). 0.024 ≈ 화면 6레벨.
+	assert(shade.g - shade.b >= 0.024, "벽 그늘면이 크림이 아니라 분홍으로 읽힌다" + msg)
 
 # ══ 가을 식생 룩 — **실제 경로**를 계산으로 검증 ═══════════════════════
 # 겨울(_test_winter_veg_look)과 같은 방식이다: 상수 서열이 아니라 decor가 실제로 만든 머티리얼로
