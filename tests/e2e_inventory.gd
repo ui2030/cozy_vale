@@ -49,6 +49,7 @@ func _run() -> void:
 	var col: Node = get_tree().get_first_node_in_group("collection_panel")
 	assert(col.visible, "B → 도감 열림")
 	_assert_fits(col, "도감")
+	await _assert_icons(col, player)
 	var cook: Node = get_tree().get_first_node_in_group("cooking_panel")
 	cook.open()  # 스토브 상호작용이 부르는 그 함수
 	await get_tree().process_frame
@@ -88,6 +89,60 @@ func _run() -> void:
 
 	print("E2E INVENTORY PASS")
 	get_tree().quit()
+
+# ── 도감 아이콘 ────────────────────────────────────────────────────
+# 도감이 글자만 나열하던 것을 고쳤다 — 밭·풀숲에 서 있는 **그 실물 메시**를 작은 SubViewport에
+# 그려 아이콘으로 쓴다. 아이콘이 조용히 빠져도 패널은 멀쩡해 보이므로 **개수를 세서** 문다.
+# 문턱은 전부 절대 숫자다: 프로덕션 상수(ICON_PX·항목 수)에서 유도하면 그쪽이 0이 되는 순간
+# 문턱도 같이 0이 되어 조용히 통과한다(e1c0540에서 겪은 그 구멍).
+func _assert_icons(col: Node, player: Node) -> void:
+	# 세이브가 실려 있어도 여기서 상태를 확정한다 — 진도의 단일 출처가 이 배열이다.
+	player.collection = []
+	col._rebuild()
+	await get_tree().process_frame
+	var cells: int = col._list.find_children("", "HBoxContainer", true, false).size()
+	# 목록 안에서만 센다 — ScrollContainer 자체가 내부용 TextureRect 둘을 달고 있다(실측).
+	var icons: Array = col._list.find_children("", "TextureRect", true, false)
+	assert(cells == 47, "도감 슬롯 47칸(작물 12 + 물고기 19 + 채집물 16) — 실제 %d칸" % cells)
+	assert(icons.size() == 28,
+		"아이콘 28장(작물 12 + 채집물 16)이어야 한다 — 실제 %d장. 나머지 19칸(물고기)은 실물 메시가 없어 글자만 둔다"
+			% icons.size())
+	for ic in icons:
+		assert(ic.texture != null, "아이콘 자리는 만들었는데 텍스처가 비었다")
+		assert(ic.custom_minimum_size == Vector2(44.0, 44.0),
+			"아이콘이 행 높이(44)와 안 맞는다: %s" % str(ic.custom_minimum_size))
+	# 렌더는 항목당 한 번. 패널을 다시 열 때마다 SubViewport를 새로 돌리면 여기서 걸린다.
+	var vps: int = col.find_children("", "SubViewport", true, false).size()
+	assert(vps == 28, "아이콘 렌더 28개 — 실제 %d개" % vps)
+	col._rebuild()
+	col._rebuild()
+	assert(col.find_children("", "SubViewport", true, false).size() == 28,
+		"패널을 다시 열 때마다 아이콘을 새로 렌더한다 — 캐시가 안 걸렸다 (%d개로 늘었다)"
+			% col.find_children("", "SubViewport", true, false).size())
+	var fid: String = GameData.forage.keys()[0]
+	assert(is_same(col._icon(fid), col._icon(fid)), "%s — 같은 항목의 아이콘을 두 번 만든다" % fid)
+	# 미발견은 실루엣, 발견은 제 색. modulate 값을 실제로 세서 갈리는지 본다.
+	assert(_icon_tone(col) == [0, 28],
+		"아무것도 안 모은 도감은 28장 전부 실루엣이어야 한다 — 실제 [제 색, 실루엣] = %s"
+			% str(_icon_tone(col)))
+	for iid in GameData.forage:  # 채집물 16종만 모은 상태 = 화면에서 반은 색, 반은 실루엣
+		player._add_item(iid, 1)
+	col._rebuild()
+	await get_tree().process_frame
+	assert(_icon_tone(col) == [16, 12],
+		"채집물 16종만 모았으면 제 색 16 · 실루엣 12여야 한다 — 실제 %s" % str(_icon_tone(col)))
+
+# 아이콘 [제 색 수, 실루엣 수]. 둘 중 어느 쪽도 아니면 합이 안 맞아 위 단언이 문다.
+func _icon_tone(col: Node) -> Array:
+	var lit := 0
+	var dark := 0
+	for ic in col._list.find_children("", "TextureRect", true, false):
+		var m: Color = ic.modulate
+		if m.r > 0.9 and m.g > 0.9 and m.b > 0.9 and m.a > 0.9:
+			lit += 1
+		elif m.r < 0.15 and m.g < 0.15 and m.b < 0.15 and m.a > 0.4:
+			dark += 1
+	return [lit, dark]
 
 # 패널 상자를 **실측**한다. 목록 원래 높이가 화면 몫(뷰포트 720 − 상단 100 − 여백)보다 길어야
 # 이 핀이 무언가를 재는 것이고, 그 상태에서 ① 패널 바닥이 화면 안 ② 패널이 목록보다 짧다
