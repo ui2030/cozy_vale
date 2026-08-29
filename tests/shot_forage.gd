@@ -23,7 +23,9 @@ func _run() -> void:
 	var args := OS.get_cmdline_user_args()
 	var what: String = args[0] if args.size() > 0 else "spring"
 	var tag: String = args[1] if args.size() > 1 else "after"
-	var sea: int = maxi(0, GameData.SEASON_IDS.find("summer" if what == "ground" else what))
+	# seeds / late_autumn = 늦가을 야생 씨앗 컷. 계절은 가을(씨앗이 돋는 계절)로 고정한다.
+	var season_of := {"ground": "summer", "seeds": "autumn", "late_autumn": "autumn"}
+	var sea: int = maxi(0, GameData.SEASON_IDS.find(String(season_of.get(what, what))))
 	var world := get_tree().get_first_node_in_group("world")
 	GameClock.abs_day = world.season_day(sea, false)  # 그 계절의 첫 맑고 축제 아닌 날 = weather clear
 	GameClock.game_min = 12 * 60
@@ -36,10 +38,17 @@ func _run() -> void:
 	var fs := get_tree().get_first_node_in_group("forage_system")
 	fs._clear()
 	var pool := GameData.season_filter(GameData.forage, GameData.season_id(sea))
-	var x0 := -ROW_GAP * (pool.size() - 1) * 0.5
+	if what == "seeds":
+		pool = GameData.wild_seed_ids()          # 씨앗만 근경으로 — 이게 뭔지 알아보는가
+	elif what == "late_autumn":
+		pool += GameData.wild_seed_ids()         # 늦가을 들 = 가을 채집물 + 겨울 씨앗이 같이 난다
+	# 줄이 4종보다 길어지면(늦가을 8종) 간격을 좁혀 같은 프레임 폭에 눌러 담는다 — 카메라를
+	# 물리면 광장·울타리가 배경으로 밀려들어와 컷이 증거가 아니게 된다(실측 late_autumn 1차).
+	var gap: float = ROW_GAP * minf(1.0, 4.0 / float(maxi(pool.size(), 1)))
+	var x0 := -gap * (pool.size() - 1) * 0.5
 	for i in pool.size():
 		var fid: String = pool[i]
-		fs._spawn(Vector3(x0 + ROW_GAP * i, 0, ROW_Z), fid, GameData.forage[fid].get("rare", false))
+		fs._spawn(Vector3(x0 + gap * i, 0, ROW_Z), fid, GameData.forage.get(fid, {}).get("rare", false))
 
 	var player := get_tree().get_first_node_in_group("player")
 	player.global_position = Vector3(0, 2, ROW_Z + 6.0)  # 카메라 뒤 = 진열을 안 가린다
@@ -48,7 +57,7 @@ func _run() -> void:
 	if what == "ground":
 		# 접지 확인: 눈높이를 밑동까지 내린 측면 근경. 묻히면 밑동이 잘리고 뜨면 틈이 보인다.
 		# 줄 끝(가는 대를 가진 종)을 잡는다 — 굵은 밑동보다 대 하나가 접지 오차를 훨씬 잘 드러낸다.
-		var last := x0 + ROW_GAP * (pool.size() - 1)
+		var last := x0 + gap * (pool.size() - 1)
 		cam.global_position = Vector3(last + 0.55, 0.45, ROW_Z + 1.25)
 		cam.look_at(Vector3(last, 0.12, ROW_Z), Vector3.UP)  # 밑동을 살짝 내려다본다
 	else:

@@ -64,8 +64,13 @@ func _validate() -> void:
 			assert(fish.has(yid) or forage.has(yid), "%s yield_id가 없는 산출물: %s" % [cid, yid])
 			assert(not yields.has(yid), "%s와 %s가 같은 산출물을 맺음: %s" % [cid, str(yields.get(yid)), yid])
 			yields[yid] = cid
-			# 씨앗 = 산출물 그 자체. 새 씨앗 아이템을 만들면 여기서 걸린다.
-			assert(String(c["seed_id"]) == yid, "%s 씨앗(%s)이 산출물(%s)과 다름" % [cid, c["seed_id"], yid])
+			# 씨앗은 둘 중 하나다: ① 산출물 그 자체(주운 것을 그대로 심는다) ② 야생에서만 줍는 전용
+			# 씨앗. ②는 겨울에 열리는 종 몫이다 — 열매가 겨울에만 돋으니 씨가 곧 열매면 첫해엔
+			# 심을 방법이 없다(Y1 가을=씨 없음, Y1 겨울=파종 금지). 전용 씨앗은 상점에도 도감에도
+			# 없으므로 **산출물로 새면 안 된다** — 새는 순간 팔리고 선물되고 도감에 유령이 뜬다.
+			if String(c["seed_id"]) != yid:
+				assert(not is_produce(String(c["seed_id"])),
+					"%s 전용 씨앗이 산출물로 샌다: %s" % [cid, c["seed_id"]])
 		assert(not seeds.has(c["seed_id"]), "seed_id 중복: " + c["seed_id"])
 		seeds[c["seed_id"]] = true
 		assert(not c["seasons"].is_empty(), "%s 계절 비어있음(어디서도 못 심음)" % cid)
@@ -256,13 +261,27 @@ func crop_plantable(crop_id: String, sid: String) -> bool:
 
 # 그 계절 상점 재고. 정렬은 all_seed_ids 순서 단일 출처라 상점·Q순환·가방 패널의 순서가
 # 어긋날 수 없다. 겨울은 빈 배열(설계: 파종 없는 계절 = 낚시·채집의 계절).
-# 씨앗이 곧 산출물인 항목(주운 채집물을 그대로 심는다)은 재고에서 뺀다: 씨앗값에 사서
-# 산출물로 되팔면 무한 골드가 되고, 애초에 채집이 그 공급원이라는 설계다.
+# 산출물이 따로 있는 항목(채집물 재배)은 재고에서 통째로 뺀다: 씨앗값에 사서 산출물로 되팔면
+# 무한 골드가 되고, 애초에 **들에서 얻는 것**이 그 공급원이라는 설계다(주운 열매를 그대로 심든,
+# 늦가을 야생 씨앗을 줍든). 옛 판정은 "씨앗이 곧 아이템인가"였는데 그건 앞엣것만 걸렀다.
 func season_seed_ids(sid: String) -> Array:
 	var out := []
 	for seed_id in all_seed_ids():
-		if crop_plantable(_seed_to_crop[seed_id], sid) and not is_collectible(seed_id):
+		var cid: String = _seed_to_crop[seed_id]
+		if crop_plantable(cid, sid) and crop_yield(cid) == cid:
 			out.append(seed_id)
+	return out
+
+# 야생에서만 줍는 전용 씨앗 — 산출물이 따로 있는데 씨앗이 그 산출물이 아닌 항목.
+# 상점(season_seed_ids)·도감(is_collectible)·판매(is_produce) 전부 자동으로 밖이다.
+# 정렬해 돌려준다 = 스폰 순번이 Dictionary 순회 순서에 안 흔들린다.
+func wild_seed_ids() -> Array:
+	var out := []
+	for cid in crops:
+		var sid := String(crops[cid]["seed_id"])
+		if crop_yield(cid) != cid and sid != crop_yield(cid):
+			out.append(sid)
+	out.sort()
 	return out
 
 # 재배 항목을 물어봐도 산출물 값으로 답한다(값을 두 번 적지 않는다).

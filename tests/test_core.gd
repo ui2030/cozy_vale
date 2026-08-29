@@ -65,6 +65,7 @@ func _ready() -> void:
 	_test_npc_personality()
 	_test_crop_look()
 	_test_forage_crops()  # 날짜를 여러 해 돌리므로 맨 뒤 (앞 테스트의 시계·주민 상태를 안 흔들게)
+	_test_winter_seeds()  # 같은 이유로 맨 뒤 — Y1 가을 30일 + 겨울까지 실제로 돌린다
 	print("ALL CORE TESTS PASS")
 	get_tree().quit()
 
@@ -2896,8 +2897,13 @@ func _test_forage_crops() -> void:
 		assert(GameData.forage.has(yid), "%s 산출물이 채집물이 아님: %s" % [cid, yid])
 		assert(not grown.has(yid), "%s와 %s가 같은 채집물을 맺는다: %s" % [cid, str(grown.get(yid)), yid])
 		grown[yid] = cid
-		# 새 씨앗 아이템 금지: 심는 것이 곧 거두는 것(동물의 숲 방식, 초반 공급원 = 채집)
-		assert(String(GameData.crops[cid]["seed_id"]) == yid, "%s 씨앗이 산출물과 다름" % cid)
+		# 씨앗은 산출물 그 자체이거나(주운 것을 그대로 심는다) 야생 전용 씨앗 둘 중 하나다.
+		# 후자는 겨울에 열리는 종 몫 — 자세한 계약은 _test_winter_seeds가 문다. 여기선
+		# **어느 쪽이든 상점에 없고 도감·판매에 안 샌다**만 본다(초반 공급원 = 들에서 얻는 것).
+		var sid_c: String = GameData.crops[cid]["seed_id"]
+		assert(sid_c == yid or sid_c in GameData.wild_seed_ids(), "%s 씨앗 출처 불명: %s" % [cid, sid_c])
+		if sid_c != yid:
+			assert(not GameData.is_produce(sid_c), "%s 전용 씨앗이 산출물로 샌다: %s" % [cid, sid_c])
 		# 재배 항목 자체는 아이템이 아니다 — 도감·판매·선물에 유령 항목이 새면 안 된다
 		assert(not GameData.is_collectible(cid) and not GameData.is_produce(cid), "%s가 아이템으로 샌다" % cid)
 		assert(GameData.is_collectible(yid), "%s 산출물이 도감 대상이 아님" % yid)
@@ -3015,3 +3021,170 @@ func _test_forage_crops() -> void:
 	assert(r["ok"], "선물 실패: %s" % r["msg"])
 	assert(String(r["msg"]).contains("좋아함") or String(r["msg"]).contains("기뻐함"),
 		"기른 채집물에 취향이 안 먹힘 — 아이템이 갈렸다: %s" % r["msg"])
+
+# ── 첫해 겨울 농장: 겨울에 열리는 종의 씨를 늦가을 야생에서 줍는다 ──────────────
+# 옛 판은 그 넷의 씨앗이 곧 열매였고 열매는 겨울에만 돋았다 = **첫해엔 심을 방법이 없었다**.
+# (Y1 가을 = 씨가 세상에 없음 → Y1 겨울 = 파종 금지 → Y2 가을에야 파종 → 첫 수확 Y2 겨울.
+#  겨울무만 가을에도 돋아 예외였고, 그래서 Y1 겨울 밭은 한 종에 휴면 그루터기뿐이었다.)
+# 고친 것은 하나다: **씨앗**을 심는 계절의 마지막 6일 야생에 따로 돋게 했다. 열매는 그대로 겨울 전용.
+# 네 축을 전부 값으로 잰다 — ① Y1 안에 넷을 다 심어 겨울에 거둔다 ② 열매는 여전히 겨울에만 돋는다
+# ③ 봄·여름·가을 채집물이 안 줄었다 ④ 늦가을 6일 안에 넷을 다 줍는다.
+func _test_winter_seeds() -> void:
+	var FS := preload("res://forage/forage_system.gd")
+	var PS := preload("res://common/plant_shapes.gd")
+	var TC := preload("res://common/toon_character.gd")
+	var AUT := 2 * GameClock.DAYS_PER_SEASON  # Y1 가을 D1의 abs_day
+
+	# ── 0. 순수 함수: 자리보다 종이 많아도 날마다 밀려 전 종을 덮는가 (값 직접 계산)
+	assert(FS.seeds_on([], 3, 2).is_empty(), "후보 0 = 씨앗 스폰 없음")
+	assert(FS.seeds_on(["a", "b", "c", "d"], 1, 2) == ["c", "d"], "day1 슬롯2 → c,d")
+	assert(FS.seeds_on(["a", "b", "c", "d"], 2, 2) == ["a", "b"], "day2 슬롯2 → a,b")
+	assert(FS.SEED_POINTS.size() >= 2, "씨앗 자리가 %d개 — 한 자리면 4종 도는 데 4일" % FS.SEED_POINTS.size())
+	for i in FS.SEED_POINTS:
+		assert(not i in FS.REMOTE_IDX, "씨앗 자리 %d가 희귀 전용 원거리 지점과 겹친다" % i)
+
+	# ── 1. 데이터: 야생 씨앗 4종이 상점·도감·판매 전부 밖에 있고, 심는 데는 쓰인다
+	var wild := GameData.wild_seed_ids()
+	assert(wild.size() == 4, "야생 씨앗 4종(겨울에 열리는 재배 종) — 실제 %d" % wild.size())
+	for s in wild:
+		var cid: String = GameData.crop_from_seed(s)
+		assert(cid != "", "%s 씨앗↔작물 매핑 없음" % s)
+		assert(s in GameData.all_seed_ids(), "%s가 씨앗 순환 집합 밖 = 골라서 심을 수가 없다" % s)
+		assert(not GameData.is_collectible(s), "%s가 도감에 샜다" % s)
+		assert(not GameData.is_produce(s), "%s가 판매·선물에 샜다(늦가을 채집이 돈벌이가 된다)" % s)
+		assert(_farm.deposit(s, 1) == 0, "%s를 판매상자가 받았다 — 씨앗은 팔 것이 아니다" % s)
+		assert(GameData.sell_price(s) == 0, "%s 매입가 %d — 0이어야 한다" % [s, GameData.sell_price(s)])
+		for sea in GameData.SEASON_IDS:
+			assert(not s in GameData.season_seed_ids(sea), "%s가 %s 상점 재고에 떴다" % [s, sea])
+		assert(GameData.crop_plantable(cid, "autumn"), "%s는 가을에 심는 종이어야 한다" % s)
+		assert(GameData.crop_in_season(cid, "winter"), "%s는 겨울에 열리는 종이어야 한다" % s)
+
+	# ── 2. 겉모습: 씨앗도 실제 노드를 만든다(색 구체 폴백 금지), 색은 그 종 열매 색 그대로
+	var fs: Node = FS.new()
+	for s in wild:
+		var nd: Node3D = fs._look(s, false)
+		assert(not (nd is MeshInstance3D and (nd as MeshInstance3D).mesh is SphereMesh),
+			"%s — 색 구체 폴백을 탔다: 씨앗 형태가 실경로에 안 닿는다" % s)
+		var ab := TC.aabb_of(nd)
+		assert(absf(ab.position.y) <= 0.02, "%s — 밑동이 지면에서 %+.3f (묻히거나 떴다)" % [s, ab.position.y])
+		assert(ab.size.y >= 0.30 and ab.size.y <= 0.52, "%s — 전고 %.3f가 대역 밖" % [s, ab.size.y])
+		assert(maxf(ab.size.x, ab.size.z) <= 0.80,
+			"%s — 폭 %.3f: 줍는 반경만큼 퍼졌다" % [s, maxf(ab.size.x, ab.size.z)])
+		var yid2 := GameData.crop_yield(GameData.crop_from_seed(s))
+		var want := Color.from_string(String(GameData.forage[yid2]["color"]), Color.BLACK)
+		assert(_look_color(nd).is_equal_approx(want), "%s 씨앗 색이 열매(%s)와 다르다" % [s, yid2])
+		nd.free()
+	assert(PS.SHAPES.has(PS.SEED_SHAPE), "씨앗 원형 %s가 표에 없다" % PS.SEED_SHAPE)
+
+	# ── 3. 늦가을 창: 씨앗은 이 6일에만 돋고, 그 안에 4종을 다 얻는다 (Y1 가을 30일 전수 시뮬)
+	# 문턱은 절대 숫자다 — LATE_DAYS에서 유도하면 그 값이 0이 되는 순간 문턱도 0이 되어 통과한다.
+	var first_seen := {}   # 씨앗 → 처음 나온 계절일
+	var fruit_leak := []
+	for d in GameClock.DAYS_PER_SEASON:
+		GameClock.abs_day = AUT + d
+		assert(GameClock.year() == 1 and GameData.season_id(GameClock.season()) == "autumn", "전제: Y1 가을")
+		var day := GameClock.day_of_season()
+		fs._respawn()
+		var n := 0
+		for e in _forage_snapshot(fs):
+			var id: String = e[1]
+			if id in wild:
+				n += 1
+				if not first_seen.has(id):
+					first_seen[id] = day
+				assert(day >= 25, "씨앗 %s가 가을 D%d에 돋았다 — 늦가을(D25~30) 창 밖" % [id, day])
+			elif GameData.forage[id]["seasons"] == ["winter"]:
+				fruit_leak.append("D%d %s" % [day, id])
+		if day < 25:
+			assert(n == 0, "가을 D%d에 씨앗이 %d개 — 창 밖에서 샜다" % [day, n])
+		else:
+			assert(n == 2, "늦가을 D%d에 씨앗이 %d개 — 자리 2곳은 확률 없이 반드시 돋아야 한다" % [day, n])
+	assert(fruit_leak.is_empty(), "겨울 열매가 가을에 샜다: %s" % str(fruit_leak))
+	assert(first_seen.size() == 4, "늦가을 6일 동안 씨앗 %d종만 나왔다 (전부 4종이어야)" % first_seen.size())
+	var last_day := 0
+	for id2 in first_seen:
+		last_day = maxi(last_day, int(first_seen[id2]))
+	assert(last_day <= 26, "4종을 다 모으는 데 가을 D%d까지 걸린다 — 창(D25~30) 안에 여유가 없다" % last_day)
+	# 창 안 어느 이틀 연속으로도 4종이 다 나온다 = 늦게 시작해도 못 구할 일이 없다(최악의 경우)
+	for start in range(25, GameClock.DAYS_PER_SEASON):
+		var got := {}
+		for d2 in [start, start + 1]:
+			GameClock.abs_day = AUT + d2 - 1
+			fs._respawn()
+			for e2 in _forage_snapshot(fs):
+				if e2[1] in wild:
+					got[e2[1]] = true
+		assert(got.size() == 4,
+			"가을 D%d~D%d 이틀에 씨앗 %d종뿐 — 늦게 시작하면 못 구한다" % [start, start + 1, got.size()])
+	# 심는 계절이 아닌 계절엔 끝자락에도 씨앗이 안 돋는다
+	for sea2 in [0, 1, 3]:
+		for d3 in range(GameClock.DAYS_PER_SEASON - 8, GameClock.DAYS_PER_SEASON):
+			GameClock.abs_day = sea2 * GameClock.DAYS_PER_SEASON + d3
+			fs._respawn()
+			for e3 in _forage_snapshot(fs):
+				assert(not e3[1] in wild, "%s 씨앗이 %s에 돋았다" % [e3[1], GameData.season_id(sea2)])
+	fs.free()
+
+	# ── 4. 계절별 채집물 4종씩 그대로 (씨앗을 넣느라 열매를 건드리지 않았다 — 절대 숫자)
+	for sea3 in GameData.SEASON_IDS:
+		var cnt: int = GameData.season_filter(GameData.forage, sea3).size()
+		assert(cnt == 4, "%s 채집물 %d종 — 계절당 4종이어야 한다" % [sea3, cnt])
+	assert(GameData.forage.size() == 16, "채집물 16종 (실제 %d)" % GameData.forage.size())
+
+	# ── 5. 본론: Y1 안에 넷을 다 심어 겨울에 거둔다 (프로덕션: 스폰 → 심기 → 물 → 취침 → 수확)
+	# 줍기 자체(Area3D → player._pick_forage)는 실플레이어가 필요해 e2e_interact가 문다.
+	# 여기선 그 프롬프트가 읽는 **바로 그 메타**에서 씨앗 id를 꺼내 쓴다.
+	var picked_up := {}
+	for d4 in [25, 26]:
+		GameClock.abs_day = AUT + d4 - 1
+		var fs2: Node = FS.new()
+		fs2._respawn()
+		for r in fs2._roots:
+			for c in (r as Node).get_children():
+				if c is Area3D and c.is_in_group("forage") and c.has_meta("forage_id"):
+					var id3 := String(c.get_meta("forage_id"))
+					if id3 in wild:
+						picked_up[id3] = true
+		fs2.free()
+	assert(picked_up.size() == 4, "가을 D25~26 이틀 채집으로 씨앗 %d종 — 4종이어야" % picked_up.size())
+	GameClock.abs_day = AUT + 25  # 가을 D26 = 넷을 다 손에 넣은 날
+	GameClock.game_min = 360
+	var cells := {}
+	for i2 in wild.size():
+		var cell := _fcell(i2, 3)
+		assert(_farm.till(cell), "가을 괭이질 %s" % str(cell))
+		assert(_farm.plant(cell, wild[i2]), "%s를 가을에 심는다 (줍자마자 그 계절 안에)" % wild[i2])
+		cells[wild[i2]] = cell
+	assert(GameClock.year() == 1, "전제: 아직 Y1")
+	while GameData.season_id(GameClock.season()) != "winter":
+		for s2 in wild:
+			_farm.water(cells[s2])   # 비 오는 날은 이미 젖어 false를 낸다
+		GameClock.sleep_to_morning()
+	assert(GameClock.year() == 1, "겨울에 들어와도 아직 Y1 (실제 Y%d)" % GameClock.year())
+	for s3 in wild:
+		assert(not GameData.crop_plantable(GameData.crop_from_seed(s3), "winter"), "겨울 파종은 여전히 막힌다")
+		assert(_farm.get_tile(cells[s3])["crop_id"] != "", "%s가 계절 경계에서 사라졌다" % s3)
+	var grow_max := 0
+	for s4 in wild:
+		grow_max = maxi(grow_max, GameData.grow_days(GameData.crop_from_seed(s4)))
+	for _i3 in grow_max:
+		for s5 in wild:
+			_farm.water(cells[s5])
+		GameClock.sleep_to_morning()
+	var harvested := {}
+	for s6 in wild:
+		var cell2: Vector2i = cells[s6]
+		assert(_farm.is_mature_at(cell2), "%s가 Y1 겨울에 안 여물었다" % s6)
+		var got2: String = _farm.harvest(cell2)
+		assert(got2 == GameData.crop_yield(GameData.crop_from_seed(s6)) and GameData.forage.has(got2),
+			"%s 수확물이 채집물 아이템이 아님: %s" % [s6, got2])
+		harvested[got2] = true
+	assert(harvested.size() == 4, "Y1 겨울에 거둔 종이 %d가지 — 4가지여야 한다" % harvested.size())
+	assert(GameClock.year() == 1 and GameData.season_id(GameClock.season()) == "winter",
+		"수확이 Y1 겨울 안에서 끝나야 한다 (실제 Y%d %s)" % [GameClock.year(), GameData.season_id(GameClock.season())])
+	# 수확 뒤에도 다년생 3종은 그루가 남아 겨울 밭 풍경이 된다(겨울무는 한해살이라 재수확 대기)
+	var standing := 0
+	for s7 in wild:
+		if _farm.get_tile(cells[s7])["crop_id"] != "":
+			standing += 1
+	assert(standing >= 3, "수확 뒤 겨울 밭에 남은 그루가 %d — 다년생 3종은 남아야 한다" % standing)

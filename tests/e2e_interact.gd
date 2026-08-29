@@ -13,6 +13,7 @@ func _run() -> void:
 	var player: Node = get_tree().get_first_node_in_group("player")
 	assert(player != null, "player 존재")
 	await _check_deck_lift(player)
+	_check_wild_seed_pickup(player)
 	player.global_position = Vector3(119.4, 1.0, 118.2)  # 실내 침대 옆 (G단계: 침대가 실내로 이전)
 	for i in 12:  # Area 겹침 등록 대기
 		await get_tree().physics_frame
@@ -33,6 +34,35 @@ func _run() -> void:
 	assert(GameClock.state == GameClock.State.NORMAL, "취침 후 상태 복원")
 	print("E2E INTERACT PASS")
 	get_tree().quit()
+
+# 늦가을 야생 씨앗 줍기 = **실플레이어 경로**. test_core는 stub_player라 _pick_forage를 못 태운다
+# — 씨앗이 화면에 돋아도 주울 수 없으면 첫해 겨울 밭은 여전히 성립하지 않으므로 여기서 문다.
+# 값을 직접 센다: 소지 수량, 도감에 안 들어감, 그 자리 노드가 실제로 사라짐.
+func _check_wild_seed_pickup(player: Node) -> void:
+	var fs: Node = get_tree().get_first_node_in_group("forage_system")
+	assert(fs != null, "forage_system 존재")
+	var wild: Array = GameData.wild_seed_ids()
+	assert(wild.size() == 4, "야생 씨앗 4종 (실제 %d)" % wild.size())
+	GameClock.abs_day = 3 * GameClock.DAYS_PER_SEASON - 6  # Y1 가을 D25 = 늦가을 창 첫날
+	assert(GameClock.year() == 1 and GameClock.day_of_season() == 25, "전제: Y1 가을 D25")
+	fs._respawn()
+	var picked := 0
+	var last := ""
+	var roots_before: int = fs._roots.size()
+	for r in fs._roots.duplicate():
+		for c in (r as Node).get_children():
+			if c is Area3D and c.is_in_group("forage"):
+				var fid := String(c.get_meta("forage_id", ""))
+				if fid in wild:
+					var had: int = player.count(fid)
+					player._pick_forage(c)  # 프롬프트 E가 부르는 그 함수
+					assert(player.count(fid) == had + 1, "%s 줍기가 소지품에 안 들어감" % fid)
+					assert(not fid in player.collection, "%s 씨앗이 도감에 등록됐다" % fid)
+					picked += 1
+					last = fid
+	assert(picked == 2, "늦가을 D25에 주울 수 있는 씨앗이 %d개 — 자리 2곳은 반드시 돋는다" % picked)
+	assert(fs._roots.size() == roots_before - picked, "주운 씨앗 노드가 안 사라졌다")
+	assert(last in player.cycle_seeds(), "주운 씨앗 %s가 Q 순환에 안 뜬다 = 심을 수가 없다" % last)
 
 # 다리 위 플레이어 시각 리프트 = world.gd deck_top 곡선과 동일해야 한다.
 # (test_core는 stub_player라 실제 플레이어 노드가 없다 — 실물 검증은 여기서만 가능)

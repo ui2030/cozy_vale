@@ -310,7 +310,14 @@ func _perennial_showcase() -> void:
 # — 값을 박지 않고 프로덕션 _season_deaths를 태워서 찍는 컷이다.
 func _winter_farm_showcase() -> void:
 	var farm := get_tree().get_first_node_in_group("farm")
-	var winter_ids := _forage_crops("autumn", false)  # 가을에 심고 가을엔 안 열리는 것 = 겨울 다년생
+	# 가을에 심어 **겨울에 열리는** 것 전부 = 첫해 겨울 밭에 실제로 서 있을 종. 옛 판은 "가을엔
+	# 안 열리는 것"으로 골라서 겨울무(가을에도 열린다)가 빠진 3종 컷이었다 — 4종을 다 담는다.
+	var winter_ids := []
+	for cid in GameData.crops:
+		if GameData.crop_yield(cid) != cid and GameData.crop_plantable(cid, "autumn") \
+			and GameData.crop_in_season(cid, "winter"):
+			winter_ids.append(cid)
+	winter_ids.sort()
 	for i in winter_ids.size():
 		_place(farm, _fcell(i + 1, 3), GameData.crops[winter_ids[i]]["seed_id"], 0)
 	_place(farm, _fcell(5, 3), "seed.corn", 4)  # 한해살이 대조군 — 겨울로 넘어가며 사라져야 한다

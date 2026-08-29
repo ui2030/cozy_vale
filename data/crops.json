@@ -97,22 +97,22 @@
 		"perennial": true, "grow_days": 5, "regrow_days": 3, "stages": 4
 	},
 	"crop.winter_root": {
-		"seed_id": "forage.winter_root", "yield_id": "forage.winter_root",
+		"seed_id": "seed.winter_root", "yield_id": "forage.winter_root",
 		"seasons": ["autumn", "winter"], "plant_seasons": ["autumn"],
 		"grow_days": 5, "regrow_days": 3, "stages": 3
 	},
 	"crop.snow_berry": {
-		"seed_id": "forage.snow_berry", "yield_id": "forage.snow_berry",
+		"seed_id": "seed.snow_berry", "yield_id": "forage.snow_berry",
 		"seasons": ["winter"], "plant_seasons": ["autumn"],
 		"perennial": true, "grow_days": 6, "regrow_days": 4, "stages": 4
 	},
 	"crop.holly": {
-		"seed_id": "forage.holly", "yield_id": "forage.holly",
+		"seed_id": "seed.holly", "yield_id": "forage.holly",
 		"seasons": ["winter"], "plant_seasons": ["autumn"],
 		"perennial": true, "grow_days": 6, "regrow_days": 4, "stages": 4
 	},
 	"crop.pine_nut": {
-		"seed_id": "forage.pine_nut", "yield_id": "forage.pine_nut",
+		"seed_id": "seed.pine_nut", "yield_id": "forage.pine_nut",
 		"seasons": ["winter"], "plant_seasons": ["autumn"],
 		"perennial": true, "grow_days": 7, "regrow_days": 5, "stages": 4
 	}
