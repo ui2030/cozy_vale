@@ -8,7 +8,8 @@ extends Node
 # 경로(_spawn→_look)를 그대로 통과**시킨다.
 
 const SHOT_DIR := "res://lookdev/shots/forage/"
-const ROW_Z := 9.0    # 광장 남쪽 초지. 밭 Rect2i(0,2,8,4)·플레이어집 밖이고 SPAWN_POINTS도 여기 쓴다
+const ROW_Z := 9.0    # 광장 남쪽 초지. 밭 Rect2i(4,8,8,4)·플레이어집 밖이고 SPAWN_POINTS도 여기 쓴다
+                      # (줄은 x=0 중심 ±3 안이라 밭 서쪽 경계 x=4에 안 닿는다)
 const ROW_GAP := 1.25  # 전고 0.50짜리가 안 겹치면서 4종이 프레임 안에 다 들어가는 간격
                        # (1.5는 좌우 끝 종이 화면 밖으로 잘렸다 — 실측 *_before 1차)
 

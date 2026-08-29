@@ -25,6 +25,7 @@ func _ready() -> void:
 	_test_save_roundtrip()
 	_test_bak_fallback()
 	_test_migration_v1_v2()
+	_test_farm_off_plaza()
 	_test_farm_loop()
 	_test_crops_h1()
 	_test_npc()
@@ -144,12 +145,60 @@ func _clear_run(n: int) -> int:
 			return s
 	return -1
 
+# 밭 칸을 REGION 기준 오프셋으로 잡는다 — 밭이 옮겨져도 테스트가 절대좌표를 따라다니지 않게.
+func _fcell(dx: int, dz: int) -> Vector2i:
+	return _farm.REGION.position + Vector2i(dx, dz)
+
+# ── 밭 흙 타일이 광장 판석 원반 밖에 있다 (좌표 실측) ──────────────────────────
+# 옛 판: REGION Rect2i(0,2,8,4)가 원점 반경 6의 판석을 파고들어 32칸 중 21칸이 포장 위였다
+# (13칸은 통째로 원반 안, 가장 깊은 (0,2)는 흙 모서리가 림에서 3.96 안쪽). 판석 상면 0.14가
+# 흙 상면 0.11보다 높아 흙이 통째로 가려 "포장도로에 심은 작물"이 됐다.
+# 임계 6.5/6.4는 **박은 절대값**이다: PLAZA_R에서 유도하면 반경을 0으로 만든 순간 임계값도 따라
+# 0이 되어 핀이 조용히 통과한다. 판석 반경도 흙 좌표도 상수를 읽지 않고 **실제로 만들어진
+# 노드에서** 잰다(셰이더 discard 반경 = 포장 실경계 / BoxMesh 크기 = 흙 실경계).
+# 단언은 **재고 치운 뒤** 몰아서 한다 — assert 실패는 그 함수를 거기서 끝내므로, 중간에서
+# 물면 갈아 둔 32칸이 남아 뒤따르는 밭 테스트의 괭이질까지 줄줄이 깨진다(핀 하나가 세 건으로).
+func _test_farm_off_plaza() -> void:
+	var probe: Node3D = preload("res://world/world.gd").new()
+	var root := Node3D.new()
+	probe._plaza(root)
+	var mi := root.get_child(0) as MeshInstance3D
+	var paved_r := float((mi.material_override as ShaderMaterial).get_shader_parameter("radius"))
+	var paved_top := mi.position.y
+	root.free()
+	probe.free()
+	var made: Array[Vector2i] = []
+	var nearest := INF
+	var worst := Vector2i.ZERO
+	for dx in _farm.REGION.size.x:
+		for dz in _farm.REGION.size.y:
+			var cell := _fcell(dx, dz)
+			if not _farm.till(cell):
+				continue
+			made.append(cell)
+			var soil: MeshInstance3D = _farm._nodes[cell]["soil"]
+			var half: Vector3 = (soil.mesh as BoxMesh).size * 0.5
+			# 흙 상자에서 원점(광장 중심)에 가장 가까운 점까지의 거리 — 모서리까지 재야 한다.
+			var near := Vector2(maxf(absf(soil.position.x) - half.x, 0.0),
+				maxf(absf(soil.position.z) - half.z, 0.0)).length()
+			if near < nearest:
+				nearest = near
+				worst = cell
+	for cell in made:  # 뒷 테스트가 쓰는 밭을 맨땅으로 되돌린다
+		_farm.tiles.erase(cell)
+		_farm._refresh(cell)
+	assert(paved_top > 0.11, "판석 상면 %.3f — 흙 상면 0.11보다 낮으면 이 핀의 전제가 깨진다" % paved_top)
+	assert(paved_r <= 6.4, "판석 포장 반경 %.2f — 밭 여유선 6.5를 침범한다" % paved_r)
+	assert(made.size() == 32, "밭 %d칸 — 32칸에서 줄었다(광장을 피하려고 밭을 깎지 말 것)" % made.size())
+	assert(nearest >= 6.5, "밭 %s 흙 모서리가 광장 중심에서 %.2f — 판석(포장 반경 %.2f) 위에 앉는다"
+		% [worst, nearest, paved_r])
+
 func _test_farm_loop() -> void:
 	GameClock.abs_day = _clear_run(6)  # 이 테스트는 수동 물주기 경로 — 맑은 구간에서만 유효
 	assert(GameClock.abs_day >= 0, "봄에 맑은 6일 연속 구간이 없음 (RAIN_PCT 재조정 필요)")
 	assert(GameData.season_id(GameClock.season()) == "spring", "전제: 봄(계절 밖 씨앗은 심기가 거부됨)")
 	GameClock.game_min = 360
-	var cell := Vector2i(1, 3)
+	var cell := _fcell(1, 1)
 	assert(_farm.till(cell), "괭이질")
 	assert(_farm.plant(cell, "seed.turnip"), "씨앗 심기")
 	for i in 4:  # turnip grow_days=4: 매일 물주고 취침
@@ -164,7 +213,7 @@ func _test_farm_loop() -> void:
 	assert(_stub.gold == 120, "판매정산 60*2=120")
 	assert(_farm.shipping_bin.is_empty(), "정산 후 상자 비움")
 	# 물 안 준 날은 성장 정지 (watered_growth_days 저장 방식 검증)
-	var c2 := Vector2i(2, 3)
+	var c2 := _fcell(2, 1)
 	_farm.till(c2)
 	_farm.plant(c2, "seed.turnip")
 	var before := int(_farm.get_tile(c2)["watered_growth_days"])
@@ -259,7 +308,7 @@ func _test_crops_h1() -> void:
 	GameClock.abs_day = GameClock.DAYS_PER_SEASON  # 여름 D1
 	GameClock.game_min = 360
 	assert(GameData.season_id(GameClock.season()) == "summer" and GameClock.day_of_season() == 1, "전제: 여름 D1")
-	var cell := Vector2i(6, 3)
+	var cell := _fcell(6, 1)
 	assert(_farm.till(cell), "여름 괭이질")
 	assert(not _farm.plant(cell, "seed.turnip"), "철 지난 봄 씨앗은 심기 거부(다음 아침 증발 방지)")
 	assert(_farm.plant(cell, "seed.tomato"), "여름 씨앗 심기")
@@ -278,8 +327,8 @@ func _test_crops_h1() -> void:
 	# ── 계절 경계 고사: 여름 막날 심은 여름 작물은 죽고, 두 계절 작물(corn)은 산다
 	GameClock.abs_day = 2 * GameClock.DAYS_PER_SEASON - 1  # 여름 마지막 날
 	assert(GameClock.day_of_season() == GameClock.DAYS_PER_SEASON, "전제: 여름 마지막 날")
-	var c_die := Vector2i(6, 4)
-	var c_live := Vector2i(7, 4)
+	var c_die := _fcell(6, 2)
+	var c_live := _fcell(7, 2)
 	assert(_farm.till(c_die) and _farm.till(c_live), "막날 괭이질")
 	assert(_farm.plant(c_die, "seed.tomato") and _farm.plant(c_live, "seed.corn"), "막날 심기")
 	GameClock.sleep_to_morning()  # → 가을 D1
@@ -290,7 +339,7 @@ func _test_crops_h1() -> void:
 	GameClock.sleep_to_morning()  # → 겨울 D1
 	assert(GameData.season_id(GameClock.season()) == "winter", "겨울 진입")
 	assert(_farm.get_tile(c_live)["crop_id"] == "", "겨울엔 corn도 고사")
-	var c_win := Vector2i(5, 5)
+	var c_win := _fcell(5, 3)
 	assert(_farm.till(c_win) and not _farm.plant(c_win, "seed.carrot"), "겨울엔 어떤 씨앗도 못 심음")
 
 	# ── 상점 계절 재고 + 씨앗 순환 집합 (씬 트리 없이 순수 로직)
@@ -1909,7 +1958,7 @@ func _test_weather() -> void:
 	GameClock.abs_day = rd - 1
 	GameClock.game_min = 1300
 	assert(GameData.season_id(GameClock.season()) == "spring", "전제: 봄(계절 밖 씨앗은 심기가 거부됨)")
-	var cell := Vector2i(4, 4)
+	var cell := _fcell(4, 2)
 	assert(_farm.till(cell) and _farm.plant(cell, "seed.turnip"), "검증용 심기")
 	GameClock.sleep_to_morning()   # → rd (비)
 	assert(_farm.get_tile(cell)["watered"], "비 오는 날 아침 = 자동 물주기")
@@ -1922,7 +1971,7 @@ func _test_weather() -> void:
 	assert(not _farm.get_tile(cell)["watered"], "맑은 날 아침엔 마름")
 	# 비 오는 날에 새로 심어도 즉시 젖음 (아침 일괄 처리를 놓치지 않게)
 	GameClock.abs_day = rd
-	var c3 := Vector2i(5, 4)
+	var c3 := _fcell(5, 2)
 	assert(_farm.till(c3) and _farm.plant(c3, "seed.turnip"), "비 오는 날 심기")
 	assert(_farm.get_tile(c3)["watered"], "비 오는 날 심은 작물도 젖음")
 
@@ -2729,7 +2778,7 @@ func _test_crop_look() -> void:
 		if off_s == "" and not GameData.crop_in_season(per, s5):
 			off_s = s5
 	assert(plant_s != "" and off_s != "", "%s의 제철/비제철 계절을 못 고름" % per)
-	var cell := Vector2i(4, 2)  # 앞선 테스트가 안 쓴 칸
+	var cell := _fcell(4, 0)  # 앞선 테스트가 안 쓴 칸
 	GameClock.abs_day = GameData.SEASON_IDS.find(plant_s) * GameClock.DAYS_PER_SEASON + 2
 	assert(_farm.till(cell) and _farm.plant(cell, GameData.crops[per]["seed_id"]), "심기")
 	_farm.tiles[cell]["watered_growth_days"] = GameData.grow_days(per)
@@ -2829,8 +2878,8 @@ func _test_forage_crops() -> void:
 			break
 	assert(wp != "", "겨울에 열리는 다년생이 없다 — 겨울 농장이 성립 안 함")
 	var seed_w: String = GameData.crops[wp]["seed_id"]
-	var cp := Vector2i(0, 2)   # 앞선 테스트가 안 쓴 밭 줄(z=2)
-	var ca := Vector2i(1, 2)
+	var cp := _fcell(0, 0)   # 앞선 테스트가 안 쓴 밭 줄(첫 줄)
+	var ca := _fcell(1, 0)
 	GameClock.abs_day = 2 * GameClock.DAYS_PER_SEASON  # 가을 D1
 	GameClock.game_min = 360
 	assert(GameData.season_id(GameClock.season()) == "autumn", "전제: 가을 D1")
@@ -2891,7 +2940,7 @@ func _test_forage_crops() -> void:
 	GameClock.abs_day = _clear_run(gs + 1)  # 수동 물주기 경로 — 맑은 구간 고정
 	assert(GameClock.abs_day >= 0, "봄에 맑은 %d일 연속 구간이 없음" % (gs + 1))
 	GameClock.game_min = 360
-	var cs := Vector2i(2, 2)
+	var cs := _fcell(2, 0)
 	assert(_farm.till(cs) and _farm.plant(cs, GameData.crops[sp]["seed_id"]), "주운 채집물을 그대로 심는다")
 	for _k in gs:
 		assert(_farm.water(cs), "물주기")

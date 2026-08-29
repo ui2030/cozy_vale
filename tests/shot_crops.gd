@@ -9,17 +9,27 @@ const FARM_DIR := "res://lookdev/shots/farm/"  # 채집물 재배·다년생 컷
 const CROP_DIR := "res://lookdev/shots/crops/"  # 작물 실물화 컷 (2026-08-26)
 # 작물 컷 모드 → 계절. stages·ground는 여름 밭에서, winter는 가을에 심어 겨울로 넘긴다.
 const CROP_SEASON := {"spring": 0, "summer": 1, "autumn": 2, "stages": 1, "ground": 1, "winter": 2}
-# 진열 줄(앞→뒤). z=3 이하는 광장 포석이 흙 타일 위로 덮여 "포장 위의 작물"로 찍힌다(실측
-# autumn_after 1차) — 9종까지는 두 줄로 끝나게 ROW_MAX를 5로 둔다.
-const ROW_Z := [5, 4, 3]
+# 진열 줄(앞→뒤) — 밭 REGION 기준 z 오프셋. 9종까지는 두 줄로 끝나게 ROW_MAX를 5로 둔다.
+# (옛 판은 광장 포석이 밭 북서쪽을 덮어 "포장 위의 작물"로 찍혔다 — 밭을 광장 밖으로 옮겨
+#  근본 수정했으므로 줄을 동쪽·남쪽으로 피해 놓던 회피값을 걷어냈다.)
+const ROW_Z := [3, 2, 1]
 const ROW_MAX := 5
-# 줄별 시작 칸. 광장 포석이 밭 **북서쪽**(x≲4 · z≲4.5)을 덮어 흙 타일을 가린다 — 거기 심으면
-# "포장 위에 자란 작물"로 찍힌다(실측 spring_after 1차: 감자·딸기가 포석 위). 동쪽으로 민다.
-const ROW_X0 := [3, 4, 4]
+const ROW_X0 := [2, 2, 2]   # 줄별 시작 칸(REGION 기준 x 오프셋) — 8칸 폭 가운데 5칸
 # 모드 → 계절 인덱스. 없으면 여름.
 const MODE_SEASON := {"winter": 3, "perennial": 2, "winter_farm": 2}
 # 밭을 내려다보는 컷을 쓰는 모드
 const FARM_MODES := ["farm", "forage_grow", "perennial", "winter_farm"]
+const FarmScript := preload("res://farm/farm_system.gd")
+
+# 하네스 좌표는 전부 밭 REGION 원점 기준 오프셋 — 밭을 옮겨도 컷 구도가 그대로 따라온다.
+func _fcell(dx: int, dz: int) -> Vector2i:
+	return FarmScript.REGION.position + Vector2i(dx, dz)
+
+func _fx(off: float) -> float:
+	return float(FarmScript.REGION.position.x) + off
+
+func _fz(off: float) -> float:
+	return float(FarmScript.REGION.position.y) + off
 
 func _ready() -> void:
 	SaveManager.suspended = true  # world._ready의 로드는 읽기 전용, 이후 쓰기는 전면 차단
@@ -55,20 +65,20 @@ func _run() -> void:
 				"forage_grow": _forage_showcase()
 				"perennial": _perennial_showcase()
 				"winter_farm": _winter_farm_showcase()
-			player.global_position = Vector3(2.5, 2, 6.2)  # 밭 서쪽에 비켜서 작물을 가리지 않게
+			player.global_position = Vector3(_fx(-2.0), 2, _fz(1.5))  # 밭 서쪽에 비켜서 작물을 가리지 않게
 			player._face_dir(Vector3(0, 0, -1))
 			# 추종 카메라를 세우고 밭을 내려다보게 수동 배치(world.gd의 여백 샷과 같은 수법).
 			# 플레이어 집이 밭 바로 남쪽이라 기본 추종 위치(+Z 9.5)는 집 안으로 들어간다.
 			var cam: Camera3D = find_child("Camera", true, false)
 			cam.set_process(false)
-			cam.global_position = Vector3(5.5, 7.0, 11.0)
-			cam.look_at(Vector3(5.5, 0.3, 4.0), Vector3.UP)
+			cam.global_position = Vector3(_fx(5.5), 7.0, _fz(9.0))
+			cam.look_at(Vector3(_fx(5.5), 0.3, _fz(2.0)), Vector3.UP)
 			if what != "farm":
 				# 채집물 재배 컷은 종을 색으로 가려야 하므로 더 바짝 붙는다. 플레이어는 밭 서쪽
 				# 밖으로 빼서 앞줄(x1~)을 안 가리게 한다 — 기존 farm 컷 구도는 그대로 둔다.
-				player.global_position = Vector3(-1.5, 2, 6.5)
-				cam.global_position = Vector3(4.0, 5.2, 10.6)
-				cam.look_at(Vector3(4.0, 0.4, 4.6), Vector3.UP)
+				player.global_position = Vector3(_fx(-2.0), 2, _fz(1.5))
+				cam.global_position = Vector3(_fx(4.0), 5.2, _fz(8.6))
+				cam.look_at(Vector3(_fx(4.0), 0.4, _fz(2.6)), Vector3.UP)
 		"shopseeds":
 			player.global_position = Vector3(-5, 2, -3.4)
 			player._face_dir(Vector3(0, 0, -1))
@@ -98,10 +108,10 @@ func _run() -> void:
 # ── 작물 실물화 컷 ────────────────────────────────────────────────
 # 옛 farm 컷은 광장이 화면을 채우고 작물이 하단 모서리에 걸려 증거가 안 됐다(발주 지적).
 # 여기선 밭 앞 세 줄만 프레임에 담는다: fov 48→36, 카메라를 이랑 앞 5m 높이 2.6에.
-# 카메라를 밭 앞 3.3m·높이 3.8에 두고 47° 내려본다 — 밭 남쪽 울타리(decor FENCES z=7.2·높이
-# 0.91)는 시선 아래로 빠지고, 지면 가시 구간이 z 1.2~6.2 = 밭 그 자체가 된다(계산 실측).
+# 카메라를 밭 앞 3.3m·높이 3.8에 두고 47° 내려본다 — 지면 가시 구간이 밭 4줄 그 자체가 된다.
+# 울타리(decor FENCES)는 밭 **북쪽** 가장자리라 프레임에서 작물 뒤 배경으로 들어간다.
 var _used_x := []    # 실제로 심은 칸의 x 중심들
-var _focus_x := 4.0  # 그 양 끝의 한가운데 = 카메라가 겨누는 x
+var _focus_x := 0.0  # 그 양 끝의 한가운데 = 카메라가 겨누는 x (_crops_shot에서 밭 가운데로 초기화)
 
 func _crops_shot(kind: String, tag: String) -> void:
 	var sea: int = int(CROP_SEASON.get(kind, 1))
@@ -120,11 +130,12 @@ func _crops_shot(kind: String, tag: String) -> void:
 		_:
 			_field_showcase(farm, GameData.season_id(sea))
 	get_tree().call_group("hud", "_refresh")
+	_focus_x = _fx(4.0)
 	if not _used_x.is_empty():
 		_used_x.sort()
 		_focus_x = (_used_x[0] + _used_x[-1]) * 0.5
 	var player := get_tree().get_first_node_in_group("player")
-	player.global_position = Vector3(-2.0, 2, 7.5)  # 밭 서쪽 밖 = 프레임 밖
+	player.global_position = Vector3(_fx(-2.0), 2, _fz(1.5))  # 밭 서쪽 밖 = 프레임 밖
 	player._face_dir(Vector3(0, 0, -1))
 	var cam: Camera3D = world.find_child("Camera", true, false)
 	cam.set_process(false)
@@ -133,8 +144,8 @@ func _crops_shot(kind: String, tag: String) -> void:
 		# 앞(z=7 쪽)에서 잡았더니 앞줄 흙 타일 윗면이 얕은 각으로 화면 3분의 1을 먹고 밑동을
 		# 통째로 가렸다(실측 ground_after 1차) — 줄과 같은 z에서 눈높이 0.40으로 훑는다.
 		cam.fov = 24.0
-		cam.global_position = Vector3(_focus_x - 3.4, 0.40, ROW_Z[0] + 0.5)
-		cam.look_at(Vector3(_focus_x - 1.2, 0.13, ROW_Z[0] + 0.5), Vector3.UP)
+		cam.global_position = Vector3(_focus_x - 3.4, 0.40, _fz(ROW_Z[0] + 0.5))
+		cam.look_at(Vector3(_focus_x - 1.2, 0.13, _fz(ROW_Z[0] + 0.5)), Vector3.UP)
 	else:
 		# 1차 시도 (fov 36 · 카메라 z 9.0 · 높이 2.6)는 화면 위 절반을 광장이 먹고 남쪽 울타리가
 		# 앞줄을 가로질렀다 — 발주가 지적한 옛 farm 컷과 같은 실패라 되돌렸다(실측 spring_before 1차).
@@ -142,8 +153,8 @@ func _crops_shot(kind: String, tag: String) -> void:
 		# 3차: 다섯 칸 줄에서 끝 종이 화면 밖으로 걸렸다(실측 autumn_after 2차) — fov를 넓히는
 		# 대신 카메라를 0.3 물렸다(가로 5.39→5.71m, 작물 크기는 5%만 준다).
 		cam.fov = 35.0
-		cam.global_position = Vector3(_focus_x, 3.95, 8.3)
-		cam.look_at(Vector3(_focus_x, 0.30, 4.75), Vector3.UP)
+		cam.global_position = Vector3(_focus_x, 3.95, _fz(6.3))
+		cam.look_at(Vector3(_focus_x, 0.30, _fz(2.75)), Vector3.UP)
 	await get_tree().create_timer(1.5).timeout  # 착지 + 조명·계절 셰이더 안정
 	await RenderingServer.frame_post_draw
 	var img := get_viewport().get_texture().get_image()
@@ -175,7 +186,7 @@ func _place_rows(farm: Node, ids: Array, days: int) -> void:
 	for i in ids.size():
 		var cid: String = ids[i]
 		var row: int = mini(i / per, ROW_Z.size() - 1)
-		var cell := Vector2i(clampi(ROW_X0[row] + (i % per), 0, 7), ROW_Z[row])
+		var cell := _fcell(clampi(ROW_X0[row] + (i % per), 0, 7), ROW_Z[row])
 		_place(farm, cell, GameData.crops[cid]["seed_id"],
 			GameData.grow_days(cid) if days < 0 else days)
 
@@ -199,7 +210,7 @@ func _stage_showcase(farm: Node) -> void:
 			if seen.has(s):
 				continue
 			seen[s] = true
-			_place(farm, Vector2i(ROW_X0[r] + seen.size() - 1, ROW_Z[r]), GameData.crops[cid2]["seed_id"], d)
+			_place(farm, _fcell(ROW_X0[r] + seen.size() - 1, ROW_Z[r]), GameData.crops[cid2]["seed_id"], d)
 
 # 겨울 밭: 가을에 심은 것만 남는다. 앞줄 = 겨울에 열리는 것(수확 가능), 뒷줄 = 휴면 그루.
 # 계절 경계는 프로덕션 _season_deaths를 실제로 태워 넘는다 — 값을 박지 않는다.
@@ -217,16 +228,16 @@ func _winter_field(farm: Node) -> void:
 	bear.sort()
 	rest.sort()
 	for i in mini(bear.size(), ROW_MAX):
-		_place(farm, Vector2i(ROW_X0[0] + i, ROW_Z[0]), GameData.crops[bear[i]]["seed_id"], 0)
+		_place(farm, _fcell(ROW_X0[0] + i, ROW_Z[0]), GameData.crops[bear[i]]["seed_id"], 0)
 	for j in mini(rest.size(), ROW_MAX):
-		_place(farm, Vector2i(ROW_X0[1] + j, ROW_Z[1]), GameData.crops[rest[j]]["seed_id"],
+		_place(farm, _fcell(ROW_X0[1] + j, ROW_Z[1]), GameData.crops[rest[j]]["seed_id"],
 			GameData.grow_days(rest[j]))
 	GameClock.sleep_to_morning()  # 가을 막날 → 겨울 D1 (여기서 고사·생존이 갈린다)
 	while GameData.is_rainy(GameClock.abs_day):  # 맑은 겨울날까지
 		GameClock.sleep_to_morning()
 	GameClock.game_min = 12 * 60
 	for i2 in mini(bear.size(), ROW_MAX):  # 겨울에 자란 만큼 = 수확 가능
-		var cell := Vector2i(ROW_X0[0] + i2, ROW_Z[0])
+		var cell := _fcell(ROW_X0[0] + i2, ROW_Z[0])
 		if farm.tiles.has(cell) and farm.tiles[cell]["crop_id"] != "":
 			farm.tiles[cell]["watered_growth_days"] = GameData.grow_days(bear[i2])
 			farm.tiles[cell]["watered"] = true
@@ -241,10 +252,10 @@ func _open_bag() -> void:
 func _plant_showcase() -> void:
 	var farm := get_tree().get_first_node_in_group("farm")
 	for r in [  # [칸, 씨앗, 물 준 성장일] — grow_days 도달 = 성숙
-		[Vector2i(4, 5), "seed.tomato", 2], [Vector2i(5, 5), "seed.tomato", 7],
-		[Vector2i(6, 5), "seed.pepper", 5], [Vector2i(7, 5), "seed.watermelon", 12],
-		[Vector2i(4, 4), "seed.corn", 4], [Vector2i(5, 4), "seed.corn", 9],
-		[Vector2i(6, 4), "seed.watermelon", 6], [Vector2i(7, 4), "seed.pepper", 2],
+		[_fcell(2, 3), "seed.tomato", 2], [_fcell(3, 3), "seed.tomato", 7],
+		[_fcell(4, 3), "seed.pepper", 5], [_fcell(5, 3), "seed.watermelon", 12],
+		[_fcell(2, 2), "seed.corn", 4], [_fcell(3, 2), "seed.corn", 9],
+		[_fcell(4, 2), "seed.watermelon", 6], [_fcell(5, 2), "seed.pepper", 2],
 	]:
 		_place(farm, r[0], r[1], int(r[2]))
 
@@ -276,12 +287,12 @@ func _forage_showcase() -> void:
 	for i in ids.size():
 		var cid: String = ids[i]
 		var gd: int = GameData.grow_days(cid)
-		# 낮은 성장 단계는 앞줄 울타리에 가리므로 뒷줄(z=4)에 둔다 — 같은 종을 세로로 짝지어 진열
-		_place(farm, Vector2i(i + 1, 4), GameData.crops[cid]["seed_id"], maxi(1, gd / 3))  # 성장 중
-		_place(farm, Vector2i(i + 1, 5), GameData.crops[cid]["seed_id"], gd)               # 다 자람
+		# 낮은 성장 단계는 앞줄에 두면 작아서 안 읽힌다 — 뒷줄에 두고 같은 종을 세로로 짝지어 진열
+		_place(farm, _fcell(i + 1, 2), GameData.crops[cid]["seed_id"], maxi(1, gd / 3))  # 성장 중
+		_place(farm, _fcell(i + 1, 3), GameData.crops[cid]["seed_id"], gd)               # 다 자람
 	# 대조군: 씨앗을 사서 심는 기존 작물도 같은 프레임에 (같은 밭의 어휘라는 걸 보이게)
-	_place(farm, Vector2i(5, 5), "seed.tomato", 7)
-	_place(farm, Vector2i(6, 5), "seed.pepper", 5)
+	_place(farm, _fcell(5, 3), "seed.tomato", 7)
+	_place(farm, _fcell(6, 3), "seed.pepper", 5)
 
 # 가을 밭: 다년생이 열매를 맺은 상태 + 겨울에 열릴 다년생의 휴면(마른 갈색) 대조.
 func _perennial_showcase() -> void:
@@ -290,10 +301,10 @@ func _perennial_showcase() -> void:
 	var dormant := _forage_crops("autumn", false)
 	for i in bearing.size():
 		var cid: String = bearing[i]
-		_place(farm, Vector2i(i + 1, 5), GameData.crops[cid]["seed_id"], GameData.grow_days(cid))
+		_place(farm, _fcell(i + 1, 3), GameData.crops[cid]["seed_id"], GameData.grow_days(cid))
 	for j in dormant.size():
 		var cid2: String = dormant[j]
-		_place(farm, Vector2i(j + 1, 4), GameData.crops[cid2]["seed_id"], 0)  # 휴면 = 생장 0
+		_place(farm, _fcell(j + 1, 2), GameData.crops[cid2]["seed_id"], 0)  # 휴면 = 생장 0
 
 # 겨울 밭: 가을에 심은 다년생만 남아 열린 상태. 한해살이(corn)는 계절 경계에서 실제로 고사시킨다
 # — 값을 박지 않고 프로덕션 _season_deaths를 태워서 찍는 컷이다.
@@ -301,14 +312,14 @@ func _winter_farm_showcase() -> void:
 	var farm := get_tree().get_first_node_in_group("farm")
 	var winter_ids := _forage_crops("autumn", false)  # 가을에 심고 가을엔 안 열리는 것 = 겨울 다년생
 	for i in winter_ids.size():
-		_place(farm, Vector2i(i + 1, 5), GameData.crops[winter_ids[i]]["seed_id"], 0)
-	_place(farm, Vector2i(5, 5), "seed.corn", 4)  # 한해살이 대조군 — 겨울로 넘어가며 사라져야 한다
+		_place(farm, _fcell(i + 1, 3), GameData.crops[winter_ids[i]]["seed_id"], 0)
+	_place(farm, _fcell(5, 3), "seed.corn", 4)  # 한해살이 대조군 — 겨울로 넘어가며 사라져야 한다
 	GameClock.sleep_to_morning()  # 가을 막날 → 겨울 D1 (여기서 고사·생존이 갈린다)
 	while GameData.is_rainy(GameClock.abs_day):  # 맑은 겨울날까지 (비 오는 컷 회피)
 		GameClock.sleep_to_morning()
 	GameClock.game_min = 12 * 60
 	for i2 in winter_ids.size():  # 겨울에 자란 만큼을 진열 (성숙 = 수확 가능)
-		var cell := Vector2i(i2 + 1, 5)
+		var cell := _fcell(i2 + 1, 3)
 		if farm.tiles.has(cell) and farm.tiles[cell]["crop_id"] != "":
 			farm.tiles[cell]["watered_growth_days"] = GameData.grow_days(winter_ids[i2])
 			farm.tiles[cell]["watered"] = true

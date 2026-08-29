@@ -85,7 +85,7 @@ const ANCHORS := {
 	"bridge": Vector2(13, 6.2),     # 동 다리(17,7) 서쪽 발치
 	"windmill": Vector2(27, -12),   # 풍차 언덕 램프 발치 (강 건너 = 다리 경유)
 	# 배우자 전용(F단계): 플레이어 집(피벗 3,15 / 북향 문 z=12.45) 앞. keepout r3.5 밖(거리 4.5),
-	# 밭 REGION(x0..7, z2..5) 밖, 강 밖 — test_core 관통·도하 불변식이 지킴.
+	# 밭 REGION(x4..11, z8..11) 밖, 강 밖 — test_core 관통·도하 불변식이 지킴.
 	"player_home": Vector2(3, 10.5),
 }
 const ANCHOR_R_MIN := 1.5   # 장소 앵커 배회 반경 (집보다 좁게 = 모여 있는 그림)

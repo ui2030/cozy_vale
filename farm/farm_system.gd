@@ -2,7 +2,14 @@ extends Node3D
 # 밭 타일맵 단일 소유 (DESIGN 6.2 / 11.3). 타일 상태·성장·판매상자 정산.
 # day_changed 처리 순서 고정(Codex): 정산 → 성장 → 계절고사 → 물리셋 → (저장은 호출측).
 
-const REGION := Rect2i(0, 2, 8, 4)  # 밭 구역: cell x[0..7], z[2..5]
+# 밭 구역: cell x[4..11], z[8..11] = 월드 x[4,12] · z[8,12]. 32칸.
+# 옛 자리 Rect2i(0,2,8,4)는 광장 판석 원반(원점 r6.0 · 상면 0.14)을 파고들어 32칸 중 21칸이
+# 포장 위에 앉아 있었다 — 흙 상면 0.11이 판석 밑이라 흙이 통째로 가리고 "포장도로에 심은 작물"이
+# 됐다(가장 깊은 칸 (0,2)는 림에서 3.96 안쪽, 13칸은 통째로 원반 안). 판석을 줄이려면 r2.0 아래로
+# 가야 해서(분수 충돌 r1.0) 광장이 사라지고, 겹친 칸만 빼면 11칸만 남는다 — 그래서 밭을 옮겼다.
+# 지금 자리는 광장 남동 초지: 판석 림에서 최소 8.99, 길·강·다리·집·판매상자 어디와도 안 겹친다
+# (test_core _test_farm_off_plaza가 흙 노드 좌표를 직접 재서 문다).
+const REGION := Rect2i(4, 8, 8, 4)
 const ToonChar := preload("res://common/toon_character.gd")
 
 var tiles := {}          # Vector2i → {tilled, crop_id, planted_abs_day, watered_growth_days, watered}
@@ -293,6 +300,11 @@ func load_data(d: Dictionary) -> void:
 	tiles.clear()
 	for key in d.get("tiles", {}):
 		var parts: PackedStringArray = key.split(",")
+		var cell := Vector2i(int(parts[0]), int(parts[1]))
+		# 밭을 옮기기 전 세이브는 옛 자리(광장 판석 밑) 칸을 들고 있다 — REGION 밖이면 버린다.
+		# 안 버리면 이사가 고친 그림이 로드 한 번에 되살아난다: 포장 위에 흙 상자가 뜬다.
+		if not in_region(cell):
+			continue
 		var t: Dictionary = d["tiles"][key]
 		# JSON 라운드트립 int→float 정규화 (산술 필드)
 		t["watered_growth_days"] = int(t.get("watered_growth_days", 0))
@@ -301,7 +313,7 @@ func load_data(d: Dictionary) -> void:
 		# 신규 세이브는 이미 젖은 채로 저장되므로 idempotent.
 		t["watered"] = bool(t.get("watered", false)) or _wet_today()
 		t["tilled"] = bool(t.get("tilled", true))
-		tiles[Vector2i(int(parts[0]), int(parts[1]))] = t
+		tiles[cell] = t
 	shipping_bin = d.get("shipping_bin", []).duplicate(true)
 	for e in shipping_bin:
 		e["qty"] = int(e["qty"])
