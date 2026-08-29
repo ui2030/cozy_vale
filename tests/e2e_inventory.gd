@@ -131,6 +131,15 @@ func _assert_icons(col: Node, player: Node) -> void:
 	await get_tree().process_frame
 	assert(_icon_tone(col) == [16, 12],
 		"채집물 16종만 모았으면 제 색 16 · 실루엣 12여야 한다 — 실제 %s" % str(_icon_tone(col)))
+	# 아이콘 없는 칸(물고기)이 이름을 칸 왼쪽 끝까지 당겨 목록 세로선이 구간마다 어긋났다.
+	# 좌표는 **실제 노드에서** 재고 문턱은 절대 숫자다: 44(아이콘) + 4(간격) = 48.
+	await get_tree().process_frame
+	for cell in col._list.find_children("", "HBoxContainer", true, false):
+		var box: Control = cell
+		var name_lb: Control = box.get_child(1)
+		var dx: float = name_lb.global_position.x - box.global_position.x
+		assert(absf(dx - 48.0) <= 0.5,
+			"이름이 칸 왼쪽에서 %.1f에서 시작한다(48이어야 한다) — 아이콘 없는 칸이 세로선을 깬다" % dx)
 
 # 아이콘 [제 색 수, 실루엣 수]. 둘 중 어느 쪽도 아니면 합이 안 맞아 위 단언이 문다.
 func _icon_tone(col: Node) -> Array:

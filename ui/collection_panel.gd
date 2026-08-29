@@ -100,6 +100,12 @@ func _section(title: String, source: Dictionary, col: Array) -> void:
 			ic.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
 			ic.modulate = Color.WHITE if id in col else SILHOUETTE
 			cell.add_child(ic)
+		else:
+			# 아이콘이 없는 항목도 그 자리만큼은 비워 둔다 — 안 그러면 이름 왼쪽 끝이
+			# 구간마다 어긋나 목록의 세로선이 들쭉날쭉해진다. 그림을 넣는 게 아니라 자리만.
+			var gap := Control.new()
+			gap.custom_minimum_size = Vector2(ICON_PX, ICON_PX)
+			cell.add_child(gap)
 		var name_lb := Label.new()
 		name_lb.add_theme_font_size_override("font_size", 15)
 		name_lb.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
