@@ -352,7 +352,7 @@ func _sleep() -> void:
 
 func _buy_seed() -> void:
 	if GameClock.weekday() == 6:  # 일요일 휴무
-		message.emit("Shop closed (Sun)")
+		message.emit("일요일은 상점이 쉬어요")
 		return
 	var stock := GameData.season_seed_ids(GameData.season_id(GameClock.season()))
 	if stock.is_empty():  # 겨울 = 씨앗 재고 0 (설계상 낚시·채집의 계절)
@@ -369,7 +369,7 @@ func _buy_seed() -> void:
 	gold -= cost
 	_add_item(sid, 1)
 	Sfx.play("coin")
-	message.emit("Bought " + GameData.display_name(GameData.crop_from_seed(sid)) + " seed")
+	message.emit(GameData.display_name(GameData.crop_from_seed(sid)) + " 씨앗 구매!")
 
 # 프러포즈 아이템 구매 (가방 패널 버튼 → 여기). 씨앗 구매와 같은 상점 규칙(휴무·골드).
 # 씨앗 순환·선택 집합엔 넣지 않는다 — 반지는 all_seed_ids 밖의 단일 아이템.
@@ -381,7 +381,7 @@ func buy_ring() -> void:
 		message.emit(GameData.RING_NAME + "은 상점에서만 살 수 있어요")
 		return
 	if GameClock.weekday() == 6:  # 일요일 휴무 (씨앗 구매와 동일)
-		message.emit("Shop closed (Sun)")
+		message.emit("일요일은 상점이 쉬어요")
 		return
 	if gold < GameData.RING_COST:
 		message.emit("골드 부족 (%dG 필요)" % GameData.RING_COST)

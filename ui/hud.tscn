@@ -19,7 +19,7 @@ offset_top = 12.0
 offset_right = 640.0
 offset_bottom = 48.0
 theme_override_font_sizes/font_size = 24
-text = "Y1 Spring D1 06:00"
+text = "Y1  봄 D1 (월)   06:00"
 
 [node name="MsgLabel" type="Label" parent="."]
 offset_left = 16.0

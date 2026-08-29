@@ -58,7 +58,7 @@ func _rebuild() -> void:
 	_list.add_child(title)
 	var gold := Label.new()
 	gold.add_theme_font_size_override("font_size", 18)
-	gold.text = "Gold: %d" % p.gold
+	gold.text = "골드: %d" % p.gold
 	_list.add_child(gold)
 	_head("씨앗 (클릭 = 선택, Q = 순환)")
 	var seeds: Array = p.cycle_seeds()
@@ -110,7 +110,7 @@ func _head(text: String) -> void:
 	_list.add_child(h)
 
 # 씨앗 ID는 display_name 소스(작물·물고기·채집물)에 없다 — 작물 이름으로 되짚어 표기.
-# 단 주운 채집물을 그대로 심는 항목은 씨앗이 아니라 그 아이템 자체라 "Seed"를 붙이지 않는다.
+# 단 주운 채집물을 그대로 심는 항목은 씨앗이 아니라 그 아이템 자체라 "씨앗"을 붙이지 않는다.
 func _seed_btn(p: Node, sid: String) -> Button:
 	var b := Button.new()
 	var sel: bool = sid == p.active_seed()
@@ -118,7 +118,7 @@ func _seed_btn(p: Node, sid: String) -> Button:
 	b.text = "%s %s%s   x%d" % [
 		"▶" if sel else "  ",
 		GameData.display_name(sid if item else GameData.crop_from_seed(sid)),
-		"" if item else " Seed", p.count(sid),
+		"" if item else " 씨앗", p.count(sid),
 	]
 	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	b.add_theme_font_size_override("font_size", 16)

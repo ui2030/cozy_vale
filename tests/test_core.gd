@@ -61,6 +61,7 @@ func _ready() -> void:
 	_test_beach()
 	_test_water_look()
 	_test_cooking()
+	_test_korean_names()
 	_test_dialogue_context()
 	_test_npc_personality()
 	_test_crop_look()
@@ -680,7 +681,7 @@ func _test_calendar() -> void:
 	assert(GameData.calendar.has("festival.flower"), "축제 로드")
 	assert(not GameData.festival_on("spring", 15).is_empty(), "spring D15 = 축제")
 	assert(GameData.festival_on("spring", 14).is_empty(), "축제 없는 날")
-	assert("Mira" in GameData.birthdays_on("spring", 12), "Mira 생일 조회")
+	assert("미라" in GameData.birthdays_on("spring", 12), "npc.mira 생일 조회")
 	assert(GameData.season_id(GameClock.season()) is String, "season_id 반환")
 	# H-2: 4계절 전부 축제 1개씩 (달력 패널·기상 토스트가 자동으로 4개를 집는 근거)
 	assert(GameData.calendar.size() == 4, "축제 4종")
@@ -3188,3 +3189,61 @@ func _test_winter_seeds() -> void:
 		if _farm.get_tile(cells[s7])["crop_id"] != "":
 			standing += 1
 	assert(standing >= 3, "수확 뒤 겨울 밭에 남은 그루가 %d — 다년생 3종은 남아야 한다" % standing)
+
+# ── 한국어판: 화면에 나가는 이름에 로마자가 없다 + 세이브가 쓰는 ID는 그대로다 ──
+# 아이템 ID(crop.turnip…)는 세이브 키다. 이름을 한국어로 바꾸다 ID까지 건드리면
+# 기존 세이브의 소지품·도감이 통째로 사라진다 — 두 축을 한 함수에서 같이 못 박는다.
+# 개수는 절대 숫자다. 데이터 로드가 실패해 딕셔너리가 비면 0회 순회로 조용히 통과하므로,
+# "몇 개를 실제로 재 봤는가"를 먼저 세운다.
+func _test_korean_names() -> void:
+	var H := preload("res://ui/hud.gd")
+	var roman := RegEx.create_from_string("[A-Za-z]")
+	assert(roman != null, "정규식 컴파일 실패 — 이 핀은 아무것도 검사하지 못한다")
+
+	# ① 화면 이름: display_name()을 전 항목에 실제로 돌린 결과를 본다
+	var bad := []
+	var checked := 0
+	for src in [GameData.crops, GameData.fish, GameData.forage, GameData.recipes]:
+		for id in src:
+			var nm := GameData.display_name(id)
+			checked += 1
+			if roman.search(nm) != null:
+				bad.append("%s=%s" % [id, nm])
+	for src2 in [GameData.calendar, GameData.npcs]:
+		for id2 in src2:
+			var nm2 := String(src2[id2]["name"])
+			checked += 1
+			if roman.search(nm2) != null:
+				bad.append("%s=%s" % [id2, nm2])
+	assert(checked == 87, "이름을 87개 재야 하는데 %d개만 쟀다 — 데이터가 덜 실렸다" % checked)
+	assert(bad.is_empty(), "화면 이름에 로마자가 %d개 남았다: %s" % [bad.size(), ", ".join(bad)])
+
+	# 씨앗 줄(HUD "씨앗: ○○", 가방 "○○ 씨앗")은 작물 이름으로 되짚어 만든다
+	var seed_bad := []
+	for sid in GameData.all_seed_ids():
+		var snm := GameData.display_name(sid if GameData.is_collectible(sid) else GameData.crop_from_seed(sid))
+		if roman.search(snm) != null:
+			seed_bad.append("%s=%s" % [sid, snm])
+	assert(GameData.all_seed_ids().size() == 25, "씨앗 %d종 — 25종이어야 한다" % GameData.all_seed_ids().size())
+	assert(seed_bad.is_empty(), "씨앗 표시 이름에 로마자: %s" % ", ".join(seed_bad))
+
+	# 반지 이름 + 계절·요일 표기도 매일 화면에 뜨는 글자다
+	var labels: Array = [GameData.RING_NAME] + Array(H.SEASON_KO) + Array(H.WD_KO)
+	assert(labels.size() == 12, "라벨을 12개 재야 한다: %d" % labels.size())
+	for lb in labels:
+		assert(roman.search(String(lb)) == null, "화면 라벨에 로마자: %s" % str(lb))
+
+	# ② ID 불변: 세이브 키는 소문자 ascii 그대로여야 한다
+	var ascii_id := RegEx.create_from_string("^[a-z][a-z0-9_.]*$")
+	var ids := []
+	for src3 in [GameData.crops, GameData.fish, GameData.forage, GameData.recipes, GameData.calendar, GameData.npcs]:
+		for id3 in src3:
+			ids.append(String(id3))
+	ids.append_array(GameData.all_seed_ids())
+	ids.append(GameData.RING_ID)
+	assert(ids.size() == 113, "ID를 113개 재야 하는데 %d개다" % ids.size())
+	for id4 in ids:
+		assert(ascii_id.search(id4) != null, "ID가 소문자 ascii가 아니다 = 세이브 파손: %s" % id4)
+	for must in ["crop.turnip", "fish.carp", "forage.wild_apple", "dish.salad",
+			"festival.flower", "npc.mira", "seed.turnip", "ring.moonlight"]:
+		assert(must in ids, "세이브가 쓰던 ID가 사라졌다: %s" % must)

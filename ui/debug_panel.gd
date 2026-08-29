@@ -16,7 +16,7 @@ extends Control
 
 const Hud := preload("res://ui/hud.gd")  # 패널 배경 단일 출처(여백 18·알파 0.95·크림 테두리·라운드 10)
 
-const SEASON_KO := ["봄", "여름", "가을", "겨울"]
+const SEASON_KO := Hud.SEASON_KO  # 계절 표기 단일 출처
 const WINTER := 3
 const HOURS := [6, 8, 12, 18, 21]
 

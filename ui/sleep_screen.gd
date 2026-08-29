@@ -2,7 +2,7 @@ extends Control
 # 취침 확인 + 페이드 연출. 침대 E → 확인 다이얼로그 → 페이드아웃 → sleep+저장 → 페이드인 → 토스트.
 # 확인창 열린 동안 GameClock PAUSED (pause_menu와 동일 _prev_state 패턴).
 
-const SEASON_EN := ["Spring", "Summer", "Autumn", "Winter"]
+const Hud := preload("res://ui/hud.gd")  # 패널 배경 + 계절 표기 단일 출처
 
 var _fade: ColorRect
 var _confirm: Control
@@ -56,7 +56,7 @@ func _on_yes() -> void:
 	GameClock.state = _prev_state
 	_busy = false
 	var sky := " — 오늘은 비가 와요" if GameData.is_rainy(GameClock.abs_day) else ""
-	_toast("%s D%d 아침이 밝았어요%s" % [SEASON_EN[GameClock.season()], GameClock.day_of_season(), sky])
+	_toast("%s D%d 아침이 밝았어요%s" % [Hud.SEASON_KO[GameClock.season()], GameClock.day_of_season(), sky])
 
 func _toast(text: String) -> void:
 	var hud := get_tree().get_first_node_in_group("hud")
@@ -68,7 +68,7 @@ func _build_confirm() -> Control:
 	cc.set_anchors_preset(Control.PRESET_FULL_RECT)
 	cc.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var p := PanelContainer.new()
-	preload("res://ui/hud.gd").style_panel(p)
+	Hud.style_panel(p)
 	var vb := VBoxContainer.new()
 	vb.add_theme_constant_override("separation", 10)
 	vb.custom_minimum_size = Vector2(300, 0)

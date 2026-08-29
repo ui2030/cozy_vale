@@ -6,8 +6,10 @@ extends CanvasLayer
 @onready var _msg_timer: Timer = $MsgTimer
 @onready var _prompt: Label = $PromptLabel
 
-const SEASON_EN := ["Spring", "Summer", "Autumn", "Winter"]
-const WD_EN := ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+# 계절·요일 표기의 단일 출처. 달력·취침화면·개발자패널이 여기를 본다 —
+# 네 군데에 같은 배열을 복사해 두면 한 곳만 고쳐지고 화면마다 표기가 갈린다.
+const SEASON_KO := ["봄", "여름", "가을", "겨울"]
+const WD_KO := ["월", "화", "수", "목", "금", "토", "일"]
 
 var _player: Node
 
@@ -196,13 +198,13 @@ func _event_toast() -> void:
 func _refresh() -> void:
 	var c := GameClock
 	var line := "Y%d  %s D%d (%s)   %02d:%02d" % [
-		c.year(), SEASON_EN[c.season()], c.day_of_season(),
-		WD_EN[c.weekday()], c.hour(), c.minute(),
+		c.year(), SEASON_KO[c.season()], c.day_of_season(),
+		WD_KO[c.weekday()], c.hour(), c.minute(),
 	]
 	if _player != null:
 		var sid: String = _player.active_seed()  # 계절 밖 선택은 스냅된 값으로 표시
 		var seed_txt := "-" if sid == "" else "%s x%d" % [
 			GameData.display_name(GameData.crop_from_seed(sid)), _player.count(sid),
 		]
-		line += "    Gold: %d    Seed: %s" % [_player.gold, seed_txt]
+		line += "    골드: %d    씨앗: %s" % [_player.gold, seed_txt]
 	_label.text = line

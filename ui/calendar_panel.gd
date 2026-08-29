@@ -4,9 +4,7 @@ extends Control
 
 const Hud := preload("res://ui/hud.gd")  # 패널 배경 단일 출처(여백·불투명도)
 
-const WD_EN := ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-const SEASON_EN := ["Spring", "Summer", "Autumn", "Winter"]
-# 오늘 강조·빈 칸 배경은 패널 배경에 따라 갈린다 — hud.gd 단일 출처.
+# 오늘 강조·빈 칸 배경도, 계절·요일 표기도 hud.gd 단일 출처.
 
 var _title: Label
 var _grid: GridContainer
@@ -32,7 +30,7 @@ func _ready() -> void:
 	var header := GridContainer.new()
 	header.columns = 7
 	header.add_theme_constant_override("h_separation", 4)
-	for wd in WD_EN:
+	for wd in Hud.WD_KO:
 		var l := Label.new()
 		l.text = wd
 		l.custom_minimum_size = Vector2(78, 0)
@@ -60,7 +58,7 @@ func _rebuild() -> void:
 	var sidx := GameClock.season()
 	var sid := GameData.season_id(sidx)
 	var today := GameClock.day_of_season()
-	_title.text = "%s  (Y%d)" % [SEASON_EN[sidx], GameClock.year()]
+	_title.text = "%s  (Y%d)" % [Hud.SEASON_KO[sidx], GameClock.year()]
 	for c in _grid.get_children():
 		c.queue_free()
 	# 계절 길이가 7의 배수가 아니면 계절마다 1일의 요일이 달라진다 → 앞쪽 빈칸으로 요일 열을 맞춘다.
