@@ -65,6 +65,27 @@ func _run() -> void:
 	await get_tree().process_frame
 	_assert_fits(panel, "가방")
 
+	# ── 창 크기를 바꿔도 배치가 안 무너지던가 ────────────────────────
+	# 패널 넷은 1280×720 절대좌표다(중앙 앵커 + 고정 offset). 스트레치가 빠지면 2D 좌표계가
+	# 창 크기를 그대로 따라가 배치가 통째로 어긋난다 — 헤드리스 64px 창에서 패널 상단이
+	# 100이 아니라 428로 잡히던 그 증상. 문턱은 전부 절대 숫자다(프로덕션 상수에서 파생시키면
+	# 그 상수가 0이 될 때 문턱도 0이 되어 조용히 통과한다).
+	for w in [Vector2i(1920, 1080), Vector2i(1024, 768), Vector2i(800, 600)]:
+		get_window().size = w
+		await get_tree().process_frame
+		await get_tree().process_frame
+		var vr: Vector2 = get_viewport().get_visible_rect().size
+		assert(vr == Vector2(1280.0, 720.0),
+			"창 %dx%d에서 2D 좌표계가 1280x720이 아님(%.0fx%.0f) — UI 절대좌표가 통째로 어긋난다"
+				% [w.x, w.y, vr.x, vr.y])
+		for row in [[col, "도감"], [cook, "요리"], [panel, "가방"]]:
+			var pn: Node = row[0]
+			pn.visible = true
+			pn._rebuild()  # 창을 줄인 뒤 패널을 여는 경로 = 프로덕션이 매번 부르는 그 함수
+			await get_tree().process_frame
+			_assert_fits(pn, "%s @%dx%d" % [row[1], w.x, w.y])
+	get_window().size = Vector2i(1280, 720)
+
 	print("E2E INVENTORY PASS")
 	get_tree().quit()
 
@@ -77,6 +98,10 @@ func _assert_fits(panel: Node, label: String) -> void:
 	assert(content > 560.0, "%s 목록이 560보다 짧다(%.0f) — 이 핀이 아무것도 안 잰다" % [label, content])
 	var bottom: float = box.position.y + box.size.y
 	assert(bottom <= 720.0, "%s 패널이 화면 밖으로 자람: 바닥 %.0f (목록 %.0f)" % [label, bottom, content])
+	# 세로만 재면 창을 좁혔을 때 좌우로 삐져나가는 것을 못 잡는다(요리 패널 폭 596, x=300).
+	var right: float = box.position.x + box.size.x
+	assert(box.position.x >= 0.0 and right <= 1280.0 and box.position.y >= 0.0,
+		"%s 패널이 화면 밖: 좌 %.0f 우 %.0f 상 %.0f" % [label, box.position.x, right, box.position.y])
 	assert(box.size.y < content, "%s 목록이 안 눌렸다 — 스크롤이 빠졌다 (패널 %.0f, 목록 %.0f)" % [label, box.size.y, content])
 	# 위 두 줄만으론 "높이를 아예 안 잡아 패널이 0으로 접힌" 경우도 통과한다(실측: fit_scroll 호출을
 	# 빼도 안 물었다). 목록이 화면보다 길면 패널은 화면을 거의 다 써야 한다 — 하한도 박는다.

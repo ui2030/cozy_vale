@@ -21,6 +21,14 @@ Sfx="*res://autoload/sfx.gd"
 
 window/size/viewport_width=1280
 window/size/viewport_height=720
+; UI는 1280×720 절대좌표로 짜여 있다(가방·도감·요리·달력 패널이 중앙 앵커 + 고정 offset).
+; canvas_items = 2D 좌표계를 항상 1280×720으로 고정하고 창 크기에 맞춰 통째로 확대/축소한다
+; → 창이 어떤 크기든 get_visible_rect()가 1280×720이라 그 절대좌표가 계속 참이다.
+; keep = 16:9를 유지(다른 비율에선 레터박스). expand로 바꾸면 좌표계가 창 비율을 따라가
+; 네 패널이 다시 어긋난다 — 그때는 패널을 전부 앵커 기반으로 고쳐야 한다.
+; 3D는 창 해상도 그대로 그린다(canvas_items는 2D만 스케일).
+window/stretch/mode="canvas_items"
+window/stretch/aspect="keep"
 
 [rendering]
 
