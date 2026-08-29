@@ -98,18 +98,9 @@ const SPROUT_SHAPE := "sprout"  # 공용 새싹(위 표의 항목) — 엔진이
 static func build(d: Dictionary, col: Color, key: String) -> Node3D:
 	var mp := String(d.get("mesh", ""))
 	if mp != "":
-		var parts := mp.split("/", false, 1)
-		if parts.size() == 2 and KIT_DIR.has(parts[0]):
-			var n := Decor.load_kit(KIT_DIR[parts[0]] + parts[1] + ".gltf", 1.0, 0.0, Decor.VEG_GAIN)
-			if n != null:
-				Decor._strip_collision(n)  # 킷 충돌체가 붙으면 채집물·작물이 통행을 막는다
-				tint(n, col)
-				var h: float = ToonChar.aabb_of(n).size.y
-				n.scale = Vector3.ONE * (LOOK_H / h) if h > 0.001 else Vector3.ONE
-				# 킷 메시가 다 바닥 기준인 건 아니다 — 포도 송이는 원점보다 0.069 아래로 늘어져
-				# 땅에 묻힌 채 찍혔다(실측). 절차 경로와 같은 규약으로 밑동을 지면에 앉힌다.
-				n.position.y = -ToonChar.aabb_of(n).position.y
-				return n
+		var n := _kit_node(mp, col, key)
+		if n != null:
+			return n
 	var shp := String(d.get("shape", ""))
 	if SHAPES.has(shp):
 		var mi := MeshInstance3D.new()
@@ -123,6 +114,36 @@ static func build(d: Dictionary, col: Color, key: String) -> Node3D:
 # 종당 메시 1장. 여러 지점·여러 밭칸에 같은 종이 서도 새로 깎지 않는다(decor._flora_cache 전례).
 # 색이 메시 표면에 구워지므로 캐시 키는 원형이 아니라 **종**이다.
 static var _mesh_cache := {}
+
+# 킷 메시도 **같은 계약**이다 — 절차 원형만 캐시가 있어서, 킷을 쓰는 종은 build를 부를 때마다
+# gltf를 통째로 다시 읽고 있었다. 캐시 키는 절차 쪽과 같은 **종** id다: 색·배율·접지가 전부
+# 그 종에서 나오므로 사본끼리 갈릴 여지가 없고, 재배 채집물이 산출물 id를 넘기면 밭 것과
+# 주운 것이 같은 원본을 쓴다.
+# 쥐는 것은 노드가 아니라 PackedScene이다 — decor._kit처럼 완성 노드를 들고 duplicate하면
+# **정적 참조라 종료까지 안 풀린다**(실측: 종료 시 누수 객체 8 → 22). 리소스는 참조계수라
+# 그 자국이 안 남고, 사본끼리 Mesh·머티리얼을 공유하는 건 duplicate와 같다.
+static var _kit_cache := {}
+
+static func _kit_node(mp: String, col: Color, key: String) -> Node3D:
+	if not _kit_cache.has(key):
+		var parts := mp.split("/", false, 1)
+		if parts.size() != 2 or not KIT_DIR.has(parts[0]):
+			return null
+		var n := Decor.load_kit(KIT_DIR[parts[0]] + parts[1] + ".gltf", 1.0, 0.0, Decor.VEG_GAIN)
+		if n == null:
+			return null  # 에셋 누락 = 호출부 폴백(구체·상자)으로 흘린다
+		Decor._strip_collision(n)  # 킷 충돌체가 붙으면 채집물·작물이 통행을 막는다
+		tint(n, col)
+		var h: float = ToonChar.aabb_of(n).size.y
+		n.scale = Vector3.ONE * (LOOK_H / h) if h > 0.001 else Vector3.ONE
+		# 킷 메시가 다 바닥 기준인 건 아니다 — 포도 송이는 원점보다 0.069 아래로 늘어져
+		# 땅에 묻힌 채 찍혔다(실측). 절차 경로와 같은 규약으로 밑동을 지면에 앉힌다.
+		n.position.y = -ToonChar.aabb_of(n).position.y
+		var ps := PackedScene.new()
+		ps.pack(n)
+		n.free()
+		_kit_cache[key] = ps
+	return (_kit_cache[key] as PackedScene).instantiate() as Node3D
 
 static func mesh_for(key: String, shp: String, col: Color) -> ArrayMesh:
 	if not _mesh_cache.has(key):

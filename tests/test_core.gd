@@ -1329,6 +1329,24 @@ func _test_forage_look() -> void:
 		"%s — 스폰마다 형태 메시를 새로 깎는다(종당 1장 캐시 계약)" % any_shape)
 	c1.free()
 	c2.free()
+	# 킷 메시(gltf)도 같은 계약이다. 캐시가 빠지면 build마다 GLTFDocument로 파일을 다시 읽는데,
+	# 그건 화면에선 안 보이고 호출 빈도가 오를 때(도감 아이콘) 조용히 비싸진다 — 값으로 문다:
+	# 두 번 만든 노드가 **같은 Mesh 인스턴스**를 쥐고 있으면 파일을 한 번만 읽은 것이다.
+	var any_kit := ""
+	for fid7 in GameData.forage:
+		if GameData.forage[fid7].has("mesh"):
+			any_kit = fid7
+			break
+	assert(any_kit != "", "킷 메시를 쓰는 종이 없다 — 이 핀이 아무것도 안 잰다")
+	var k1: Node3D = fs3._look(any_kit, false)
+	var k2: Node3D = fs3._look(any_kit, false)
+	var km1 := _first_mesh(k1)
+	var km2 := _first_mesh(k2)
+	assert(km1 != null and not (km1 is SphereMesh),
+		"%s — 킷 로드가 실패해 구체 폴백으로 떨어졌다" % any_kit)
+	assert(km1 == km2, "%s — 킷 메시를 만들 때마다 gltf를 다시 읽는다(종당 1회 캐시 계약)" % any_kit)
+	k1.free()
+	k2.free()
 	fs3.free()
 	# 형태 배정이 **데이터에서** 오는가. 엔진에 종 이름이 박히면 종이 늘 때마다 엔진을 고치게 되고
 	# 그게 이 저장소의 단일 출처 규약이 무너지는 지점이다(color·mesh가 이미 그 규약을 지킨다).
@@ -2751,10 +2769,9 @@ func _test_crop_look() -> void:
 		var gm := _first_mesh(grown)
 		var pm := _first_mesh(picked)
 		assert(gm != null and pm != null, "%s 겉모습에 메시가 없다" % cid3)
-		# 절차 원형은 캐시 키가 산출물 id라 **같은 메시 한 장**이다. 킷 메시(gltf)는 런타임 로드라
-		# 매번 새 리소스가 나오므로(캐시하면 정적 참조가 종료 시각까지 남는다) 자로 재서 본다.
-		if GameData.forage[yid3].has("shape"):
-			assert(gm == pm, "%s — 기른 것과 주운 것(%s)이 다른 메시를 쓴다" % [cid3, yid3])
+		# 캐시 키가 산출물 id라 **같은 메시 한 장**이다 — 절차 원형이든 킷 메시(gltf)든.
+		# 킷만 캐시가 없어서 여기가 예외였고, 그래서 그릴 때마다 gltf를 통째로 다시 읽었다.
+		assert(gm == pm, "%s — 기른 것과 주운 것(%s)이 다른 메시를 쓴다" % [cid3, yid3])
 		var gs := TC.aabb_of(grown).size
 		var ps := TC.aabb_of(picked).size
 		assert((gs - ps).length() <= 0.01,
