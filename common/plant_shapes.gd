@@ -21,6 +21,12 @@ const KIT_DIR := {
 # 킷 메시 목표 전고. 원본 크기가 제각각(파크 꽃 0.14 · 피크닉 포도 0.05)이라 AABB로 재서
 # 여기 맞춘다 = json에 배율을 또 적지 않는다.
 const LOOK_H := 0.50
+# 킷 메시 폭 상한. **전고만 맞추면 가로로 퍼진 원본이 그대로 옆으로 남는다** — 송이는 폭 0.734,
+# 사과는 0.617까지 불어 밭 한 칸(0.92)에 양옆 0.09씩만 남겼다(실측 winter_y1). 절차 원형 중
+# 제일 넓은 것이 0.474(덩굴 수박)이니 그 언저리로 자른다 = 한 칸에 양옆 0.20씩 남는다.
+# 0.48까지 조이면 송이 전고가 0.327로 내려가 채집물 전고 대역(0.34~0.52) 밖으로 나간다 —
+# 0.52가 "폭을 최대한 줄이되 키를 대역 안에 두는" 값이다(실측).
+const LOOK_W := 0.52
 
 # 곁들이 색(대·잎·자루). 종 색이 아니라 **원형이 고르는 고정색**이다 — 두 톤이라야 근경에서
 # "단색 덩어리 하나"로 안 읽힌다(decor.gd의 절차 폐곡면 실패 사유와 같은 지적).
@@ -140,8 +146,11 @@ static func _kit_node(mp: String, col: Color, key: String) -> Node3D:
 			return null  # 에셋 누락 = 호출부 폴백(구체·상자)으로 흘린다
 		Decor._strip_collision(n)  # 킷 충돌체가 붙으면 채집물·작물이 통행을 막는다
 		tint(n, col)
-		var h: float = ToonChar.aabb_of(n).size.y
-		n.scale = Vector3.ONE * (LOOK_H / h) if h > 0.001 else Vector3.ONE
+		# 전고 정규화와 폭 상한 중 **작은 배율**을 쓴다. 전고만 맞추면 납작하고 넓은 원본(송이)이
+		# 옆으로 넘치고, 폭만 맞추면 길쭉한 원본이 밭에서 안 보인다.
+		var s: Vector3 = ToonChar.aabb_of(n).size
+		var w: float = maxf(s.x, s.z)
+		n.scale = Vector3.ONE * minf(LOOK_H / s.y, LOOK_W / w) if s.y > 0.001 and w > 0.001 			else Vector3.ONE
 		# 킷 메시가 다 바닥 기준인 건 아니다 — 포도 송이는 원점보다 0.069 아래로 늘어져
 		# 땅에 묻힌 채 찍혔다(실측). 절차 경로와 같은 규약으로 밑동을 지면에 앉힌다.
 		n.position.y = -ToonChar.aabb_of(n).position.y

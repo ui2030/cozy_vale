@@ -1301,7 +1301,8 @@ func _test_forage_look() -> void:
 		# 전고는 LOOK_H 대역. 벗어나면 줍는 반경(0.9)과의 관계가 깨지고 원거리 가독도 흔들린다.
 		assert(ab.size.y >= 0.34 and ab.size.y <= 0.52,
 			"%s — 전고 %.3f가 LOOK_H(%.2f) 대역 밖" % [fid4, ab.size.y, PS.LOOK_H])
-		assert(maxf(ab.size.x, ab.size.z) <= 0.80, "%s — 폭 %.3f: 줍는 반경만큼 퍼졌다" % [fid4, maxf(ab.size.x, ab.size.z)])
+		# 0.80은 킷 메시(송이 0.734)를 안 물었다 — 절차 원형 최대 0.474 언저리인 0.55로 조인다.
+		assert(maxf(ab.size.x, ab.size.z) <= 0.55, "%s — 폭 %.3f: 줍는 반경만큼 퍼졌다" % [fid4, maxf(ab.size.x, ab.size.z)])
 		var shp4 := String(d4.get("shape", ""))
 		if shp4 != "":
 			proc_w.append(maxf(ab.size.x, ab.size.z))
@@ -2728,6 +2729,8 @@ func _test_crop_look() -> void:
 	var w_all := []
 	var h_all := []
 	var forms := {}
+	var widest := ""      # 가장 넓은 종 + 그 실측값 (실패 메시지에 그대로 나간다)
+	var widest_w := 0.0
 	for cid2 in GameData.crops:
 		var stages := int(GameData.crops[cid2].get("stages", 3))
 		var node: Node3D = _farm.crop_look(cid2, stages - 1)
@@ -2738,9 +2741,13 @@ func _test_crop_look() -> void:
 		# 접지: 밑동이 흙 윗면에 SINK만큼 박힌다(자리 노드가 흙 윗면에 있으므로 여기선 -SINK).
 		assert(absf(ab.position.y + F.SINK) <= 0.006,
 			"%s — 밑동이 흙에서 %+.3f (묻히거나 떴다)" % [cid2, ab.position.y + F.SINK])
-		# 폭: 밭 한 칸이 0.92다. 넘으면 이웃 칸을 침범한다(양옆 0.06씩 여유를 남긴다).
+		# 폭·깊이: 밭 한 칸이 0.92다. 옛 상한 0.80은 킷 메시(송이 0.734·사과 0.617)를 안 물어서
+		# 이웃 칸에 붙어 보이는 걸 통과시켰다 — **절대 숫자 0.55**로 조인다(LOOK_W에서 유도하지
+		# 않는다: 그 상수가 커지면 문턱도 같이 커져 조용히 통과한다).
 		var w: float = maxf(ab.size.x, ab.size.z)
-		assert(w <= 0.80, "%s — 폭 %.3f: 밭 한 칸(0.92)을 침범한다" % [cid2, w])
+		if w > widest_w:
+			widest_w = w
+			widest = cid2
 		assert(ab.size.y >= 0.18 and ab.size.y <= 0.80,
 			"%s — 전고 %.3f가 밭 대역(0.18~0.80) 밖" % [cid2, ab.size.y])
 		w_all.append(w)
@@ -2755,6 +2762,8 @@ func _test_crop_look() -> void:
 	w_all.sort()
 	h_all.sort()
 	assert(w_all.size() == 25, "밭 작물 25종 (실제 %d)" % w_all.size())
+	assert(widest_w <= 0.55, "가장 넓은 작물 %s가 폭 %.3f — 상한 0.55를 넘어 밭 한 칸(0.92)에서 이웃 칸에 붙는다"
+		% [widest, widest_w])
 	assert(w_all[-1] / w_all[0] >= 1.8, "작물 폭이 %.2f배밖에 안 갈린다" % (w_all[-1] / w_all[0]))
 	assert(h_all[-1] / h_all[0] >= 1.8, "작물 전고가 %.2f배밖에 안 갈린다" % (h_all[-1] / h_all[0]))
 	assert(forms.size() >= 6, "형태 계열이 %d종뿐 — 25종이 몇 실루엣으로 뭉친다" % forms.size())
@@ -2842,7 +2851,7 @@ func _test_crop_look() -> void:
 	var wab := TC.aabb_of(slot)  # slot.transform 포함 = 밭 좌표계(=월드) y
 	assert(absf(wab.position.y - (F.SOIL_TOP - F.SINK)) <= 0.006,
 		"%s — 밭에 선 밑동이 흙 윗면에서 %+.3f" % [per, wab.position.y - F.SOIL_TOP])
-	assert(maxf(wab.size.x, wab.size.z) <= 0.80, "%s — 밭에서 폭 %.3f" % [per, maxf(wab.size.x, wab.size.z)])
+	assert(maxf(wab.size.x, wab.size.z) <= 0.55, "%s — 밭에서 폭 %.3f" % [per, maxf(wab.size.x, wab.size.z)])
 	var ripe_col := _look_color(slot)
 	assert(not ripe_col.is_equal_approx(F.DORMANT), "제철 작물이 휴면색으로 그려졌다")
 	# 휴면: 계절만 넘긴다. 그루는 남되 열매색이 사라져야 한다("다 자랐는데 왜 수확이 안 되지" 방지)
