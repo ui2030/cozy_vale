@@ -593,6 +593,26 @@ const C_SNOW  := Color(0.555, 0.575, 0.605)
 # 여기서 갈라 고정한다. 값은 그 사고 이전의 지면 눈 = 이미 승인돼 있던 지붕 눈 화면값 그대로다.
 const C_SNOW_ROOF := Color(0.660, 0.680, 0.710)
 
+# 건물 표 [피벗, 벽 w, 벽 d, 전고, solid, door_sign]. _build_village가 이 표를 돌고, test_core의
+# 밭 이격 핀이 **같은 표로 집을 실제로 세워서** 벽면 좌표를 잰다 — 좌표를 두 곳에 적지 않는다.
+# door_sign: +1 = 남향 문(기본), -1 = 북향 문(광장을 등지는 남쪽 건물).
+const HOUSES := [
+	# 시계탑 회관 — 2층 몸체(H5) + 시계탑(2.3각, 총고~10). 모델 지붕이면 탑을 안 얹는다.
+	[Vector3(0, 0, -18), 6, 5, 5, true, 1.0],
+	# 주민 집 3채 — 광장 외곽 링에 사방 분산(북서/서/남서).
+	[Vector3(-20, 0, -14), 4, 4, 4, true, 1.0],
+	[Vector3(-24, 0, 2), 4, 4, 4, true, 1.0],
+	[Vector3(-14, 0, 22), 4, 4, 4, true, 1.0],
+	# House4 남동 강 건너 — 지도 패널의 동안(東岸) 건물. 북향 문(동 다리 길 방향).
+	[Vector3(24, 0, 20), 4, 4, 4, true, -1.0],
+	# 상점 박스(광장 북서 림, 불변). 트리거는 tscn Shop(-5,-5).
+	[Vector3(-7, 0, -7), 3, 3, 3, true, 1.0],
+	# 플레이어 집 — DECOR(무충돌: 실내 문 접근용). (6,13)→(3,15)로 광장 림 이격 6.5 확보.
+	# 남향 문: 길은 북에서 오지만 추종 카메라가 플레이어 뒤(+Z)라 북면 문 앞에 서면 집 몸통이
+	# 카메라와 플레이어 사이를 통째로 가린다(실측: 지붕 먼쪽 모서리 z=12.25,y=5.45).
+	[Vector3(3, 0, 15), 5, 5, 5, false, 1.0],
+]
+
 func _build_village() -> void:
 	var v := Node3D.new()
 	v.name = "Village"
@@ -600,24 +620,14 @@ func _build_village() -> void:
 	_plaza(v)
 	_roads(v)
 	_fountain(v, Vector3.ZERO)
-	# 시계탑 회관 — footprint 6×5, 피벗(0,-18). 2층 몸체(H5) + 시계탑(2.3각, 총고~10). SOLID.
-	var glb := _house(v, Vector3(0, 0, -18), 6, 5, 5, true)
+	var glb := false
+	for i in HOUSES.size():
+		var hs: Array = HOUSES[i]
+		var built := _house(v, hs[0], hs[1], hs[2], hs[3], hs[4], hs[5])
+		if i == 0:
+			glb = built  # 회관만 반환값을 본다(모델 지붕이면 박스 지붕 전제인 시계탑을 안 얹는다)
 	if not glb:
 		_clock_tower(v, Vector3(0, 5, -18))
-	# 주민 집 3채 — 광장 외곽 링에 사방 분산(북서/서/남서). footprint 4×4, 전고 4. SOLID.
-	_house(v, Vector3(-20, 0, -14), 4, 4, 4, true)  # House1 피벗(-20,-14) 북서
-	_house(v, Vector3(-24, 0, 2), 4, 4, 4, true)    # House2 피벗(-24,2) 서
-	_house(v, Vector3(-14, 0, 22), 4, 4, 4, true)   # House3 피벗(-14,22) 남서
-	# House4 피벗(24,20) 남동 강 건너 — 지도 패널의 동안(東岸) 건물 재현. 북향 문(동 다리 길 방향).
-	_house(v, Vector3(24, 0, 20), 4, 4, 4, true, -1.0)
-	# 상점 박스(광장 북서 림, 불변) — footprint 3×3, 피벗(-7,-7), 전고 3. SOLID. 트리거=tscn Shop(-5,-5).
-	_house(v, Vector3(-7, 0, -7), 3, 3, 3, true)
-	# 플레이어 집(남, 밭 남쪽) — footprint 5×5, 피벗(3,15), 전고 5. DECOR(무충돌: 실내 문 접근용).
-	# (6,13)→(3,15): 광장 림 이격 5.07→6.5로 규정(≥6) 충족 (Fable 검수 반영)
-	# door_sign +1 = 남향 문. 길은 북에서 오지만 문은 남면이어야 한다 — 추종 카메라가 플레이어
-	# 뒤(+Z)·위에 있어서 북면 문 앞에 서면 집 몸통이 카메라와 플레이어 사이를 통째로 가린다.
-	# 실측: 지붕 먼쪽 모서리(z=12.25,y=5.45)를 넘어 보려면 플레이어가 z<6.2여야 한다(문은 z=12.45).
-	_house(v, Vector3(3, 0, 15), 5, 5, 5, false, 1.0)
 	# 정자(서, 집C와 ≥8) — footprint 4×4, 피벗(-26,14), 전고 3. DECOR(개방 퍼걸러).
 	_pavilion(v, Vector3(-26, 0, 14))
 	_river_and_bridges(v)

@@ -131,7 +131,7 @@ visibility_range_end_margin = 6.0
 visibility_range_fade_mode = 1
 
 [node name="ShippingBin" type="Area3D" parent="." groups=["bin"]]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 9.5, 0.4, 7)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 5, 0.4, 5.8)
 
 [node name="BinMesh" type="MeshInstance3D" parent="ShippingBin"]
 mesh = SubResource("bin_mesh")

@@ -68,7 +68,7 @@ const BUILDING_KEEPOUT := [
 	[Vector2(24, 20), 3.0],   # 집4 (남동 강 건너)
 	[Vector2(0, 0), 2.0],     # 분수 (광장 중앙, 충돌 r1)
 	[Vector2(-5, -5), 1.6],   # 상점 카운터 (world.tscn Shop)
-	[Vector2(9.5, 7), 1.1],   # 판매 상자 (world.tscn ShippingBin)
+	[Vector2(5.0, 5.8), 1.1],   # 판매 상자 (world.tscn ShippingBin)
 	[Vector2(10, 0), 2.9],    # 연못 (수면 r2.5)
 	[Vector2(29, -18.5), 3.4],# 풍차 언덕 램프
 	[Vector2(29, -24), 3.9],  # 풍차 대지 (3단 언덕 — 최하단 5.4×4.8의 코너 반경 3.89)
@@ -85,7 +85,7 @@ const ANCHORS := {
 	"bridge": Vector2(13, 6.2),     # 동 다리(17,7) 서쪽 발치
 	"windmill": Vector2(27, -12),   # 풍차 언덕 램프 발치 (강 건너 = 다리 경유)
 	# 배우자 전용(F단계): 플레이어 집(피벗 3,15 / 북향 문 z=12.45) 앞. keepout r3.5 밖(거리 4.5),
-	# 밭 REGION(x4..11, z8..11) 밖, 강 밖 — test_core 관통·도하 불변식이 지킴.
+	# 밭 REGION(x4..11, z7..10) 밖, 강 밖 — test_core 관통·도하 불변식이 지킴.
 	"player_home": Vector2(3, 10.5),
 }
 const ANCHOR_R_MIN := 1.5   # 장소 앵커 배회 반경 (집보다 좁게 = 모여 있는 그림)

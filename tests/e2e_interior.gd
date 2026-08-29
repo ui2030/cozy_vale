@@ -119,7 +119,7 @@ func _run() -> void:
 		"배우자 실외 앵커(집 앞) 복귀 (%s)" % out)
 
 	# ── 4.5 요리 판매(H-3): 판매상자 E → 요리가 상자에 적재된다(아침 정산 대상)
-	await _stand(Vector3(9.5, 1.0, 5.5))  # 밭 옆 판매상자 앞 (e2e_prompts와 같은 자리)
+	await _stand(Vector3(5.0, 1.0, 4.3))  # 밭 옆 판매상자 앞 (e2e_prompts와 같은 자리)
 	assert(_player.interact_prompt() == "E: 판매 상자", "판매상자 프롬프트: '%s'" % _player.interact_prompt())
 	_player._try_interact()
 	var farm: Node = get_tree().get_first_node_in_group("farm")

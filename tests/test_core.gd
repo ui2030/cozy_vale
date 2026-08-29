@@ -149,27 +149,45 @@ func _clear_run(n: int) -> int:
 func _fcell(dx: int, dz: int) -> Vector2i:
 	return _farm.REGION.position + Vector2i(dx, dz)
 
-# ── 밭 흙 타일이 광장 판석 원반 밖에 있다 (좌표 실측) ──────────────────────────
-# 옛 판: REGION Rect2i(0,2,8,4)가 원점 반경 6의 판석을 파고들어 32칸 중 21칸이 포장 위였다
-# (13칸은 통째로 원반 안, 가장 깊은 (0,2)는 흙 모서리가 림에서 3.96 안쪽). 판석 상면 0.14가
-# 흙 상면 0.11보다 높아 흙이 통째로 가려 "포장도로에 심은 작물"이 됐다.
-# 임계 6.5/6.4는 **박은 절대값**이다: PLAZA_R에서 유도하면 반경을 0으로 만든 순간 임계값도 따라
-# 0이 되어 핀이 조용히 통과한다. 판석 반경도 흙 좌표도 상수를 읽지 않고 **실제로 만들어진
-# 노드에서** 잰다(셰이더 discard 반경 = 포장 실경계 / BoxMesh 크기 = 흙 실경계).
+# ── 밭 흙 타일이 광장 판석과 건물 밖에 있다 (좌표 실측) ────────────────
+# 두 축을 둘 다 물어야 한다 — 겹침만 보면 그림이 깔끔한지 모른다.
+#  (1) 판석: 옛 REGION Rect2i(0,2,8,4)가 원점 반경 6의 판석을 파고들어 32칸 중 21칸이 포장
+#      위였다(13칸은 통째로 안, 가장 깊은 (0,2)는 흙 모서리가 림에서 3.96 안쪽).
+#      판석 상면 0.14 > 흙 상면 0.11이라 흙이 통째로 가려 "포장도로에 심은 작물"이 됐다.
+#  (2) 건물 벽면: 판석만 피해 Rect2i(4,8,8,4)로 옮겼더니 밭 남단과 플레이어 집 북벽이
+#      0.5밖에 안 떨어졌다 — 겹침은 0이지만 사람이 못 지나가고 밭이 벽에 처박힌 그림이다.
+# 임계 6.5 / 6.4 / 1.5는 전부 **박은 절대값**이다: PLAZA_R이나 건물 폭에서 유도하면
+# 그 값을 0으로 만든 순간 임계값도 따라 0이 돼 핀이 조용히 통과한다.
+# 반면 **재는 대상은 전부 실제로 만들어진 노드**다: 판석은 셰이더 discard 반경,
+# 흙은 BoxMesh 크기, 건물은 world.HOUSES를 그대로 세워 벽체/모델 AABB를 잰다.
+# 처마(박스 폴백 w+0.5)는 일부러 안 잰다 — y5.2라 밑으로 걸어 지나간다. 기준은 벽면.
 # 단언은 **재고 치운 뒤** 몰아서 한다 — assert 실패는 그 함수를 거기서 끝내므로, 중간에서
 # 물면 갈아 둔 32칸이 남아 뒤따르는 밭 테스트의 괭이질까지 줄줄이 깨진다(핀 하나가 세 건으로).
 func _test_farm_off_plaza() -> void:
-	var probe: Node3D = preload("res://world/world.gd").new()
+	var W3 := preload("res://world/world.gd")
+	var probe: Node3D = W3.new()
 	var root := Node3D.new()
 	probe._plaza(root)
 	var mi := root.get_child(0) as MeshInstance3D
 	var paved_r := float((mi.material_override as ShaderMaterial).get_shader_parameter("radius"))
 	var paved_top := mi.position.y
 	root.free()
+	# 건물 벽면 = 세운 집의 몸체 노드(child 0) AABB. GLB가 있으면 모델, 없으면 벽 박스 —
+	# 어느 쪽이든 벽면이고, 뒤에 붙는 처마·창·문·충돌체는 안 섞인다.
+	var walls: Array[Rect2] = []
+	for hs in W3.HOUSES:
+		var hroot := Node3D.new()
+		probe._house(hroot, hs[0], hs[1], hs[2], hs[3], hs[4], hs[5])
+		var bb: AABB = ToonCharacter.aabb_of(hroot.get_child(0))
+		walls.append(Rect2(bb.position.x, bb.position.z, bb.size.x, bb.size.z))
+		hroot.free()
 	probe.free()
 	var made: Array[Vector2i] = []
-	var nearest := INF
-	var worst := Vector2i.ZERO
+	var near_plaza := INF
+	var worst_plaza := Vector2i.ZERO
+	var near_wall := INF
+	var worst_wall := Vector2i.ZERO
+	var worst_house := Rect2()
 	for dx in _farm.REGION.size.x:
 		for dz in _farm.REGION.size.y:
 			var cell := _fcell(dx, dz)
@@ -178,20 +196,35 @@ func _test_farm_off_plaza() -> void:
 			made.append(cell)
 			var soil: MeshInstance3D = _farm._nodes[cell]["soil"]
 			var half: Vector3 = (soil.mesh as BoxMesh).size * 0.5
-			# 흙 상자에서 원점(광장 중심)에 가장 가까운 점까지의 거리 — 모서리까지 재야 한다.
-			var near := Vector2(maxf(absf(soil.position.x) - half.x, 0.0),
+			var tile := Rect2(soil.position.x - half.x, soil.position.z - half.z, half.x * 2.0, half.z * 2.0)
+			# 흙 상자에서 원점(광장 중심)에 가장 가까운 점까지 — 모서리까지 재야 한다.
+			var np := Vector2(maxf(absf(soil.position.x) - half.x, 0.0),
 				maxf(absf(soil.position.z) - half.z, 0.0)).length()
-			if near < nearest:
-				nearest = near
-				worst = cell
-	for cell in made:  # 뒷 테스트가 쓰는 밭을 맨땅으로 되돌린다
+			if np < near_plaza:
+				near_plaza = np
+				worst_plaza = cell
+			for w in walls:
+				var nw := _rect_gap(tile, w)
+				if nw < near_wall:
+					near_wall = nw
+					worst_wall = cell
+					worst_house = w
+	for cell in made:  # 뒤 테스트가 쓰는 밭을 맨땅으로 되돌린다
 		_farm.tiles.erase(cell)
 		_farm._refresh(cell)
 	assert(paved_top > 0.11, "판석 상면 %.3f — 흙 상면 0.11보다 낮으면 이 핀의 전제가 깨진다" % paved_top)
 	assert(paved_r <= 6.4, "판석 포장 반경 %.2f — 밭 여유선 6.5를 침범한다" % paved_r)
-	assert(made.size() == 32, "밭 %d칸 — 32칸에서 줄었다(광장을 피하려고 밭을 깎지 말 것)" % made.size())
-	assert(nearest >= 6.5, "밭 %s 흙 모서리가 광장 중심에서 %.2f — 판석(포장 반경 %.2f) 위에 앉는다"
-		% [worst, nearest, paved_r])
+	assert(made.size() == 32, "밭 %d칸 — 32칸에서 줄었다(금지존을 피하려고 밭을 깎지 말 것)" % made.size())
+	assert(walls.size() == 7, "건물 %d채 — world.HOUSES가 바뀌었다(밭 이격을 다시 재라)" % walls.size())
+	assert(near_plaza >= 6.5, "밭 %s 흙 모서리가 광장 중심에서 %.2f — 판석(포장 반경 %.2f) 위에 앉는다"
+		% [worst_plaza, near_plaza, paved_r])
+	assert(near_wall >= 1.5, "밭 %s 흙과 건물 벽면(%s) 사이가 %.2f — 사람이 지나갈 1.5가 안 된다"
+		% [worst_wall, worst_house, near_wall])
+
+# 축정렬 사각형 둘 사이 최단거리(겹치면 0).
+static func _rect_gap(a: Rect2, b: Rect2) -> float:
+	return Vector2(maxf(maxf(b.position.x - a.end.x, a.position.x - b.end.x), 0.0),
+		maxf(maxf(b.position.y - a.end.y, a.position.y - b.end.y), 0.0)).length()
 
 func _test_farm_loop() -> void:
 	GameClock.abs_day = _clear_run(6)  # 이 테스트는 수동 물주기 경로 — 맑은 구간에서만 유효
