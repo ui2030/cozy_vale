@@ -3242,6 +3242,25 @@ func _test_korean_names() -> void:
 	for lb in labels:
 		assert(roman.search(String(lb)) == null, "화면 라벨에 로마자: %s" % str(lb))
 
+	# ①-2 날짜 표기: 계절·요일만 한국어고 연차·일자는 "Y1 … D12"였다. 표기를 **실제로 만들어** 본다
+	# (상수를 훑지 않는다 — 포맷 문자열이 되돌아가면 여기서 물어야 한다).
+	assert(H.date_ko(1, 0, 12) == "1년차 봄 12일", "연/일 표기가 바뀌었다: %s" % H.date_ko(1, 0, 12))
+	assert(H.date_ko(0, 3, 30) == "겨울 30일", "연차 없는 표기: %s" % H.date_ko(0, 3, 30))
+	assert(H.date_ko(2, 1, 0) == "2년차 여름", "일자 없는 표기: %s" % H.date_ko(2, 1, 0))
+	var dates := []
+	for y in [0, 1, 9]:
+		for se in H.SEASON_KO.size():
+			for dy in [0, 1, 12, 30]:
+				dates.append(H.date_ko(y, se, dy))
+	assert(dates.size() == 48, "날짜 표기를 48개 재야 한다: %d" % dates.size())
+	for dt in dates:
+		assert(roman.search(String(dt)) == null, "날짜 표기에 로마자: %s" % dt)
+	# 첫 프레임용으로 hud.tscn에 박아 둔 문자열도 같은 규약이다(_refresh 전에 화면에 뜬다)
+	var hud_scene: Node = preload("res://ui/hud.tscn").instantiate()
+	var hud_txt := String((hud_scene.get_node("Label") as Label).text)
+	hud_scene.free()
+	assert(roman.search(hud_txt) == null, "hud.tscn 기본 날짜 문자열에 로마자: %s" % hud_txt)
+
 	# ② ID 불변: 세이브 키는 소문자 ascii 그대로여야 한다
 	var ascii_id := RegEx.create_from_string("^[a-z][a-z0-9_.]*$")
 	var ids := []

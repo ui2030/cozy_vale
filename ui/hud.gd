@@ -11,6 +11,16 @@ extends CanvasLayer
 const SEASON_KO := ["봄", "여름", "가을", "겨울"]
 const WD_KO := ["월", "화", "수", "목", "금", "토", "일"]
 
+# 날짜 한 덩어리도 여기서 만든다. 계절·요일만 한국어고 연차·일자는 "Y1 … D12"로 남아 있었다
+# — 한국어 게임에서 그 둘만 로마자였다. 네 화면(HUD·달력·취침·개발자패널)이 이 함수를 부른다.
+# year <= 0 이면 연차를, day <= 0 이면 일자를 뺀다(달력 제목은 달 전체를 가리킨다).
+# 길이 실측(폰트 24): "9년차 여름 30일 (월)"이 219px, 뒤에 시각·골드·씨앗 최장까지 붙여 749px.
+# HUD 라벨은 x16에서 시작하니 화면(1280) 오른쪽까지 515px 남는다 = 최장에서도 안 넘친다.
+static func date_ko(year: int, season: int, day: int) -> String:
+	var s := "%d년차 " % year if year > 0 else ""
+	s += SEASON_KO[season]
+	return s + (" %d일" % day if day > 0 else "")
+
 var _player: Node
 
 # 흰 글자 + 검은 외곽선. 겨울 눈 지면(화면 ~248)·크림 하늘 위에서 순백 글자는 사라진다(실측).
@@ -197,8 +207,8 @@ func _event_toast() -> void:
 
 func _refresh() -> void:
 	var c := GameClock
-	var line := "Y%d  %s D%d (%s)   %02d:%02d" % [
-		c.year(), SEASON_KO[c.season()], c.day_of_season(),
+	var line := "%s (%s)   %02d:%02d" % [
+		date_ko(c.year(), c.season(), c.day_of_season()),
 		WD_KO[c.weekday()], c.hour(), c.minute(),
 	]
 	if _player != null:

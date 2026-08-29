@@ -170,7 +170,7 @@ func _refresh() -> void:
 		_sbtn[i].set_pressed_no_signal(i == sea)
 	for i in _wbtn.size():
 		_wbtn[i].set_pressed_no_signal(i == wi)
-	_status.text = "%s D%d · %s · %02d:%02d · 세이브 잠금" % [
-		SEASON_KO[sea], GameClock.day_of_season(), ["맑음", "비", "눈"][wi],
+	_status.text = "%s · %s · %02d:%02d · 세이브 잠금" % [
+		Hud.date_ko(0, sea, GameClock.day_of_season()), ["맑음", "비", "눈"][wi],
 		GameClock.hour(), GameClock.minute(),
 	]

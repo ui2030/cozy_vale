@@ -58,7 +58,7 @@ func _rebuild() -> void:
 	var sidx := GameClock.season()
 	var sid := GameData.season_id(sidx)
 	var today := GameClock.day_of_season()
-	_title.text = "%s  (Y%d)" % [Hud.SEASON_KO[sidx], GameClock.year()]
+	_title.text = Hud.date_ko(GameClock.year(), sidx, 0)
 	for c in _grid.get_children():
 		c.queue_free()
 	# 계절 길이가 7의 배수가 아니면 계절마다 1일의 요일이 달라진다 → 앞쪽 빈칸으로 요일 열을 맞춘다.
