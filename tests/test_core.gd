@@ -689,6 +689,14 @@ func _test_save_v4_v5() -> void:
 # 재지 않고 Label에 물어보는 이유: 줄 수·줄간격·폰트 폴백까지 레이아웃 엔진이 실제로 쓰는 값을
 # 그대로 받기 때문이다(글자 수 어림은 못 쓴다 — 한글·로마자·기호가 폭이 다르다). 트리에 붙여야
 # 테마에서 폰트가 산다. 칸 규칙은 두 곳에 안 적는다 — _make_cell을 그대로 부른다.
+#
+# 문턱은 **양방향**이다. 글자가 이 크기를 넘지 않는가(데이터가 늘 때), 그리고 칸이 이 크기
+# 밑으로 줄지 않는가(누가 "52면 충분해 보이는데" 하고 되돌릴 때). 한 방향만 걸면 칸을 도로
+# 줄여도 글자는 그대로라 조용히 통과한다.
+# 이 숫자는 calendar_panel.CELL에서 **끌어오지 않는다** — 프로덕션에서 유도하면 칸을 줄이는
+# 순간 문턱도 같이 줄어 아무것도 안 문다. 두 방향 단언이 이 상수 하나를 같이 본다.
+const CAL_CELL := Vector2(78, 66)
+
 func _test_calendar_cell_fit() -> void:
 	var cp: Control = preload("res://ui/calendar_panel.gd").new()
 	add_child(cp)
@@ -697,6 +705,10 @@ func _test_calendar_cell_fit() -> void:
 	var h_max := 0.0
 	var w_worst := ""
 	var h_worst := ""
+	# 칸 쪽은 프로덕션이 실제로 박아 둔 값을 읽는다(get_combined_minimum_size는 안 쓴다 —
+	# 그건 글자 크기에 밀려 커지므로 칸이 줄어도 글자가 받쳐 주면 안 문다).
+	var cell_w_min := INF
+	var cell_h_min := INF
 	for sidx in GameData.SEASON_IDS.size():
 		var sid := GameData.season_id(sidx)
 		for day in range(1, GameClock.DAYS_PER_SEASON + 1):
@@ -711,17 +723,27 @@ func _test_calendar_cell_fit() -> void:
 			if ms.y > h_max:
 				h_max = ms.y
 				h_worst = tag
+			cell_w_min = min(cell_w_min, cell.custom_minimum_size.x)
+			cell_h_min = min(cell_h_min, cell.custom_minimum_size.y)
 			remove_child(cell)
 			cell.free()
 			measured += 1
 	cp.free()
 	assert(measured == 4 * GameClock.DAYS_PER_SEASON,
 		"달력 칸을 %d개만 쟀다 — 네 계절 × %d일 전수를 안 돌았다" % [measured, GameClock.DAYS_PER_SEASON])
-	# 문턱 78·66은 핀 안에 박은 숫자다. CELL에서 끌어오면 칸을 줄이는 순간 문턱도 같이 줄어
-	# 조용히 통과한다. 실측(2026-08-31): 최대 폭 69.0 · 최대 높이 62.0 = **여유 폭 9px·높이 4px**.
-	# 축제 이름을 한 글자 늘리거나 같은 날에 생일을 하나 더 두면 여기가 운다.
-	assert(w_max <= 78.0, "달력 칸 글자 폭 %.1f — 칸(78)을 넘어 그 주 줄이 옆으로 밀린다: %s" % [w_max, w_worst])
-	assert(h_max <= 66.0, "달력 칸 글자 높이 %.1f — 칸(66)을 넘어 그 주 줄만 키가 달라진다: %s" % [h_max, h_worst])
+	# ① 글자가 계약을 넘지 않는가 — 실측(2026-08-31): 최대 폭 69.0 · 최대 높이 62.0
+	# = **여유 폭 9px·높이 4px**. 축제 이름을 한 글자 늘리거나 같은 날에 생일을 하나 더 두면 운다.
+	assert(w_max <= CAL_CELL.x, "달력 칸 글자 폭 %.1f — 칸(%.0f)을 넘어 그 주 줄이 옆으로 밀린다: %s"
+		% [w_max, CAL_CELL.x, w_worst])
+	assert(h_max <= CAL_CELL.y, "달력 칸 글자 높이 %.1f — 칸(%.0f)을 넘어 그 주 줄만 키가 달라진다: %s"
+		% [h_max, CAL_CELL.y, h_worst])
+	# ② 칸이 계약 밑으로 줄지 않았는가 — 되돌리기를 무는 쪽.
+	assert(cell_w_min >= CAL_CELL.x,
+		"달력 칸 폭이 %.0f로 계약 %.0f 밑이다 — 칸을 줄이면 축제·생일로 글자가 긴 날(폭 %.1f: %s)이 옆 칸을 밀어낸다"
+		% [cell_w_min, CAL_CELL.x, w_max, w_worst])
+	assert(cell_h_min >= CAL_CELL.y,
+		"달력 칸 높이가 %.0f로 계약 %.0f 밑이다 — 칸을 줄이면 축제·생일이 겹치는 날(글자 높이 %.1f: %s) 줄이 어긋난다"
+		% [cell_h_min, CAL_CELL.y, h_max, h_worst])
 
 func _test_calendar() -> void:
 	# 달력 데이터 로드 + 조회 (생일=npcs, 축제=calendar 단일 출처)
