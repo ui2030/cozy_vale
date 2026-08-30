@@ -37,6 +37,7 @@ func _ready() -> void:
 	_test_save_v4_v5()
 	_test_v1_save_compat()
 	_test_calendar()
+	_test_calendar_cell_fit()
 	_test_festival()
 	_test_ring_item()
 	_test_spouse_schedule()
@@ -677,6 +678,50 @@ func _test_save_v4_v5() -> void:
 	# 최초 포맷(v1)에서 한 번에 최신까지
 	var v1 := SaveManager._migrate({"save_version": 1})
 	assert(v1["systems"]["npc"].has("spouse") and v1["systems"]["npc"].has("engaged"), "v1 → v5 결혼 키")
+
+# ── 달력 칸이 내용에 밀리지 않는가 ──────────────────────────────────
+# 칸 글자는 날짜 + 그날 축제 + 그날 생일들이라 **데이터가 늘면 칸이 넘친다**. Label은 자동
+# 줄바꿈도 잘라내기도 꺼져 있어서 넘쳐도 안 잘린다 — PanelContainer가 그냥 커지고 그 주 한 줄만
+# 키가 달라진다. 조용히 밀리는 종류라 핀이 없으면 아무도 모른다(실측 collection/cal_w: 겨울 D10이
+# 축제+생일로 3줄 62px인데 칸이 52px였다 = 도입 당시 이미 넘쳐 있었다. 칸 높이를 66으로 올려 담았다).
+#
+# 재는 것은 **프로덕션 _make_cell이 만든 그 Label의 최소 크기**다. get_string_size로 한 줄씩
+# 재지 않고 Label에 물어보는 이유: 줄 수·줄간격·폰트 폴백까지 레이아웃 엔진이 실제로 쓰는 값을
+# 그대로 받기 때문이다(글자 수 어림은 못 쓴다 — 한글·로마자·기호가 폭이 다르다). 트리에 붙여야
+# 테마에서 폰트가 산다. 칸 규칙은 두 곳에 안 적는다 — _make_cell을 그대로 부른다.
+func _test_calendar_cell_fit() -> void:
+	var cp: Control = preload("res://ui/calendar_panel.gd").new()
+	add_child(cp)
+	var measured := 0
+	var w_max := 0.0
+	var h_max := 0.0
+	var w_worst := ""
+	var h_worst := ""
+	for sidx in GameData.SEASON_IDS.size():
+		var sid := GameData.season_id(sidx)
+		for day in range(1, GameClock.DAYS_PER_SEASON + 1):
+			var cell: Control = cp._make_cell(sid, day, false)
+			add_child(cell)
+			var lbl: Label = cell.get_child(0)
+			var ms := lbl.get_combined_minimum_size()
+			var tag := "%s D%d [%s]" % [sid, day, lbl.text.replace("\n", " / ")]
+			if ms.x > w_max:
+				w_max = ms.x
+				w_worst = tag
+			if ms.y > h_max:
+				h_max = ms.y
+				h_worst = tag
+			remove_child(cell)
+			cell.free()
+			measured += 1
+	cp.free()
+	assert(measured == 4 * GameClock.DAYS_PER_SEASON,
+		"달력 칸을 %d개만 쟀다 — 네 계절 × %d일 전수를 안 돌았다" % [measured, GameClock.DAYS_PER_SEASON])
+	# 문턱 78·66은 핀 안에 박은 숫자다. CELL에서 끌어오면 칸을 줄이는 순간 문턱도 같이 줄어
+	# 조용히 통과한다. 실측(2026-08-31): 최대 폭 69.0 · 최대 높이 62.0 = **여유 폭 9px·높이 4px**.
+	# 축제 이름을 한 글자 늘리거나 같은 날에 생일을 하나 더 두면 여기가 운다.
+	assert(w_max <= 78.0, "달력 칸 글자 폭 %.1f — 칸(78)을 넘어 그 주 줄이 옆으로 밀린다: %s" % [w_max, w_worst])
+	assert(h_max <= 66.0, "달력 칸 글자 높이 %.1f — 칸(66)을 넘어 그 주 줄만 키가 달라진다: %s" % [h_max, h_worst])
 
 func _test_calendar() -> void:
 	# 달력 데이터 로드 + 조회 (생일=npcs, 축제=calendar 단일 출처)

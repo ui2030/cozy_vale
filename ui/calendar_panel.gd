@@ -4,6 +4,13 @@ extends Control
 
 const Hud := preload("res://ui/hud.gd")  # 패널 배경 단일 출처(여백·불투명도)
 
+# 칸 크기. 높이는 **3줄이 들어가야 한다** — 축제와 생일이 같은 날 겹치는 날이 실제로 있고
+# (겨울 D10 = 등불 축제 + 생일), 그 칸의 글자가 62px라 옛 52로는 담기지 않았다. Label은
+# 자동 줄바꿈도 잘라내기도 꺼져 있어서 넘쳐도 안 잘린다 — PanelContainer가 그냥 커지고
+# 그 주 한 줄만 키가 달라졌다(실측 collection/cal_w). 66 = 62 + 여유 4.
+# 폭 78은 그대로다(가장 긴 칸 글자가 69px). test_core가 네 계절 전수로 두 값을 다 문다.
+const CELL := Vector2(78, 66)
+
 # 오늘 강조·빈 칸 배경도, 계절·요일 표기도 hud.gd 단일 출처.
 
 var _title: Label
@@ -33,7 +40,7 @@ func _ready() -> void:
 	for wd in Hud.WD_KO:
 		var l := Label.new()
 		l.text = wd
-		l.custom_minimum_size = Vector2(78, 0)
+		l.custom_minimum_size = Vector2(CELL.x, 0)
 		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		header.add_child(l)
 	vb.add_child(header)
@@ -65,14 +72,14 @@ func _rebuild() -> void:
 	# 1일차의 abs_day = 오늘 abs_day - (오늘 일차 - 1), 요일 = 그 값 % 7 (0=월).
 	for _i in (GameClock.abs_day - today + 1) % 7:
 		var blank := Control.new()
-		blank.custom_minimum_size = Vector2(78, 52)
+		blank.custom_minimum_size = CELL
 		_grid.add_child(blank)
 	for day in range(1, GameClock.DAYS_PER_SEASON + 1):
 		_grid.add_child(_make_cell(sid, day, day == today))
 
 func _make_cell(sid: String, day: int, is_today: bool) -> Control:
 	var box := PanelContainer.new()
-	box.custom_minimum_size = Vector2(78, 52)
+	box.custom_minimum_size = CELL
 	var sb := StyleBoxFlat.new()
 	sb.bg_color = Hud.cell_bg(is_today)
 	box.add_theme_stylebox_override("panel", sb)
