@@ -111,16 +111,20 @@ const SEED_SHAPE := "seed_pod"  # 야생 씨앗 공용 원형(종 구분은 색�
 # ── 겉모습 노드 ────────────────────────────────────────────────────
 # 킷 메시 → 절차 원형 순. 둘 다 없으면 null = 호출부가 폴백을 정한다(구체 / 상자).
 # key = 메시 캐시 키. 재배 채집물이 **산출물 id**를 넘기면 주운 것과 같은 메시 한 장을 쓴다.
-static func build(d: Dictionary, col: Color, key: String) -> Node3D:
+#
+# dormant = 휴면 그루(제철 아닌 다년생). 킷 메시는 통째로 한 덩어리라 "먹는 부분"을 떼어낼 수가
+# 없다 — 그래서 휴면일 때만 킷을 건너뛰고 절차 원형으로 흐른다. 그 shape는 킷 에셋이 빠졌을 때의
+# 폴백으로도 그대로 쓰인다(옛 판은 에셋이 없으면 null → 호출부의 색 구체로 떨어졌다).
+static func build(d: Dictionary, col: Color, key: String, dormant := false) -> Node3D:
 	var mp := String(d.get("mesh", ""))
-	if mp != "":
+	if mp != "" and not dormant:
 		var n := _kit_node(mp, col, key)
 		if n != null:
 			return n
 	var shp := String(d.get("shape", ""))
 	if SHAPES.has(shp):
 		var mi := MeshInstance3D.new()
-		mi.mesh = mesh_for(key, shp, col)
+		mi.mesh = mesh_for(key, shp, col, dormant)
 		# 밑동을 지면에 앉힌다 = 피벗 바닥 기준. 저작 원점이 y=0이어도 눕힌 잎·자루가 조금씩
 		# 파고들어 AABB로 잡는다.
 		mi.position.y = -mi.mesh.get_aabb().position.y
@@ -164,29 +168,46 @@ static func _kit_node(mp: String, col: Color, key: String) -> Node3D:
 		_kit_cache[key] = ps
 	return (_kit_cache[key] as PackedScene).instantiate() as Node3D
 
-static func mesh_for(key: String, shp: String, col: Color) -> ArrayMesh:
-	if not _mesh_cache.has(key):
-		_mesh_cache[key] = shape_mesh(SHAPES[shp], col)
-	return _mesh_cache[key]
+static func mesh_for(key: String, shp: String, col: Color, dormant := false) -> ArrayMesh:
+	# 휴면은 **같은 종의 다른 메시**다 — 캐시 키에 안 넣으면 먼저 만들어진 쪽이 다른 쪽을 덮는다
+	# (겨울에 한 번 본 그루가 봄에도 열매 없이 서 있게 된다).
+	var ck := (key + "|dorm") if dormant else key
+	if not _mesh_cache.has(ck):
+		_mesh_cache[ck] = shape_mesh(SHAPES[shp], col, dormant)
+	return _mesh_cache[ck]
 
 # 원형 메시. 표면 0 = 종 색(먹는 부분), 표면 1 = 곁들이(대·잎·자루).
 # static = 노드 없이도 만든다(decor.blob_mesh와 같은 규약 — 테스트가 직접 부른다).
-static func shape_mesh(k: Array, col: Color) -> ArrayMesh:
+#
+# dormant = 휴면 그루. 옛 판은 다 만들어 놓고 노드를 통째로 갈색으로 덮었다 — 그러면 실루엣이
+# 그대로라 "열매가 없다"가 형태로 전달되지 않고 **갈색 열매**가 된다(실측 crops/winter_fix:
+# 밭에 갈색 돌 셋). 여기선 먹는 부분을 아예 안 깎는다.
+# 함정: 빈 SurfaceTool의 commit()은 표면이 **0개**인 메시를 낸다(실측) — 이어 붙인 곁들이가
+# 표면 0으로 밀려 들어오므로, 휴면일 때 머티리얼도 한 장만 표면 0에 건다. 옛 순서 그대로 두면
+# 잎이 종 색으로 칠해지고 표면 1 지정이 범위를 넘는다.
+static func shape_mesh(k: Array, col: Color, dormant := false) -> ArrayMesh:
 	var body := SurfaceTool.new()   # 표면 0
 	var side := SurfaceTool.new()   # 표면 1
 	body.begin(Mesh.PRIMITIVE_TRIANGLES)
 	side.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var acc := C_STEM
+	# >0 = 곁들이가 대 하나(또는 꼭지)뿐인 원형. 열매를 빼면 실오라기만 남거나(송이 대 반경
+	# 0.024) 꼭지가 공중에 뜬다(견과는 대가 아예 없다) — 그 자리에 같은 키의 마른 가지를 세운다.
+	var twig := 0.0
 	match String(k[0]):
 		"cap":
-			_stalk(side, float(k[4]), float(k[5]))
-			body.append_from(_dome(float(k[3])), 0, Transform3D(
-				Basis().scaled(Vector3(float(k[1]), float(k[2]), float(k[1]))),
-				Vector3(0, float(k[5]), 0)))
+			twig = float(k[5]) + float(k[2])
+			if not dormant:
+				_stalk(side, float(k[4]), float(k[5]))
+				body.append_from(_dome(float(k[3])), 0, Transform3D(
+					Basis().scaled(Vector3(float(k[1]), float(k[2]), float(k[1]))),
+					Vector3(0, float(k[5]), 0)))
 		"cluster":
 			acc = C_LEAF
-			_stalk(side, float(k[1]) * 0.34, float(k[5]) + float(k[3]) * float(k[4]))
-			_blobs(body, int(k[2]), float(k[1]), float(k[3]), float(k[4]), float(k[5]))
+			twig = float(k[5]) + float(k[3]) * float(k[4]) + float(k[1])
+			if not dormant:
+				_stalk(side, float(k[1]) * 0.34, float(k[5]) + float(k[3]) * float(k[4]))
+				_blobs(body, int(k[2]), float(k[1]), float(k[3]), float(k[4]), float(k[5]))
 		"tuft":
 			acc = C_LEAF
 			_leaves(side, float(k[1]), float(k[2]), int(k[3]), float(k[4]))
@@ -195,23 +216,30 @@ static func shape_mesh(k: Array, col: Color) -> ArrayMesh:
 				_stalk(side, float(k[5]) * 0.28, cy)
 			# 퍼짐 = 알 반경 × 배율. 기본 0.85면 알들이 서로 겹쳐 한 덩어리가 된다(꽃 코어가 그걸 쓴다).
 			var sprd := float(k[8]) if k.size() > 8 else 0.85
-			_blobs(body, int(k[7]), float(k[5]), float(k[5]) * sprd if int(k[7]) > 1 else 0.0,
-				0.5, cy)
+			if not dormant:
+				_blobs(body, int(k[7]), float(k[5]), float(k[5]) * sprd if int(k[7]) > 1 else 0.0,
+					0.5, cy)
 		"nut":
-			_teardrop_into(body, float(k[1]), float(k[2]), float(k[3]))
-			var tip := CylinderMesh.new()
-			tip.top_radius = 0.001
-			tip.bottom_radius = float(k[1]) * 0.26
-			tip.height = float(k[4])
-			tip.radial_segments = 8
-			tip.rings = 1
-			side.append_from(tip, 0, Transform3D(Basis(),
-				Vector3(0, float(k[2]) + float(k[4]) * 0.5, 0)))
+			twig = float(k[2]) + float(k[4])
+			if not dormant:
+				_teardrop_into(body, float(k[1]), float(k[2]), float(k[3]))
+				var tip := CylinderMesh.new()
+				tip.top_radius = 0.001
+				tip.bottom_radius = float(k[1]) * 0.26
+				tip.height = float(k[4])
+				tip.radial_segments = 8
+				tip.rings = 1
+				side.append_from(tip, 0, Transform3D(Basis(),
+					Vector3(0, float(k[2]) + float(k[4]) * 0.5, 0)))
 		"root":
 			acc = C_LEAF
 			# 뒤집은 물방울 = 어깨가 위, 밑동이 흙 속으로 좁아진다. 똑바로 세우면(위가 뾰족)
 			# 밭에서 "땅에 꽂힌 고깔"로 읽혔다 — 뿌리채소는 어깨가 드러나는 게 실제 모습이다.
-			_teardrop_into(body, float(k[1]), float(k[2]), float(k[3]), true)
+			# 휴면은 잎만 남긴다: 뿌리채소가 쉬는 동안 먹는 부분은 **흙 속에 있다**(어깨가 안
+			# 드러난다)라는 게 실제 모습이라 잎만 마른 그루가 자연스럽다. 지금 다년생 중에
+			# 이 계열을 쓰는 종은 없어 화면에는 안 나오지만, 넣을 때 조용히 갈색 알이 되면 안 된다.
+			if not dormant:
+				_teardrop_into(body, float(k[1]), float(k[2]), float(k[3]), true)
 			_leaves(side, float(k[4]), float(k[5]), int(k[6]), float(k[7]), float(k[2]) * 0.85)
 		"bush":
 			acc = C_LEAF
@@ -220,23 +248,38 @@ static func shape_mesh(k: Array, col: Color) -> ArrayMesh:
 			# 열매는 줄기 중단(0.30h)부터 꼭대기(0.95h)까지. _blobs의 세로 폭은 매달린 폭에
 			# 묶여 있어서(spread·2·squash) 원하는 구간에서 squash를 역산한다.
 			var ext := float(k[1]) * 0.65
-			_blobs(body, int(k[6]), float(k[5]), float(k[7]),
-				ext / maxf(2.0 * float(k[7]), 0.001), float(k[1]) * 0.30, float(k[8]))
+			if not dormant:
+				_blobs(body, int(k[6]), float(k[5]), float(k[7]),
+					ext / maxf(2.0 * float(k[7]), 0.001), float(k[1]) * 0.30, float(k[8]))
 		"vine":
 			acc = C_LEAF
 			_leaves(side, float(k[3]), float(k[4]), int(k[5]), float(k[6]))
 			# 알 하나를 눌러 땅에 놓는다 — 중심 y = 반경×눌림이라야 밑이 정확히 y=0.
-			_blobs(body, 1, float(k[1]), 0.0, 1.0, float(k[1]) * float(k[2]), float(k[2]))
+			if not dormant:
+				_blobs(body, 1, float(k[1]), 0.0, 1.0, float(k[1]) * float(k[2]), float(k[2]))
+	if dormant and twig > 0.0:
+		_twigs(side, twig)
 	# append_from은 붙일 때 법선에 basis를 그대로 곱한다 = 눌러 만든 잎에서 법선이 뒤집힌 방향으로
 	# 쏠린다. 합쳐서 다시 만든다(인덱스 → 스무스 셰이딩, blob_mesh와 같은 마무리).
 	for st in [body, side]:
 		st.index()
 		st.generate_normals()
+	if dormant:
+		var dm: ArrayMesh = side.commit()
+		dm.surface_set_material(0, ToonChar.make_solid(acc, OUTLINE_W))
+		return dm
 	var m := body.commit()
 	side.commit(m)
 	m.surface_set_material(0, ToonChar.make_solid(col, OUTLINE_W))
 	m.surface_set_material(1, ToonChar.make_solid(acc, OUTLINE_W))
 	return m
+
+# 마른 가지 그루 — 잎이 없는 원형(갓·송이·견과)의 휴면 몫. h = 그 원형의 제철 전고.
+# 잎을 가진 원형은 그 잎이 그대로 마른 그루가 되므로 이걸 안 쓴다.
+# 납작비를 0.7로 올려 단면을 거의 둥글게 만든다 = 잎이 아니라 **가지**로 읽힌다.
+static func _twigs(st: SurfaceTool, h: float) -> void:
+	_stalk(st, h * 0.055, h * 0.55)
+	_leaves(st, h * 0.62, h * 0.085, 4, 34, h * 0.28, 0.7)
 
 # 반구(밑이 평평한 갓)를 위로 갈수록 좁히거나(뿔) 넓히는(나팔) 워프. 단위 크기 — 호출부가 scale.
 static func _dome(flare: float, seg := 16) -> ArrayMesh:
@@ -307,7 +350,9 @@ static func _blobs(st: SurfaceTool, n: int, r: float, spread: float, squash: flo
 
 # 잎 = 납작하게 눌러 길게 뽑은 타원체를 밑동에서 방사로 세우고 바깥으로 눕힌 것.
 # y0 = 잎이 나는 높이(뿌리채소는 드러난 어깨 위에서 난다).
-static func _leaves(st: SurfaceTool, ln: float, w: float, n: int, tilt: float, y0 := 0.0) -> void:
+# flat = 두께비(0.16 = 잎처럼 납작). 1에 가까울수록 단면이 둥글어져 가지·깍지로 읽힌다.
+static func _leaves(st: SurfaceTool, ln: float, w: float, n: int, tilt: float, y0 := 0.0,
+		flat := 0.16) -> void:
 	var sp := SphereMesh.new()
 	sp.radius = 1.0
 	sp.height = 2.0
@@ -317,7 +362,7 @@ static func _leaves(st: SurfaceTool, ln: float, w: float, n: int, tilt: float, y
 		var ang: float = TAU * i / float(n) + 0.4  # 0.4 = 정면에 잎 하나가 딱 오지 않게 비튼다
 		var b := Basis.from_euler(Vector3(0, ang, 0)) * Basis.from_euler(Vector3(deg_to_rad(tilt), 0, 0))
 		st.append_from(sp, 0, Transform3D(b, Vector3(0, y0, 0))
-			* Transform3D(Basis().scaled(Vector3(w * 0.5, ln * 0.5, w * 0.16)), Vector3(0, ln * 0.5, 0)))
+			* Transform3D(Basis().scaled(Vector3(w * 0.5, ln * 0.5, w * flat)), Vector3(0, ln * 0.5, 0)))
 
 # 킷이 깔아둔 char_tint(KIT_TINT)만 종별 색으로 갈아끼운다. sat_cap·val_gain은 건드리지 않는다
 # = 아틀라스 결이 살아 있는 채로 색상만 도는 것(decor.gd FLORA_TINT와 같은 수법).

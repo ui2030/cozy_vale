@@ -192,12 +192,15 @@ func crop_look_data(crop_id: String) -> Dictionary:
 
 # 단계에 맞는 겉모습 노드. 밑동은 AABB로 앉힌다 — **배율을 준 뒤에** 재야 맞는다(먼저 앉히고
 # 배율을 주면 원점이 같이 밀려 뜨거나 묻힌다).
-func crop_look(crop_id: String, stage: int) -> Node3D:
+# dormant = 열매를 아예 안 깎는다(plant_shapes가 표면 0을 생략). 새싹은 전 작물 공용 한 장이라
+# 휴면 판을 따로 두지 않는다 — 갓 난 싹엔 열매가 없어서 지울 것도 없다.
+func crop_look(crop_id: String, stage: int, dormant := false) -> Node3D:
 	var n: Node3D = null
 	if stage <= 0:
 		n = Shapes.build({"shape": Shapes.SPROUT_SHAPE}, SPROUT, Shapes.SPROUT_SHAPE)
 	else:
-		n = Shapes.build(crop_look_data(crop_id), crop_color(crop_id), GameData.crop_yield(crop_id))
+		n = Shapes.build(crop_look_data(crop_id), crop_color(crop_id), GameData.crop_yield(crop_id),
+			dormant)
 		if n != null:
 			# 곱한다 — 킷 메시는 build가 전고를 맞추느라 이미 배율을 걸어 놨다(덮어쓰면 원본
 			# 크기로 되돌아간다: 사과가 0.50 → 0.36으로 줄어 주운 것과 크기가 갈렸다, 실측).
@@ -219,9 +222,9 @@ func crop_look(crop_id: String, stage: int) -> Node3D:
 	n.position.y = -ToonChar.aabb_of(n).position.y - SINK
 	return n
 
-# 휴면(다년생 제철 아님) = 열매 없는 마른 그루. 메시를 다시 깎지 않고 노드 전체를 마른 갈색으로
-# 덮는다 — 절차 원형이든 킷 메시든 같은 한 줄로 먹는다. 옛 판의 DORMANT 표현을 실물에서 유지:
-# 이게 없으면 "다 자랐는데 왜 수확이 안 되지"가 된다.
+# 마른 갈색 덮기. **열매를 지우는 건 crop_look(dormant)이 한다** — 여기는 남은 그루(대·잎·가지)를
+# 마른 색으로 바꾸는 몫이다. 옛 판은 이 한 줄이 휴면 표현의 전부여서 실루엣이 성숙과 똑같았고,
+# 그래서 열매가 그냥 갈색 열매로 남았다(실측 crops/winter_fix).
 static func _paint(node: Node, col: Color) -> void:
 	if node is MeshInstance3D:
 		(node as MeshInstance3D).material_override = ToonChar.make_solid(col, 0.005)
@@ -254,7 +257,7 @@ func _refresh(cell: Vector2i) -> void:
 		key = "%s|%d|%d" % [cid, stage, int(dorm)]
 		if String(n.get("key", "")) != key:
 			_clear_slot(slot)
-			var look := crop_look(cid, stage)
+			var look := crop_look(cid, stage, dorm)
 			if dorm:
 				_paint(look, DORMANT)
 			slot.add_child(look)

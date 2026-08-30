@@ -33,7 +33,7 @@
 	},
 	"forage.wild_apple": {
 		"name": "야생 사과", "seasons": ["autumn"], "sell_price": 55,
-		"mesh": "picnic/apple", "color": "#bf4a22"
+		"mesh": "picnic/apple", "shape": "bush_drop", "color": "#bf4a22"
 	},
 	"forage.chestnut": {
 		"name": "밤", "seasons": ["autumn"], "sell_price": 40,
@@ -53,7 +53,7 @@
 	},
 	"forage.snow_berry": {
 		"name": "눈딸기", "seasons": ["winter"], "sell_price": 50,
-		"mesh": "picnic/grapes", "color": "#bf4f66"
+		"mesh": "picnic/grapes", "shape": "bush_berry", "color": "#bf4f66"
 	},
 	"forage.holly": {
 		"name": "호랑가시 열매", "seasons": ["winter"], "sell_price": 45,

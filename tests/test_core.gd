@@ -65,6 +65,7 @@ func _ready() -> void:
 	_test_dialogue_context()
 	_test_npc_personality()
 	_test_crop_look()
+	_test_dormant_look()
 	_test_forage_crops()  # 날짜를 여러 해 돌리므로 맨 뒤 (앞 테스트의 시계·주민 상태를 안 흔들게)
 	_test_winter_seeds()  # 같은 이유로 맨 뒤 — Y1 가을 30일 + 겨울까지 실제로 돌린다
 	print("ALL CORE TESTS PASS")
@@ -2873,6 +2874,98 @@ func _test_crop_look() -> void:
 	for cid6 in GameData.crops:
 		var bare: String = cid6.get_slice(".", 1)
 		assert(not src.contains(bare), "farm_system.gd에 종 이름이 하드코딩됐다: %s" % bare)
+
+# ── 휴면 그루: 색이 아니라 **형태**가 "열매 없음"을 말하는가 ────────────
+# 옛 판은 다 자란 실물을 그대로 깎아 놓고 노드를 갈색으로 덮기만 했다 — 실루엣이 성숙과 한 치도
+# 안 달라서 화면에선 그냥 **갈색 열매**였다(실측 crops/winter_fix: 밭에 갈색 돌 셋). 색으로 재면
+# 그 옛 판도 통과한다(_paint 한 줄이면 색은 언제나 맞다) — 그래서 여기선 till→plant→_refresh를
+# 태워 **밭에 실제로 선 노드**의 메시와 AABB를 잰다. 문턱은 전부 절대 숫자다.
+func _test_dormant_look() -> void:
+	var TC := preload("res://common/toon_character.gd")
+	var cell := _fcell(5, 0)   # 앞선 테스트가 안 쓴 칸
+	var measured := 0
+	var kit_seen := 0     # 제철엔 킷 메시를 쓰는 종(휴면에선 절차 원형으로 흘러야 한다)
+	var kit_want := 0
+	for cid in GameData.crops:
+		if not GameData.crop_perennial(cid):
+			continue
+		# 제철·비제철·심는 계절을 전부 데이터에서 고른다(엔진에도 테스트에도 종 이름을 안 박는다)
+		var on_s := ""
+		var off_s := ""
+		var plant_s := ""
+		for s in GameData.SEASON_IDS:
+			if on_s == "" and GameData.crop_in_season(cid, s):
+				on_s = s
+			if off_s == "" and not GameData.crop_in_season(cid, s):
+				off_s = s
+			if plant_s == "" and GameData.crop_plantable(cid, s):
+				plant_s = s
+		assert(on_s != "" and off_s != "" and plant_s != "",
+			"%s의 제철(%s)/비제철(%s)/심는 계절(%s)을 못 고름" % [cid, on_s, off_s, plant_s])
+		if _farm.crop_look_data(cid).has("mesh"):
+			kit_want += 1
+		_farm.tiles.erase(cell)
+		_farm._refresh(cell)
+		GameClock.abs_day = GameData.SEASON_IDS.find(plant_s) * GameClock.DAYS_PER_SEASON + 2
+		assert(_farm.till(cell) and _farm.plant(cell, GameData.crops[cid]["seed_id"]),
+			"%s 심기 실패(%s)" % [cid, plant_s])
+		_farm.tiles[cell]["watered_growth_days"] = GameData.grow_days(cid)
+		var slot: Node3D = _farm._nodes[cell]["crop"]
+		# 제철: 다 자란 실물
+		GameClock.abs_day = GameData.SEASON_IDS.find(on_s) * GameClock.DAYS_PER_SEASON + 2
+		_farm._refresh(cell)
+		var ripe: Node3D = slot.get_child(0)
+		var rm := _first_mesh(ripe)
+		var rs := TC.aabb_of(ripe).size
+		if not (ripe is MeshInstance3D):
+			kit_seen += 1   # 킷은 노드 묶음이다(절차 원형은 MeshInstance3D 한 장)
+		assert(rm != null and rm.get_surface_count() >= 1, "%s 성숙 메시가 비었다" % cid)
+		# 휴면: 계절만 넘긴다
+		GameClock.abs_day = GameData.SEASON_IDS.find(off_s) * GameClock.DAYS_PER_SEASON + 2
+		_farm._refresh(cell)
+		var dorm: Node3D = slot.get_child(0)
+		var ds := TC.aabb_of(dorm).size
+		# ① 킷 경로를 안 탄다. 킷 메시는 통째로 한 덩어리라 먹는 부분을 떼어낼 수가 없다.
+		assert(dorm is MeshInstance3D,
+			"%s 휴면이 킷 노드 묶음(%s)으로 갔다 — 킷은 표면을 못 나눠서 색만 갈리게 된다"
+			% [cid, dorm.get_class()])
+		var dm := (dorm as MeshInstance3D).mesh as ArrayMesh
+		# ② 캐시 키에 휴면이 들어갔는가. 안 들어가면 먼저 만든 성숙 메시를 그대로 돌려준다.
+		assert(dm != rm, "%s 휴면이 성숙과 **같은 메시 인스턴스**다 — 캐시 키에 휴면이 없다" % cid)
+		# ③ 종 색 표면(먹는 부분)이 아예 없다. 정점 수가 아니라 표면 자체를 센다 —
+		#    빈 표면을 붙이면 곁들이가 표면 1로 밀려 잎이 종 색으로 칠해진다(실측: 빈
+		#    SurfaceTool의 commit()은 표면 0개짜리 메시를 낸다).
+		assert(dm.get_surface_count() == 1,
+			"%s 휴면 메시 표면이 %d개 — 먹는 부분이 아직 깎여 있다" % [cid, dm.get_surface_count()])
+		var dmat := dm.surface_get_material(0) as ShaderMaterial
+		assert(dmat != null, "%s 휴면 표면에 머티리얼이 없다" % cid)
+		var dalb = dmat.get_shader_parameter("albedo")   # 미설정이면 null — float()로 죽지 않게 존재부터 본다
+		assert(dalb is Color, "%s 휴면 표면 albedo가 %s" % [cid, str(dalb)])
+		assert(not (dalb as Color).is_equal_approx(_farm.crop_color(cid)),
+			"%s 휴면 표면이 종 색(%s)으로 칠해졌다 — 표면 인덱스가 한 칸 밀렸다" % [cid, str(dalb)])
+		# ④ 성숙 쪽엔 종 색 표면이 실제로 있다(위 ③이 "원래 없던 것"을 재고 있으면 안 된다)
+		if ripe is MeshInstance3D:
+			var rmat := rm.surface_get_material(0) as ShaderMaterial
+			var ralb = rmat.get_shader_parameter("albedo") if rmat != null else null
+			assert(ralb is Color and (ralb as Color).is_equal_approx(_farm.crop_color(cid)),
+				"%s 성숙 표면 0이 종 색이 아니다 (%s)" % [cid, str(ralb)])
+			var rv: int = rm.surface_get_arrays(0)[Mesh.ARRAY_VERTEX].size()
+			assert(rv > 0, "%s 성숙 열매 표면에 정점이 0개" % cid)
+		# ⑤ 실루엣이 실제로 달라졌다. 부피비로는 못 잡는다 — 마른 가지가 좁고 긴 원형보다
+		#    옆으로 넓어지는 경우가 있어 커지기도 한다. 세 축의 차이를 그대로 잰다.
+		#    실측(2026-08-31) 최소 0.094(잎만 마르는 종) ~ 최대 0.21 — 0.05면 여유가 있다.
+		assert((ds - rs).length() >= 0.05,
+			"%s 휴면 실루엣이 성숙과 사실상 같다 (%s vs %s)" % [cid, str(ds), str(rs)])
+		# ⑥ 밭 한 칸(0.92)을 안 넘고 대역 안에 있다 — 마른 가지가 옆칸으로 퍼지면 안 된다
+		assert(maxf(ds.x, ds.z) <= 0.55, "%s 휴면 폭 %.3f" % [cid, maxf(ds.x, ds.z)])
+		assert(ds.y >= 0.12, "%s 휴면 전고 %.3f — 빈 칸으로 읽힌다" % [cid, ds.y])
+		measured += 1
+	assert(measured >= 6, "휴면을 잰 다년생이 %d종뿐 — 루프가 거의 안 돌았다" % measured)
+	assert(kit_want >= 2, "킷 메시를 쓰는 다년생이 %d종 — 이 핀이 킷 경로를 안 잰다" % kit_want)
+	assert(kit_seen == kit_want,
+		"제철에 킷 노드로 그려진 종이 %d개인데 데이터상 %d개다" % [kit_seen, kit_want])
+	_farm.tiles.erase(cell)
+	_farm._refresh(cell)  # 뒷 테스트가 쓰는 밭을 원상복구
 
 # 겉모습 노드가 실제로 쓰는 첫 메시 (절차 원형 = 자기 자신, 킷 = 하위 MeshInstance3D)
 func _first_mesh(node: Node) -> Mesh:
