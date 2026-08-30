@@ -2967,6 +2967,20 @@ func _test_dormant_look() -> void:
 	_farm.tiles.erase(cell)
 	_farm._refresh(cell)  # 뒷 테스트가 쓰는 밭을 원상복구
 
+# 메시가 제 AABB를 얼마나 채우는가(0~1). 겹쳐 붙인 폐곡면들의 부피 합 ÷ 상자 부피 —
+# "꽉 찬 덩어리(열매·견과)"와 "성긴 마른 것(깍지·가지)"을 가르는 자다. 실루엣 비율만으로는
+# 길쭉한 견과와 깍지가 안 갈려서 이 축이 필요하다.
+func _mesh_fill(m: ArrayMesh) -> float:
+	var vol := 0.0
+	for s in m.get_surface_count():
+		var a := m.surface_get_arrays(s)
+		var v: PackedVector3Array = a[Mesh.ARRAY_VERTEX]
+		var idx: PackedInt32Array = a[Mesh.ARRAY_INDEX]
+		for i in range(0, idx.size(), 3):
+			vol += absf(v[idx[i]].dot(v[idx[i + 1]].cross(v[idx[i + 2]]))) / 6.0
+	var s2 := m.get_aabb().size
+	return vol / maxf(s2.x * s2.y * s2.z, 0.000001)
+
 # 겉모습 노드가 실제로 쓰는 첫 메시 (절차 원형 = 자기 자신, 킷 = 하위 MeshInstance3D)
 func _first_mesh(node: Node) -> Mesh:
 	if node is MeshInstance3D:
@@ -3170,7 +3184,7 @@ func _test_winter_seeds() -> void:
 			"%s — 색 구체 폴백을 탔다: 씨앗 형태가 실경로에 안 닿는다" % s)
 		var ab := TC.aabb_of(nd)
 		assert(absf(ab.position.y) <= 0.02, "%s — 밑동이 지면에서 %+.3f (묻히거나 떴다)" % [s, ab.position.y])
-		assert(ab.size.y >= 0.30 and ab.size.y <= 0.52, "%s — 전고 %.3f가 대역 밖" % [s, ab.size.y])
+		assert(ab.size.y >= 0.34 and ab.size.y <= 0.52, "%s — 전고 %.3f가 채집물 대역(0.34~0.52) 밖" % [s, ab.size.y])
 		assert(maxf(ab.size.x, ab.size.z) <= 0.80,
 			"%s — 폭 %.3f: 줍는 반경만큼 퍼졌다" % [s, maxf(ab.size.x, ab.size.z)])
 		var yid2 := GameData.crop_yield(GameData.crop_from_seed(s))
@@ -3178,6 +3192,32 @@ func _test_winter_seeds() -> void:
 		assert(_look_color(nd).is_equal_approx(want), "%s 씨앗 색이 열매(%s)와 다르다" % [s, yid2])
 		nd.free()
 	assert(PS.SHAPES.has(PS.SEED_SHAPE), "씨앗 원형 %s가 표에 없다" % PS.SEED_SHAPE)
+
+	# ── 2-b. 씨앗이 **열매 어휘 밖**에 있는가 ────────────────────────────────
+	# 앞선 두 판은 잎 위에 종 색 알을 얹은 잎다발이라 게임 안의 송이·핵과·견과와 어휘가 같았다
+	# = 3m 밖에서 "먹는 것"으로 읽혔다(실측 forage/seeds_fix). 표를 복사해 비교하지 않고
+	# **메시를 실제로 구워** 두 축으로 잰다: ① 세로로 긴가(잎다발은 옆으로 퍼진다)
+	# ② 속이 성긴가(열매·견과는 꽉 찬 덩어리다 — 세로 길이만 보면 솔방울 계열과 안 갈린다).
+	# 문턱은 전부 절대 숫자다: 프로덕션 값에서 유도하면 그 값이 무너질 때 문턱도 같이 무너진다.
+	var sm: ArrayMesh = PS.shape_mesh(PS.SHAPES[PS.SEED_SHAPE], Color.RED)
+	var sab := sm.get_aabb()
+	var sw: float = maxf(sab.size.x, sab.size.z)
+	var sasp: float = sab.size.y / sw
+	var sfill := _mesh_fill(sm)
+	assert(sasp >= 1.9, "씨앗 원형이 세로 %.3f · 가로 %.3f = %.2f배 — 옆으로 퍼진 잎다발이다"
+		% [sab.size.y, sw, sasp])
+	assert(sfill <= 0.30, "씨앗 원형 속참 %.3f — 꽉 찬 덩어리는 먹는 열매로 읽힌다" % sfill)
+	# 같은 자로 열매·견과 어휘를 재서 실제로 갈리는지 본다. 견과가 제일 위험하다 — 그쪽도
+	# "마른 갈색 덩어리"라 세로 길이만으론 안 갈린다(nut_cone은 씨앗과 세로비가 거의 같다).
+	var solid := 0
+	for other in ["berry_bunch", "berry_drupe", "nut_round", "nut_cone"]:
+		assert(PS.SHAPES.has(other), "비교 대상 원형 %s가 표에서 사라졌다" % other)
+		var ofill := _mesh_fill(PS.shape_mesh(PS.SHAPES[other], Color.RED))
+		assert(ofill >= 0.35, "%s 속참 %.3f — 열매·견과 쪽이 성겨져 이 비교가 무의미해졌다" % [other, ofill])
+		assert(ofill - sfill >= 0.15,
+			"씨앗(%.3f)과 %s(%.3f)의 속참이 붙었다 = 화면에서 형태가 겹친다" % [sfill, other, ofill])
+		solid += 1
+	assert(solid == 4, "열매·견과 어휘 4종과 견줘야 하는데 %d종만 쟀다" % solid)
 
 	# ── 3. 늦가을 창: 씨앗은 이 6일에만 돋고, 그 안에 4종을 다 얻는다 (Y1 가을 30일 전수 시뮬)
 	# 문턱은 절대 숫자다 — LATE_DAYS에서 유도하면 그 값이 0이 되는 순간 문턱도 0이 되어 통과한다.
