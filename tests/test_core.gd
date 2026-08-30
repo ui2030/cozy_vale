@@ -62,6 +62,7 @@ func _ready() -> void:
 	_test_water_look()
 	_test_cooking()
 	_test_korean_names()
+	_test_currency_korean()
 	_test_dialogue_context()
 	_test_npc_personality()
 	_test_crop_look()
@@ -2976,6 +2977,47 @@ func _test_dormant_look() -> void:
 		"제철에 킷 노드로 그려진 종이 %d개인데 데이터상 %d개다" % [kit_seen, kit_want])
 	_farm.tiles.erase(cell)
 	_farm._refresh(cell)  # 뒷 테스트가 쓰는 밭을 원상복구
+
+# ── 화면에 나가는 통화 표기가 한국어인가 ───────────────────────────────
+# 화면 이름을 전부 한국어로 간 뒤에도 통화 접미사 "G"만 세 곳에 남아 있었다. 그중 하나는
+# 한 문장 안에서 "골드"와 "G"를 같이 썼고, 가방의 반지 행은 같은 위젯의 두 갈래에서 G가
+# **통화 단위와 키보드 키 두 뜻**으로 쓰였다("1200G" 옆에 "후보에게 G = 청혼").
+#
+# 그려진 라벨을 읽는 쪽은 안 골랐다: 이 문자열들은 상점 앞·청혼 가능·요리 가능 같은 상태에서만
+# 그려져서 테스트가 그 상태를 셋 다 만들어야 하는데, 정작 재려는 것은 "소스에 남았나"라
+# 통로만 길어진다. farm_system의 종 이름 하드코딩 핀과 같은 수법으로 소스를 훑는다.
+# 키 안내의 "G"는 정당한 사용이라 갈라야 하는데 — **통화는 언제나 수량 바로 뒤에 붙는다**
+# ("%dG"·"1200G"). 그 자리에만 문다. 키 안내는 수량 뒤에 오지 않는다.
+func _test_currency_korean() -> void:
+	var re := RegEx.new()
+	re.compile("(%[ds]|[0-9])G")
+	# 검출기 자가검사. 이게 없으면 정규식이 무엇도 못 잡게 망가져도 "0건 = 통과"가 된다.
+	assert(re.search('"잔액 500G"') != null, "검출기가 통화 G를 못 잡는다 — 정규식이 죽었다")
+	assert(re.search('"%dG 필요"') != null, "검출기가 서식 통화 G를 못 잡는다")
+	assert(re.search('"후보에게 G키 = 청혼"') == null, "검출기가 키 안내를 통화로 오인한다")
+	var scanned := 0
+	var korean := 0     # "골드" 표기가 실제로 쓰이는 파일 수 = UI를 훑고 있다는 증거
+	var bad := []
+	for dir in ["res://ui/", "res://player/", "res://npc/", "res://world/"]:
+		for f in DirAccess.get_files_at(dir):
+			if not f.ends_with(".gd"):
+				continue
+			scanned += 1
+			var src := FileAccess.get_file_as_string(dir + f)
+			if src.contains("골드"):
+				korean += 1
+			var ln := 0
+			for line in src.split("\n"):
+				ln += 1
+				# 주석 줄은 건너뛴다 — 화면에 안 나가고, 옛 표기를 설명하는 주석까지 물면
+				# 다음 사람이 "왜 이렇게 고쳤나"를 못 적게 된다. 코드 줄 뒤 주석은 그대로 문다.
+				if line.strip_edges().begins_with("#"):
+					continue
+				if re.search(line) != null:
+					bad.append("%s:%d  %s" % [dir + f, ln, line.strip_edges()])
+	assert(scanned >= 12, "화면 소스를 %d개만 훑었다 — 경로가 바뀌어 아무것도 안 재고 있다" % scanned)
+	assert(korean >= 2, "'골드' 표기가 %d개 파일에만 있다 — 훑는 대상이 UI가 아니다" % korean)
+	assert(bad.is_empty(), "화면에 통화 G가 남았다(한국어 '골드'로):\n%s" % "\n".join(bad))
 
 # 메시가 제 AABB를 얼마나 채우는가(0~1). 겹쳐 붙인 폐곡면들의 부피 합 ÷ 상자 부피 —
 # "꽉 찬 덩어리(열매·견과)"와 "성긴 마른 것(깍지·가지)"을 가르는 자다. 실루엣 비율만으로는

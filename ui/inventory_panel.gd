@@ -95,7 +95,10 @@ func _ring_btn(p: Node) -> Button:
 	var owned: bool = p.count(GameData.RING_ID) > 0
 	b.text = "  %s   %s" % [
 		GameData.RING_NAME,
-		"x1 (후보에게 G = 청혼)" if owned else "%dG — 상점에서 구매" % GameData.RING_COST,
+		# 통화를 "골드"로 갈면서 키 안내도 "G키"로 못 박는다 — 같은 위젯의 두 갈래에서 G가
+		# 통화 단위와 키보드 키 두 뜻으로 쓰이면 "1200G"를 보고 G키를 떠올릴 여지가 생긴다.
+		# G는 선물 주기 키다(input_setup의 give) — 후보에게 반지를 주는 것이 곧 청혼이다.
+		"x1 (후보에게 G키 = 청혼)" if owned else "%d골드 — 상점에서 구매" % GameData.RING_COST,
 	]
 	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	b.add_theme_font_size_override("font_size", 16)

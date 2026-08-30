@@ -384,7 +384,7 @@ func buy_ring() -> void:
 		message.emit("일요일은 상점이 쉬어요")
 		return
 	if gold < GameData.RING_COST:
-		message.emit("골드 부족 (%dG 필요)" % GameData.RING_COST)
+		message.emit("골드 부족 (%d골드 필요)" % GameData.RING_COST)
 		return
 	gold -= GameData.RING_COST
 	_add_item(GameData.RING_ID, 1)

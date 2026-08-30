@@ -68,7 +68,7 @@ func _recipe_btn(p: Node, rid: String) -> Button:
 	for iid in r["ingredients"]:
 		parts.append("%s %d/%d" % [GameData.display_name(iid), p.count(iid), int(r["ingredients"][iid])])
 	var b := Button.new()
-	b.text = "%s   %dG   %s" % [GameData.display_name(rid), int(r["sell_price"]), " · ".join(parts)]
+	b.text = "%s   %d골드   %s" % [GameData.display_name(rid), int(r["sell_price"]), " · ".join(parts)]
 	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	b.add_theme_font_size_override("font_size", 16)
 	var ok: bool = p.can_cook(rid)
